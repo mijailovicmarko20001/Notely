@@ -40,7 +40,7 @@ stage can be re-run alone and inspected.
 [5] 05_segment_transcript.py  timeline+transcript ──► output/segmented_transcripts/<id>.json
                                                       (+ duplicate-slide canonicalization)
 [6] 06_generate_notes.py      segments ──► output/notes/<id>.md             (Claude API, concurrent per-slide calls)
-[7] 07_assemble.py            notes/*.md ──► output/study_guide.md
+[7] 07_assemble.py            notes/*.md ──► output/study_guide.md          (+ optional --topic-index: one more Claude call)
 [8] 08_export_pdf.py          study_guide.md ──► output/study_guide.pdf     (headless Chrome + MathJax)
 ```
 
@@ -199,6 +199,17 @@ from the markdown parser → headless Chrome `--print-to-pdf` with MathJax
 + note file both emitting `# lectureNN`) produced a blank page per lecture
 — assembler now only adds a heading if the note lacks one.
 
+**Cross-lecture topic index** (`07_assemble.py --topic-index`, added
+2026-08-11) — the second-LLM-pass idea CLAUDE.md's [7] Assembly section
+always left open. Stayed CLI-only and off by default rather than wired
+into the web UI/automatic runs: it's one real API call over the *whole*
+assembled guide (this course's is ~440K chars/~110K tokens), materially
+more expensive than a single lecture's "a few cents." Verified the
+insertion logic (TOC → index → lecture content ordering, both-lecture
+presence, graceful no-API-key skip, zero calls when the flag is off) end
+to end against a scratch project root with the network call stubbed out
+— not run against the real study guide, since that spends real money.
+
 **A global forward-jump score floor turned out not to fully fix the known
 lecture01 residual.** Added `min_forward_score` (default 0.05, §4.1) as a
 genuine guard against near-zero-vs-near-zero forward jumps winning by
@@ -256,6 +267,7 @@ normal case.
 | Min dwell before merge | `05` default | 5.0 s |
 | Note/overview token caps | `06` | `MAX_TOKENS = 8192` (both calls) |
 | Overview heading text | `06` summary prompt | `## Pregled predavanja` (Serbian; prompt asks model to translate for other languages) |
+| Topic index guide-length cap | `07::MAX_GUIDE_CHARS` | 350,000 chars — defensive margin above this course's real ~440K-char/~110K-token guide, well under Claude's context window |
 | "Professor's notes:" label | `06::SYSTEM_PROMPT` | English, by design |
 | Notes concurrency default | `06` | 4 (`NOTES_CONCURRENCY` env) |
 | Scheduler lane→stage mapping | `webui/jobs.py::_run` | net={0}, cpu={2..5}, api={6}, gpu={1} iff mlx |

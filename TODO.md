@@ -187,10 +187,20 @@ the working checklist, that one is the record of *why*.
       cut. Worth doing later as an explicit opt-in mode (e.g. `--batch`
       falls back to an indeterminate spinner like stages 2/5/7 already
       do), not as a silent default swap.
-- [ ] **Cross-lecture topic index** — the `TODO` already in
-      `07_assemble.py`: an optional second LLM pass over the *assembled*
-      guide to surface connections that span multiple lectures (common
-      exam material).
+- [x] **Cross-lecture topic index — implemented, not yet run for real.**
+      `07_assemble.py --topic-index` (off by default): one extra Claude
+      call over the whole assembled guide, inserted after the TOC before
+      the per-lecture content. Explicitly opt-in and CLI-only (not wired
+      into the web UI or automatic pipeline runs yet) because it's a real
+      API cost over potentially hundreds of thousands of tokens for a
+      full course — this project's own 22-lecture guide is ~440K chars /
+      ~110K tokens, likely tens of cents, not the "few cents" scale a
+      single lecture costs. Verified the wiring end-to-end (TOC -> index
+      -> lecture content ordering, both-lecture presence, the no-API-key
+      graceful-skip path, and that `topic_index=False` makes zero calls)
+      against a scratch project root with the network call stubbed out —
+      **not run against the real study guide**, since that costs real
+      money I didn't spend without asking. Want me to run it for real?
 
 ---
 Sources: `DOCUMENTATION.md` §5 (pre-existing roadmap), repo inspection
