@@ -4,7 +4,7 @@ Turns recorded lectures (YouTube links) plus the professor's slide decks into
 condensed per-slide study notes you can read in 20–30 minutes instead of
 watching hours of video. Everything runs on your own computer.
 
-## Quick start (students)
+## Quick start (students, no Python setup)
 
 1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Mac/Windows/Linux).
 2. Download this project folder, open a terminal in it, and run:
@@ -36,10 +36,13 @@ All your files (videos, notes, settings) live in the `data/` folder next to
 - First transcription downloads a speech-recognition model (~1.5 GB, one time).
 - Unlisted YouTube videos work with just the link. *Private* videos (ones you
   must sign into YouTube to watch) are not supported in Docker mode.
+- Transcription is CPU-only in Docker (no GPU passthrough) — noticeably
+  slower than running natively on a machine with a usable GPU. If speed
+  matters and you're comfortable with Python, prefer developer mode below.
 - Downloading YouTube videos technically runs against YouTube's ToS; keep the
   downloads and generated notes for personal study only — don't redistribute.
 
-## Developer mode (no Docker)
+## Developer mode (no Docker) — recommended if you have Python already
 
 ```
 python3.12 -m venv .venv

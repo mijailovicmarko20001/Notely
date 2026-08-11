@@ -120,6 +120,25 @@ container (private — not merely unlisted — videos unsupported there), and
 transcription is CPU-only inside Docker (no GPU passthrough), at the
 mercy of the VM's core allocation.
 
+**Reassessment (2026-08-11):** in practice those two limitations aren't
+edge cases, they cut into the pipeline's two most performance/capability-
+sensitive stages. Fetching often needs browser cookies (university auth),
+and transcription is ~4x faster on the native `mlx` GPU backend than
+CPU-only (§3's benchmark table) — both wins require running *outside* a
+container, on the host directly. So containerizing doesn't actually buy
+isolation for the parts that matter here; it trades away capability the
+native run has. The full 22-lecture course in this repo was produced via
+the local `.venv` + `uvicorn` path (`data/` — the Docker bind-mount target
+— only ever got a one-lecture smoke test, never a full run). Docker mode
+still has a place as a lower-friction handoff for students who don't want
+to set up Python, GPU drivers, etc. — but it should be presented as the
+*reduced-capability, no-setup* option, not the primary/recommended path;
+"run locally with `.venv`" is what actually produces the best output on a
+machine that has ffmpeg/tesseract/GPU available. Worth deciding explicitly
+whether Docker packaging is worth continuing to maintain, or whether a
+plain setup script (`brew install ...` + `pip install -r requirements.txt`)
+covers the real use case better.
+
 ---
 
 ## 3. How we got here — decisions and lessons

@@ -19,22 +19,25 @@ the working checklist, that one is the record of *why*.
       `WHISPER_MLX_REPO`, `WHISPER_COMPUTE`/`WHISPER_CPU_THREADS`,
       `OCR_LANG`, `NOTES_CONCURRENCY`, `NOTES_EMBED_IMAGES`), with defaults
       matching the code and notes on which are course-specific tuning.
-- [ ] **Two divergent data trees exist**: top-level `input/`/`output/`
-      (fully populated — all 22 lectures processed, `study_guide.md` +
-      `.pdf` present) vs `data/input/`/`data/output/` (the Docker
-      bind-mount target — only `lecture01.mp4` + transcripts, nothing else).
-      Right now it's unclear whether `data/` is a stale partial test run or
-      the "real" home going forward. Decide and either delete `data/`'s
-      partial contents or migrate/re-run the full course through
-      `docker compose up` so the two trees don't silently disagree.
-      **Needs a decision — not resolved.**
-- [ ] **Confirm the pending human spot-check actually happened.** Per
-      `CLAUDE.md`'s validation section and prior session notes, a manual
-      check of `slide_timeline.json` + generated notes against the real
-      video was still outstanding as of the last update. All 22 lectures'
-      notes now exist — worth explicitly confirming at least lecture01 and
-      one or two others were checked before trusting the rest of the batch.
-      **Needs user confirmation — not resolved.**
+- [x] **Two divergent data trees.** Resolved by decision (2026-08-11):
+      `output/`/`input/` (top-level) is the real, complete course run and
+      stays canonical; `data/`'s partial contents were only ever a
+      one-lecture Docker smoke test. Rather than migrating data into
+      `data/`, documented *why* in `DOCUMENTATION.md` §2.4 — Docker mode's
+      two limitations (no `--cookies-from-browser`, CPU-only transcription)
+      cut into the pipeline's two most capability-sensitive stages, so the
+      native `.venv` path is the one that actually produced this repo's
+      output, not Docker. README's Docker section now says so explicitly
+      instead of implying Docker is the full-power path. Open follow-up:
+      **decide whether Docker packaging is worth continuing to maintain
+      given this**, or whether a plain setup script covers the real
+      use case better (added as a P2 item below). Separately: `output/`
+      (1.3 GB) is already gitignored and not required by Docker mode, so it
+      can be moved outside the project folder for tidiness whenever you
+      want — no destination decided yet, so left as-is for now.
+- [x] **Human spot-check.** Confirmed already done by the user
+      (2026-08-11) — generated notes were checked against the source
+      video before trusting the batch run.
 - [x] **Pin dependencies.** Added `requirements-lock.txt` (exact `pip
       freeze` of the validated dev `.venv`, macOS arm64) alongside the
       existing loose `requirements.txt`; README's dev-mode section now
@@ -76,6 +79,16 @@ the working checklist, that one is the record of *why*.
       students; only Apple Silicon has been validated so far.
 
 ## P2 — larger, optional roadmap items
+
+- [ ] **Decide whether Docker packaging is worth continuing to maintain.**
+      Its two limitations (no browser-cookie auth, CPU-only transcription)
+      hit the pipeline's most capability-sensitive stages — this repo's
+      actual output was produced natively, not via Docker (see
+      `DOCUMENTATION.md` §2.4). Options: keep it as an explicitly
+      lower-power/no-setup on-ramp for non-technical students (current
+      framing, already updated in the README); or drop it in favor of a
+      plain setup script (`brew install ffmpeg tesseract tesseract-lang` +
+      `pip install -r requirements.txt`) if it's not pulling its weight.
 
 - [ ] **Opt-in cloud transcription backend** (Groq-hosted Whisper, OpenAI,
       Deepgram/AssemblyAI, ElevenLabs Scribe) for machines without a usable
