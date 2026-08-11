@@ -38,6 +38,7 @@ DEFAULT_STAGE_OPTIONS = {
     "margin": 0.15,                   # stage 04
     "stay_margin": 0.05,              # stage 04
     "confidence_threshold": 0.25,     # stage 04
+    "min_forward_score": 0.05,        # stage 04
     "min_dwell": 5.0,                 # stage 05
 }
 

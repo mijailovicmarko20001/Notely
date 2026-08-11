@@ -177,8 +177,11 @@ $("#btn-upload-pool").addEventListener("click", async () => {
   $("#upload-status").textContent = "Merging decks…";
   try {
     const r = await api("/slides/upload-pool", { method: "POST", body: fd });
+    const dedupeNote = r.duplicate_pages_skipped > 0
+      ? ` (${r.duplicate_pages_skipped} duplicate page(s) of ${r.scanned_pages} skipped)`
+      : "";
     $("#upload-status").textContent =
-      `Combined ${r.pool_decks.length} deck(s) into one ${r.merged_pages}-page deck, shared by ${r.lectures.length} lecture(s) ✓`;
+      `Combined ${r.pool_decks.length} deck(s) into one ${r.merged_pages}-page deck${dedupeNote}, shared by ${r.lectures.length} lecture(s) ✓`;
     $("#deck-file").value = "";
     $("#deck-mapping").innerHTML = "";
     $("#btn-upload").hidden = $("#btn-upload-pool").hidden = true;

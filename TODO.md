@@ -47,21 +47,33 @@ the working checklist, that one is the record of *why*.
 
 ## P1 — correctness & quality (documented gaps worth closing)
 
-- [ ] **Stage 4 has no score floor on forward jumps** — only backward jumps
-      are margin-gated. This already produced two known spurious matches on
-      lecture01 (near-zero-score forward jumps at 633s/2137s, manually
-      fixed). Add an absolute-score floor for forward jumps too, then
-      re-check whether it recurs on other lectures' `needs_review.json`.
+- [x] **Stage 4 forward-jump score floor.** Added `--min-forward-score`
+      (default 0.05) to `04_match_frames_to_slides.py`, plumbed through the
+      web UI. Verified safe against lecture01's real data (zero change to
+      its match sequence at the default). **Turned out not to fully fix
+      the known lecture01 case** — the one documented spurious match
+      (jump to "slide 71", score 0.15) scores within ~0.01-0.03 of several
+      *genuine* transitions in the same lecture (0.16-0.21); no flat floor
+      separates them without collateral damage. Kept as a real, tested
+      guard against worse (near-zero) versions of this failure on other
+      lectures — see `DOCUMENTATION.md` §3 for the full investigation.
+      lecture01's known case remains fixed only via its existing manual
+      timeline correction.
 - [ ] **Regenerate any lecture notes from before the token-cap fix.** Early
       overviews were generated with a 1024-token cap that truncated
       mid-word; the fix (2048, later 8192) landed 2026-08-11. Grep
       `output/notes/*.md` for overviews that end abruptly and re-run stage 6
       for just those lectures.
-- [ ] **Dedupe the pooled slide deck at merge time**, not just after OCR.
-      Stage 5 already canonicalizes duplicates by text-hash post-hoc, but
-      the merged deck stage 4 actually searches is still 936 pages (66%
-      duplicate) instead of the ~310 unique slides — deduping earlier makes
-      stage 4 ~3x faster and less ambiguous for free.
+- [x] **Dedupe the pooled slide deck at merge time.** `/api/slides/upload-pool`
+      now skips pages whose normalized text exactly matches one already
+      kept (empty-text/image-only pages are always kept, never deduped
+      against each other, to avoid collapsing visually distinct slides on
+      an empty-string hash match). Verified read-only against the real
+      pool PDFs: 312 raw pages -> 310 kept, 2 genuine duplicates found, no
+      over-merging. Note: the currently-stored pool files total only 312
+      pages, not the previously-documented 936/310 split — that number was
+      from an earlier/larger pool upload session; worth a sanity check
+      next time a full pool is re-uploaded.
 - [ ] **Study Guide tab renders raw markdown** in the web UI — no images,
       no math. The exported PDF is the only polished view. A small
       client-side markdown+MathJax renderer would close that gap for

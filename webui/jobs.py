@@ -309,7 +309,8 @@ def build_tasks(lecture_ids, stages, options, force, has_api_key):
             elif s == 4:
                 extra += (flag("--ocr-lang", "ocr_lang") + flag("--margin", "margin")
                           + flag("--stay-margin", "stay_margin")
-                          + flag("--confidence-threshold", "confidence_threshold"))
+                          + flag("--confidence-threshold", "confidence_threshold")
+                          + flag("--min-forward-score", "min_forward_score"))
             elif s == 5:
                 extra += flag("--min-dwell", "min_dwell")
             if force:

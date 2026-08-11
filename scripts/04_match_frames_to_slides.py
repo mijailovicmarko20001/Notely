@@ -76,6 +76,7 @@ INPUT_VIDEOS_DIR = PROJECT_ROOT / "input" / "videos"
 DEFAULT_BACKWARD_JUMP_MARGIN = 0.15
 DEFAULT_STAY_MARGIN = 0.05
 DEFAULT_CONFIDENCE_THRESHOLD = 0.25
+DEFAULT_MIN_FORWARD_SCORE = 0.05
 
 OCR_EXCERPT_LEN = 150
 
@@ -163,6 +164,7 @@ def match_events_to_slides(
     sim_matrix,
     margin: float,
     stay_margin: float = DEFAULT_STAY_MARGIN,
+    min_forward_score: float = DEFAULT_MIN_FORWARD_SCORE,
 ) -> list[dict]:
     """
     Assign each event to a slide number using a greedy pass constrained by
@@ -204,11 +206,32 @@ def match_events_to_slides(
       - forward jumps (skipping slide numbers, e.g. 3 -> 6) are otherwise
         allowed with no further penalty beyond stay_margin, since "professor
         advances past a slide quickly" is common and undetectable from
-        timing alone. In practice stay_margin also curbs the worst case of
-        this: a near-zero-score forward jump can only "win" over staying put
-        if it beats the (typically also near-zero, since the OCR frame
-        clearly isn't the current slide either) current-slide score by the
-        margin, rather than winning by default as the nominal max.
+        timing alone. stay_margin alone doesn't fully guard against a
+        nonsense jump, though: if the current slide's own score has also
+        decayed near zero (OCR noise, or the professor lingered past the
+        point the frame still resembles that slide), a forward candidate
+        that's *also* near zero can still beat it by stay_margin and win "by
+        default" as the nominal max even though neither score means
+        anything.
+      - min_forward_score (DEFAULT_MIN_FORWARD_SCORE): absolute floor an
+        in-order candidate's score must clear before it's allowed to move
+        the cursor off the current slide. Guards against the near-zero-vs-
+        near-zero case above. Set to 0 to fall back to the old
+        stay_margin-only behavior.
+        Deliberately conservative (0.05), and this is a real constraint,
+        not a tuning nicety: on lecture01's actual data, the one *known*
+        residual spurious match (a jump to "slide 71" following a blank/
+        failed-OCR frame) scores 0.15 — but so do several genuine
+        transitions in the same lecture (0.16-0.21, including a backward
+        jump the manual review explicitly confirmed as correct). There is
+        no score value that separates that spurious match from real ones
+        without also rejecting real ones; a global floor can only catch
+        truly-near-zero nonsense, not this specific case. Verified this
+        floor makes zero difference to lecture01's full match sequence at
+        its default value — it's a forward-looking guard against a worse
+        version of the same failure mode on other lectures, not a fix for
+        the known lecture01 case (which stays as its existing manual
+        correction in the timeline's own notes field).
 
     Returns a list of per-event match dicts:
         {event_index, timestamp, frame_image_path, ocr_excerpt,
@@ -232,10 +255,13 @@ def match_events_to_slides(
         raw_best_slide, raw_best_score = max(in_order_candidates.items(), key=lambda kv: kv[1])
 
         # Stickiness: don't leave the current slide unless some other
-        # in-order candidate clearly beats just staying put.
+        # in-order candidate clearly beats just staying put AND clears an
+        # absolute floor (min_forward_score) — otherwise a near-zero
+        # candidate can "win" by stay_margin alone when the current slide's
+        # own score has also decayed near zero, which is noise, not signal.
         current_score = scores[current_slide]
-        stayed_over_raw_best = (
-            raw_best_slide != current_slide and raw_best_score <= current_score + stay_margin
+        stayed_over_raw_best = raw_best_slide != current_slide and (
+            raw_best_score <= current_score + stay_margin or raw_best_score < min_forward_score
         )
         if stayed_over_raw_best:
             in_order_best_slide, in_order_best_score = current_slide, current_score
@@ -416,6 +442,7 @@ def process_lecture(
     force: bool,
     ocr_lang: str = "eng",
     stay_margin: float = DEFAULT_STAY_MARGIN,
+    min_forward_score: float = DEFAULT_MIN_FORWARD_SCORE,
 ) -> None:
     events_path = FRAME_EVENTS_DIR / f"{lecture_id}.json"
     slides_path = SLIDES_EXTRACTED_DIR / f"{lecture_id}.json"
@@ -456,8 +483,13 @@ def process_lecture(
         print(f"[{lecture_id}] computing TF-IDF cosine similarity ({len(events)} events x {len(slide_numbers)} slides)...")
         sim_matrix = compute_similarity_matrix(event_texts, slide_texts)
 
-        print(f"[{lecture_id}] matching events to slides (margin={margin}, stay_margin={stay_margin})...")
-        matches = match_events_to_slides(events, slide_numbers, sim_matrix, margin, stay_margin)
+        print(
+            f"[{lecture_id}] matching events to slides "
+            f"(margin={margin}, stay_margin={stay_margin}, min_forward_score={min_forward_score})..."
+        )
+        matches = match_events_to_slides(
+            events, slide_numbers, sim_matrix, margin, stay_margin, min_forward_score
+        )
         for m in matches:
             jump_tag = " [BACKWARD JUMP]" if m["jumped_backward"] else ""
             stay_tag = " [STAYED]" if m["stayed_over_raw_best"] else ""
@@ -523,6 +555,16 @@ def main() -> None:
         help=f"matches below this score are flagged in needs_review.json (default: {DEFAULT_CONFIDENCE_THRESHOLD})",
     )
     parser.add_argument(
+        "--min-forward-score",
+        type=float,
+        default=DEFAULT_MIN_FORWARD_SCORE,
+        help=(
+            "absolute score floor an in-order candidate must clear to move the cursor "
+            f"off the current slide (default: {DEFAULT_MIN_FORWARD_SCORE}). Set to 0 for "
+            "the old stay_margin-only behavior."
+        ),
+    )
+    parser.add_argument(
         "--ocr-lang",
         default=os.environ.get("OCR_LANG", "eng"),
         help='tesseract language(s), e.g. "srp_latn+eng" (default: env OCR_LANG or "eng")',
@@ -551,6 +593,7 @@ def main() -> None:
             force=args.force,
             ocr_lang=args.ocr_lang,
             stay_margin=args.stay_margin,
+            min_forward_score=args.min_forward_score,
         )
 
 

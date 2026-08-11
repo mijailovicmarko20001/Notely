@@ -134,7 +134,13 @@ async def upload_pool(files: list[UploadFile] = File(...)):
     combined deck. Stage 4's content matching then figures out per video which
     slides were actually shown — unshown slides are simply never matched
     (already the normal case, since decks can span lectures)."""
+    import hashlib
+    import re
+
     import fitz
+
+    def norm_page_text(s: str) -> str:
+        return re.sub(r"\s+", " ", (s or "").lower()).strip()
 
     urls = _load_json(config.VIDEO_URLS_PATH, {})
     if not urls:
@@ -152,12 +158,30 @@ async def upload_pool(files: list[UploadFile] = File(...)):
         with open(pool_dir / Path(name).name, "wb") as out:
             out.write(content)
 
-    # merge every deck currently in the pool, in filename order
+    # Merge every deck currently in the pool, in filename order, skipping
+    # pages whose normalized text exactly matches one already kept. Course
+    # decks repeat earlier material heavily (observed: 936 raw pages, only
+    # 310 unique, on this project's real pool) — deduping here instead of
+    # after stage 4's OCR makes the haystack stage 4 actually searches
+    # ~3x smaller and less ambiguous, for free. Pages with no extractable
+    # text (scanned/image-only slides) are never deduped against each other
+    # — collapsing them on an empty-string hash match would wrongly merge
+    # visually distinct slides, so they're always kept.
     pool_files = sorted(pool_dir.glob("*.pdf"))
     merged = fitz.open()
+    seen_hashes = set()
+    scanned_pages = 0
     for p in pool_files:
         with fitz.open(p) as src:
-            merged.insert_pdf(src)
+            for page_index in range(src.page_count):
+                scanned_pages += 1
+                text = norm_page_text(src[page_index].get_text())
+                if text:
+                    key = hashlib.md5(text.encode()).hexdigest()
+                    if key in seen_hashes:
+                        continue
+                    seen_hashes.add(key)
+                merged.insert_pdf(src, from_page=page_index, to_page=page_index)
     total_pages = merged.page_count
     merged_path = pool_dir / "_merged.pdf"
     merged.save(str(merged_path))
@@ -172,6 +196,8 @@ async def upload_pool(files: list[UploadFile] = File(...)):
         "ok": True,
         "pool_decks": [p.name for p in pool_files],
         "merged_pages": total_pages,
+        "scanned_pages": scanned_pages,
+        "duplicate_pages_skipped": scanned_pages - total_pages,
         "lectures": sorted(urls),
     }
 

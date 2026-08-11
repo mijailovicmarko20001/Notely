@@ -199,6 +199,20 @@ from the markdown parser → headless Chrome `--print-to-pdf` with MathJax
 + note file both emitting `# lectureNN`) produced a blank page per lecture
 — assembler now only adds a heading if the note lacks one.
 
+**A global forward-jump score floor turned out not to fully fix the known
+lecture01 residual.** Added `min_forward_score` (default 0.05, §4.1) as a
+genuine guard against near-zero-vs-near-zero forward jumps winning by
+`stay_margin` alone — verified safe (zero effect on lecture01's actual
+match sequence at that default). But the one *known* spurious match this
+was meant to catch (a jump to "slide 71" right after a blank/failed-OCR
+frame, score 0.15) sits only ~0.01-0.03 below several genuine transitions
+in the same lecture (0.16-0.21, one of them a backward jump the manual
+review explicitly confirmed correct) — there's no floor value that
+separates the bad match from the good ones. Kept as a forward-looking
+guard against a worse (truly near-zero) version of this failure mode on
+other lectures; the lecture01 case remains fixed only via its existing
+manual correction, documented in that timeline's own `notes` field.
+
 **Human review is a feature, not a fallback.** Stage 4 emits
 `needs_review.json` (low-confidence matches, never-matched slides, backward
 jumps); the UI's Review tab shows frame vs. matched slide side by side, and
@@ -236,7 +250,7 @@ normal case.
 | CPU whisper threads/compute defaults | `01_transcribe.py` | 4 / `auto` (env-overridable) |
 | Slide render DPI | `02_extract_slides.py` | 150 |
 | Frame sample interval | `03` default | 1.5 s |
-| Matcher margins | `04` defaults | backward 0.15, stay 0.05, confidence 0.25 |
+| Matcher margins | `04` defaults | backward 0.15, stay 0.05, confidence 0.25, min-forward-score 0.05 |
 | OCR excerpt length | `04` | 150 chars |
 | Min dwell before merge | `05` default | 5.0 s |
 | Note/overview token caps | `06` | `MAX_TOKENS = 8192` (both calls) |
