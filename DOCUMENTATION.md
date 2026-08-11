@@ -334,9 +334,18 @@ The same seam-thinking applies to other pipeline organs:
   genuine near-duplicate consecutive events this catches; the closest
   distance between any two frames stage 3 judged genuinely different
   stayed well clear of the threshold across the whole course.
-- **Note generation:** Anthropic's Batch API halves cost for non-urgent
-  runs; prompt caching would cut the repeated system-prompt cost; both are
-  drop-in changes inside stage 6.
+- **Note generation:** ~~prompt caching would cut the repeated
+  system-prompt cost~~ — done 2026-08-11: `SYSTEM_PROMPT` (identical
+  across every slide, every lecture) goes in as a `cache_control:
+  {"type": "ephemeral"}` block; cache read/write tokens surfaced in the
+  per-slide and per-lecture logs. Not live-tested against a real API
+  call (would spend real credits). ~~Anthropic's Batch API halves cost
+  for non-urgent runs~~ — turned out NOT to be a drop-in change: it's
+  async/polled, but the web UI's live per-slide progress bar
+  (`progress.py`'s `_RE_NOTES` parser) depends on stage 6 streaming
+  `[i/N] slide ...` lines as each call finishes. Worth doing as an
+  explicit opt-in mode later (fall back to an indeterminate spinner,
+  like stages 2/5/7 already do), not a silent default swap.
 
 ### 5.2 Other known improvements
 

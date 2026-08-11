@@ -181,7 +181,15 @@ def generate_slide_note(
     request_payload = {
         "model": model,
         "max_tokens": MAX_TOKENS,
-        "system": SYSTEM_PROMPT,
+        # cache_control makes the (identical, every-slide, every-lecture)
+        # system prompt a prompt-cache breakpoint: the first call in a
+        # session pays full price to write the cache, every subsequent
+        # call within the ~5min ephemeral TTL reads it at a fraction of the
+        # input-token cost. Safe to always set regardless of the prompt's
+        # exact token count -- the API silently skips caching (no error)
+        # for blocks under its minimum cacheable size rather than
+        # rejecting the request.
+        "system": [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
         "messages": [{"role": "user", "content": user_prompt}],
     }
 
@@ -215,6 +223,9 @@ def generate_slide_note(
     usage = {
         "input_tokens": response.usage.input_tokens,
         "output_tokens": response.usage.output_tokens,
+        # present only when prompt caching is active on this response
+        "cache_creation_input_tokens": getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
+        "cache_read_input_tokens": getattr(response.usage, "cache_read_input_tokens", 0) or 0,
     }
 
     _write_json_atomic(
@@ -227,9 +238,13 @@ def generate_slide_note(
         },
     )
 
+    cache_note = (
+        f" cache_read={usage['cache_read_input_tokens']}" if usage["cache_read_input_tokens"] else
+        f" cache_write={usage['cache_creation_input_tokens']}" if usage["cache_creation_input_tokens"] else ""
+    )
     print(
         f"  [{index}/{total}] slide {slide_number}: ok "
-        f"(input={usage['input_tokens']} output={usage['output_tokens']} tokens)"
+        f"(input={usage['input_tokens']} output={usage['output_tokens']} tokens{cache_note})"
     )
 
     return {
@@ -272,6 +287,8 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
     failed_slides = []
     total_input_tokens = 0
     total_output_tokens = 0
+    total_cache_write_tokens = 0
+    total_cache_read_tokens = 0
 
     # Per-slide calls are independent, so issue them concurrently — the
     # stage's wall time is pure API latency otherwise. Results are collected
@@ -322,6 +339,8 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
         usage = result["usage"]
         total_input_tokens += usage["input_tokens"]
         total_output_tokens += usage["output_tokens"]
+        total_cache_write_tokens += usage.get("cache_creation_input_tokens", 0)
+        total_cache_read_tokens += usage.get("cache_read_input_tokens", 0)
         note = add_slide_number_to_heading(result["text"], position)
         if image_line:
             # image goes directly under the slide's heading line
@@ -367,9 +386,13 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
     _write_text_atomic(output_path, "\n".join(md_parts))
 
     status = f" ({len(failed_slides)} slide(s) failed)" if failed_slides else ""
+    cache_summary = (
+        f" cache_write={total_cache_write_tokens} cache_read={total_cache_read_tokens}"
+        if (total_cache_write_tokens or total_cache_read_tokens) else ""
+    )
     print(
         f"[done] {lecture_id}: wrote notes -> {output_path}{status} "
-        f"(total tokens: input={total_input_tokens} output={total_output_tokens})"
+        f"(total tokens: input={total_input_tokens} output={total_output_tokens}{cache_summary})"
     )
 
     return True

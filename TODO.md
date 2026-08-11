@@ -166,10 +166,27 @@ the working checklist, that one is the record of *why*.
       vision OCR or a multimodal "which slide is this" approach, both
       real design decisions (cost, privacy, new dependency) left for when
       OCR quality is actually the bottleneck someone hits.
-- [ ] **Anthropic Batch API + prompt caching for stage 6** — batch halves
-      cost for non-urgent runs; caching the repeated system prompt cuts
-      per-slide cost further. Both are drop-in changes inside
-      `06_generate_notes.py`.
+- [x] **Prompt caching for stage 6 — done. Batch API — deliberately not
+      done, turned out not to be the drop-in change the TODO assumed.**
+      `SYSTEM_PROMPT` (identical across every slide of every lecture) now
+      goes in as a `cache_control: {"type": "ephemeral"}` content block
+      instead of a plain string; cache read/write token counts are
+      captured in `usage` and surfaced in both the per-slide and
+      per-lecture log lines. Safe to ship even though the prompt's real
+      token count relative to the caching minimum wasn't verified — the
+      API silently skips caching for under-minimum blocks rather than
+      erroring. **Not live-tested against a real API call** (would spend
+      real API credits; didn't do that without asking — happy to run a
+      cheap one-slide smoke test if you want it verified before relying
+      on it).
+      Batch API turned out to conflict with something real, not just be
+      extra work: it's async/polled, but the web UI's live per-slide
+      progress bar (`webui/progress.py`'s `_RE_NOTES` regex) depends on
+      stage 6 streaming `[i/N] slide ...` lines to stdout as each call
+      finishes — switching to Batch would trade that away for the cost
+      cut. Worth doing later as an explicit opt-in mode (e.g. `--batch`
+      falls back to an indeterminate spinner like stages 2/5/7 already
+      do), not as a silent default swap.
 - [ ] **Cross-lecture topic index** — the `TODO` already in
       `07_assemble.py`: an optional second LLM pass over the *assembled*
       guide to surface connections that span multiple lectures (common
