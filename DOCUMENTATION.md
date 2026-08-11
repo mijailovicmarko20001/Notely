@@ -356,5 +356,8 @@ The same seam-thinking applies to other pipeline organs:
   non-empty-but-corrupt artifact that `artifact_ok` would trust as done,
   silently corrupting resume. All stage 1-7 outputs + the Review tab's
   timeline rewrite now go through a temp-file-then-atomic-rename helper.
-- **Truncated overviews** from the 1024-token era remain in some lecture
-  files until those lectures' notes are regenerated.
+- ~~Truncated overviews~~ from the 1024-token era — checked 2026-08-11: all
+  22 `output/notes/*.md` files were generated in one batch that already
+  post-dates the token-cap fix (mtimes 16:38-17:03 that evening), and a
+  heuristic scan found no abrupt overview endings. Moot; no regeneration
+  needed.

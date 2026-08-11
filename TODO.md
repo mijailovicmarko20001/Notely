@@ -59,11 +59,13 @@ the working checklist, that one is the record of *why*.
       lectures — see `DOCUMENTATION.md` §3 for the full investigation.
       lecture01's known case remains fixed only via its existing manual
       timeline correction.
-- [ ] **Regenerate any lecture notes from before the token-cap fix.** Early
-      overviews were generated with a 1024-token cap that truncated
-      mid-word; the fix (2048, later 8192) landed 2026-08-11. Grep
-      `output/notes/*.md` for overviews that end abruptly and re-run stage 6
-      for just those lectures.
+- [x] **Regenerate any lecture notes from before the token-cap fix — turned
+      out to be moot.** Checked file mtimes: all 22 `output/notes/*.md`
+      files were generated in one batch on 2026-08-11 16:38-17:03, which
+      post-dates the token-cap fix. Also ran a heuristic scan (every
+      lecture's "Pregled predavanja" overview section, checking for missing
+      terminal punctuation before the next heading) — zero abrupt endings
+      found. No regeneration needed, no API cost incurred.
 - [x] **Dedupe the pooled slide deck at merge time.** `/api/slides/upload-pool`
       now skips pages whose normalized text exactly matches one already
       kept (empty-text/image-only pages are always kept, never deduped
@@ -110,9 +112,15 @@ the working checklist, that one is the record of *why*.
       temp files) — did not force-rerun any real stage against production
       output, since that would have destroyed lecture01's manually
       corrected timeline.
-- [ ] **amd64 Docker build is untested** (`docker buildx --platform
-      linux/amd64 build .`) — needed before handing this to Intel/Windows
-      students; only Apple Silicon has been validated so far.
+- [ ] **amd64 Docker build is untested.** Checked what it'd take: `buildx`
+      isn't installed on this machine (only `docker-compose` is), so
+      testing it means installing new tooling (`brew install docker-buildx`)
+      and running a QEMU-emulated build of a 2.47GB image — both a real
+      system change and likely a long-running one. Didn't do either without
+      checking first, especially since Docker's own future here is already
+      an open question (the item above). Worth revisiting once that's
+      decided — no point verifying amd64 support for a packaging approach
+      that might get dropped.
 
 ## P2 — larger, optional roadmap items
 
