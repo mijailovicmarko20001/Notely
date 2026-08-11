@@ -339,9 +339,14 @@ The same seam-thinking applies to other pipeline organs:
   linux/amd64`) — needed for Intel/Windows students.
 - ~~Web UI guide tab renders raw markdown~~ — fixed 2026-08-11: renders
   client-side (marked.js + MathJax, both CDN) instead of plain text.
-- **No test suite** — the scheduler and progress parsers have ad-hoc test
-  scripts from development (worth formalizing into `tests/`); the pipeline
-  itself is validated by artifact inspection.
+- ~~No test suite~~ — added 2026-08-11: `tests/` (pytest, dev-only dep) —
+  50 tests covering `webui/progress.py` (stdout parsing + artifact-existence
+  checks), `webui/jobs.py` (`build_tasks` + the scheduler's pure
+  dependency/claim/settled logic), stage 4's matcher (margin/stay_margin/
+  min_forward_score behavior on synthetic cases + `collapse_to_timeline`),
+  and stage 5's duplicate-slide canonicalization. Run: `pytest tests/ -q`.
+  The pipeline's actual output is still validated by artifact inspection,
+  not these tests — they cover the orchestration/algorithm logic around it.
 - ~~In-memory job state~~ — investigated 2026-08-11: the transient
   run-status view is lost on restart, but that's cosmetic (artifact-
   existence-based success already makes re-running after a restart

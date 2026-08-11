@@ -83,10 +83,13 @@ the working checklist, that one is the record of *why*.
       against real `study_guide.md` content (Node, isolated from the CDN
       dependency) and a live server smoke test (`/api/guide`, `/static/app.js`,
       and a sample slide image all 200).
-- [ ] **No test suite.** The scheduler (`webui/jobs.py`) and progress
-      parsers (`webui/progress.py`) have ad-hoc dev scripts from
-      debugging — worth formalizing into `tests/` so scheduler/lane logic
-      doesn't silently regress.
+- [x] **No test suite.** Added `tests/` (pytest, dev-only dependency —
+      `.venv/bin/pytest tests/ -q`): 50 tests across `webui/progress.py`,
+      `webui/jobs.py`'s `build_tasks` + scheduler helpers, stage 4's
+      matcher (including the new `min_forward_score` behavior, on synthetic
+      cases hand-verified against the algorithm), stage 4's
+      `collapse_to_timeline`, and stage 5's duplicate-slide
+      canonicalization. All passing.
 - [x] **In-memory job state — investigated, found a sharper underlying bug
       and fixed that instead.** The transient run-status view (which task is
       running, live log) is genuinely lost on restart, but that's mostly

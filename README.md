@@ -58,6 +58,13 @@ platforms stick with `requirements.txt`.
 The pipeline stages are also runnable individually — see `scripts/*.py --help`
 for each stage's flags.
 
+Run the test suite (scheduler + progress-parsing + stage-4 matcher logic;
+`pytest` is a dev-only dependency, already in `requirements.txt`):
+
+```
+.venv/bin/pytest tests/ -q
+```
+
 Full technical documentation — architecture, engineering decisions, every
 hardcoded value, and the improvement roadmap — lives in `DOCUMENTATION.md`
 (`CLAUDE.md` holds the original design spec).

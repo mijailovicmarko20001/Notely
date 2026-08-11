@@ -19,3 +19,6 @@ markdown>=3.5                  # md -> HTML for PDF export (stage 08)
 fastapi>=0.115
 uvicorn[standard]>=0.30
 python-multipart>=0.0.9        # FastAPI file uploads
+
+# Dev/test only (not needed to run the pipeline or web UI)
+pytest>=8.0
