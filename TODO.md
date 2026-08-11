@@ -7,20 +7,18 @@ the working checklist, that one is the record of *why*.
 
 ## P0 — housekeeping / risk
 
-- [ ] **No git repo at all.** Everything here is unversioned — no history,
-      no rollback, no diffing. `git init`, add a `.gitignore`
-      (`.venv/`, `data/`, `output/`, `input/videos/`, `input/slides/` (large
-      binaries — decide if these belong in git or stay local-only), `*.pyc`,
-      `__pycache__/`, `.env`, `.DS_Store`), then first commit.
-- [ ] **`.env` currently holds a live `ANTHROPIC_API_KEY` in plaintext** in a
-      project with no `.gitignore` yet — do the gitignore *before* `git add .`
-      so the key never enters history by accident.
-- [ ] **`.env.example` is stale.** It's missing `WHISPER_LANGUAGE`,
-      `WHISPER_BACKEND`, `WHISPER_MLX_REPO`, `OCR_LANG` — all four are read
-      by the scripts/webui and set in the real `.env`. Its `WHISPER_MODEL`
-      default (`small`) also contradicts the benchmarked recommendation
-      (`large-v3-turbo`) recorded in `DOCUMENTATION.md` §4.1. A student
-      copying `.env.example` today gets a worse, incomplete config.
+- [x] **No git repo at all.** Done 2026-08-11: `git init` + `.gitignore`
+      (`.venv/`, `data/`, `output/`, `input/videos/`, `input/slides/`,
+      `*.pyc`, `__pycache__/`, `.env`, `data/.env`, `.DS_Store`, real
+      `input/video_urls.json`/`lectures.json`) + first commit. Verified
+      no secrets/binaries staged before committing.
+- [x] **`.env` secret risk.** Covered by the `.gitignore` above — confirmed
+      `.env`/`data/.env` excluded before the first `git add`.
+- [x] **`.env.example` was stale.** Rewritten to cover every env var the
+      scripts/webui actually read (`WHISPER_LANGUAGE`, `WHISPER_BACKEND`,
+      `WHISPER_MLX_REPO`, `WHISPER_COMPUTE`/`WHISPER_CPU_THREADS`,
+      `OCR_LANG`, `NOTES_CONCURRENCY`, `NOTES_EMBED_IMAGES`), with defaults
+      matching the code and notes on which are course-specific tuning.
 - [ ] **Two divergent data trees exist**: top-level `input/`/`output/`
       (fully populated — all 22 lectures processed, `study_guide.md` +
       `.pdf` present) vs `data/input/`/`data/output/` (the Docker
@@ -29,15 +27,20 @@ the working checklist, that one is the record of *why*.
       the "real" home going forward. Decide and either delete `data/`'s
       partial contents or migrate/re-run the full course through
       `docker compose up` so the two trees don't silently disagree.
+      **Needs a decision — not resolved.**
 - [ ] **Confirm the pending human spot-check actually happened.** Per
       `CLAUDE.md`'s validation section and prior session notes, a manual
       check of `slide_timeline.json` + generated notes against the real
       video was still outstanding as of the last update. All 22 lectures'
       notes now exist — worth explicitly confirming at least lecture01 and
       one or two others were checked before trusting the rest of the batch.
-- [ ] **Pin dependencies.** `requirements.txt` uses loose `>=` pins
-      throughout — reproducibility/supply-chain risk before any wider
-      distribution. Freeze into a constraints file.
+      **Needs user confirmation — not resolved.**
+- [x] **Pin dependencies.** Added `requirements-lock.txt` (exact `pip
+      freeze` of the validated dev `.venv`, macOS arm64) alongside the
+      existing loose `requirements.txt`; README's dev-mode section now
+      mentions it. Not swapped in as the default install path — that'd be
+      a bigger call (breaks cross-platform Docker builds, which need the
+      loose pins) — flagging that trade-off rather than deciding it here.
 
 ## P1 — correctness & quality (documented gaps worth closing)
 

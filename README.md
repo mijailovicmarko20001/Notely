@@ -48,6 +48,10 @@ brew install ffmpeg tesseract tesseract-lang   # macOS
 .venv/bin/uvicorn webui.main:app --port 8000
 ```
 
+For an exact reproducible install (macOS arm64, matches the validated dev
+environment) use `pip install -r requirements-lock.txt` instead; on other
+platforms stick with `requirements.txt`.
+
 The pipeline stages are also runnable individually — see `scripts/*.py --help`
 for each stage's flags.
 
