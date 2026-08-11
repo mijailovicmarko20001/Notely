@@ -1,0 +1,9 @@
+services:
+  notely:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # Everything persistent — your videos, slides, generated notes, API key,
+      # and the downloaded transcription model — lives in ./data on your machine.
+      - ./data:/app/data

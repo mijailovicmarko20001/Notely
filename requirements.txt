@@ -1,0 +1,21 @@
+# Pipeline dependencies
+anthropic>=0.40
+faster-whisper>=1.1
+# Apple-GPU transcription backend (WHISPER_BACKEND=mlx): ~4x faster than CPU
+mlx-whisper>=0.4; sys_platform == "darwin" and platform_machine == "arm64"
+opencv-python-headless>=4.10   # headless: no GUI libs needed (Docker-friendly); cv2 API-identical
+numpy>=1.26
+scikit-learn>=1.4
+pytesseract>=0.3.10
+pillow>=10.0
+PyMuPDF>=1.24
+python-pptx>=1.0
+python-dotenv>=1.0
+yt-dlp>=2025.1.1               # must be in the same interpreter: stage 00 runs [sys.executable, -m, yt_dlp]
+
+markdown>=3.5                  # md -> HTML for PDF export (stage 08)
+
+# Web UI
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9        # FastAPI file uploads

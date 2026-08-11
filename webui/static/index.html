@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notely — Lecture Study Notes</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>📚 Notely</h1>
+  <nav id="tabs">
+    <button data-tab="setup">Setup</button>
+    <button data-tab="sources">Lectures &amp; Slides</button>
+    <button data-tab="run">Run</button>
+    <button data-tab="review">Review</button>
+    <button data-tab="guide">Study Guide</button>
+  </nav>
+</header>
+
+<main>
+  <!-- SETUP -->
+  <section id="tab-setup" class="tab">
+    <h2>Environment check</h2>
+    <div id="preflight" class="card">Checking…</div>
+    <h2>Settings</h2>
+    <div class="card">
+      <label>Anthropic API key
+        <input type="password" id="set-key" placeholder="sk-ant-…">
+        <small>Needed only for note generation (stage 6). Everything else runs without it.
+          Get one at console.anthropic.com — a full lecture costs a few cents.</small>
+      </label>
+      <label>Whisper model
+        <select id="set-whisper">
+          <option value="small">small (faster, lower quality)</option>
+          <option value="medium" selected>medium (recommended)</option>
+          <option value="large-v3">large-v3 (slowest, best)</option>
+        </select>
+        <small>First use downloads the model (~1.5 GB for medium).</small>
+      </label>
+      <label>OCR language(s)
+        <input type="text" id="set-ocr" placeholder="srp_latn+eng">
+        <small>Tesseract language codes joined by “+”, matching the slide language.</small>
+      </label>
+      <div class="row">
+        <button id="btn-save-settings" class="primary">Save settings</button>
+        <button id="btn-test-key">Test API key</button>
+        <span id="settings-status"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- SOURCES -->
+  <section id="tab-sources" class="tab">
+    <h2>1 · Add lecture videos</h2>
+    <div class="card">
+      <label>YouTube playlist or video URL
+        <div class="row">
+          <input type="text" id="playlist-url" placeholder="https://www.youtube.com/playlist?list=…">
+          <button id="btn-expand" class="primary">Look up</button>
+        </div>
+      </label>
+      <div id="playlist-result"></div>
+    </div>
+    <h2>2 · Upload slide decks</h2>
+    <div class="card">
+      <p>Pick one or more PDF/PPTX decks. Each deck is matched to a lecture by the number in its
+        filename (e.g. <code>lecture03.pdf</code>, <code>week3.pptx</code>) — adjust below if the guess
+        is wrong. One deck may cover several lectures.</p>
+      <input type="file" id="deck-file" accept=".pdf,.pptx" multiple>
+      <div id="deck-mapping"></div>
+      <div class="row">
+        <button id="btn-upload" class="primary" hidden>Upload all</button>
+        <button id="btn-upload-pool" hidden>Don't know the pairing — combine all decks</button>
+        <span id="upload-status"></span>
+      </div>
+      <p class="hint">“Combine all decks” merges every selected PDF into one big deck shared by all
+        lectures — the matcher then works out from each video which slides were actually shown.
+        No pairing needed; expect a longer slide-extraction step and give the Review tab a look
+        afterwards.</p>
+    </div>
+    <h2>Current lectures</h2>
+    <div id="lecture-table" class="card">No lectures yet.</div>
+  </section>
+
+  <!-- RUN -->
+  <section id="tab-run" class="tab">
+    <h2>Run the pipeline</h2>
+    <div class="card">
+      <label>Lectures <span class="hint">(click to toggle; all selected by default)</span></label>
+      <div class="chip-list" id="run-lectures"></div>
+      <label>Stages <span class="hint">(click to toggle)</span></label>
+      <div class="chip-list" id="run-stages">
+        <label class="chip"><input type="checkbox" value="0" checked> 0 · Fetch video</label>
+        <label class="chip"><input type="checkbox" value="1" checked> 1 · Transcribe</label>
+        <label class="chip"><input type="checkbox" value="2" checked> 2 · Extract slides</label>
+        <label class="chip"><input type="checkbox" value="3" checked> 3 · Detect slide changes</label>
+        <label class="chip"><input type="checkbox" value="4" checked> 4 · Match frames</label>
+        <label class="chip"><input type="checkbox" value="5" checked> 5 · Segment transcript</label>
+        <label class="chip"><input type="checkbox" value="6" checked> 6 · Generate notes</label>
+        <label class="chip"><input type="checkbox" value="7" checked> 7 · Assemble guide</label>
+      </div>
+      <label class="chip" style="margin-top:.4rem"><input type="checkbox" id="run-force"> Re-do stages that already ran</label>
+      <details><summary>Advanced (per-stage tuning)</summary>
+        <div class="row wrap" id="adv-options">
+          <label>Crop (x,y,w,h) <input id="opt-crop" size="18"></label>
+          <label>Change threshold <input id="opt-threshold" size="6"></label>
+          <label>Sample interval s <input id="opt-interval" size="6"></label>
+          <label>OCR lang <input id="opt-ocr_lang" size="12"></label>
+          <label>Min dwell s <input id="opt-min_dwell" size="6"></label>
+        </div>
+      </details>
+      <div class="row">
+        <button id="btn-start" class="primary">Start</button>
+        <button id="btn-cancel" hidden>Cancel</button>
+        <span id="run-status"></span>
+      </div>
+      <p class="hint">Transcription runs on your CPU — expect roughly the lecture's own duration
+        (or more) per lecture with the medium model. Leave the tab open or come back later;
+        progress survives reloads.</p>
+    </div>
+    <div id="job-view"></div>
+    <details id="log-wrap"><summary>Log</summary><pre id="job-log"></pre></details>
+  </section>
+
+  <!-- REVIEW -->
+  <section id="tab-review" class="tab">
+    <h2>Review slide matching</h2>
+    <p class="hint">The matcher flags what it wasn't sure about. Fix anything that's wrong,
+      then “Apply” — notes are rebuilt automatically. Slides that never appear are usually
+      just slides the professor didn't show (decks often span several lectures).</p>
+    <div class="row">
+      <select id="review-lecture"></select>
+      <button id="btn-load-review" class="primary">Load</button>
+    </div>
+    <div id="review-body"></div>
+    <div class="row" id="review-apply-row" hidden>
+      <button id="btn-apply-review" class="primary">Apply corrections &amp; rebuild notes</button>
+      <span id="review-status"></span>
+    </div>
+  </section>
+
+  <!-- GUIDE -->
+  <section id="tab-guide" class="tab">
+    <h2>Study guide</h2>
+    <div class="row">
+      <a id="guide-download" class="button" href="/files/study_guide.md" download hidden>Download markdown</a>
+      <a id="guide-pdf" class="button" href="/api/guide/pdf" hidden>Download PDF</a>
+      <button id="btn-refresh-guide">Refresh</button>
+    </div>
+    <article id="guide-body" class="card">Nothing assembled yet — run the pipeline first.</article>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

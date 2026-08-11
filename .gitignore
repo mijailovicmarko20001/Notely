@@ -1,0 +1,27 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Secrets — never commit real API keys
+.env
+data/.env
+
+# Course materials & generated pipeline artifacts.
+# These are large binaries (videos, rendered slide PNGs, whisper caches,
+# study guides) and, per CLAUDE.md, aren't ours to redistribute — personal
+# study use only. Keep the pipeline scripts/config in git, not their output.
+input/videos/
+input/slides/
+output/
+data/
+
+# Per-course config (contains this course's actual YouTube links / lecture
+# ids) — keep the .example templates in git, not the real files.
+input/video_urls.json
+input/lectures.json
+
+# Editor / OS
+.DS_Store
+.claude/settings.local.json

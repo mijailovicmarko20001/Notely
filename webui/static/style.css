@@ -1,0 +1,49 @@
+:root {
+  --bg: #f7f7f5; --fg: #1a1a1a; --card: #ffffff; --line: #ddd;
+  --accent: #4a5fc1; --ok: #2e7d32; --warn: #b26a00; --err: #c62828;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+header { display: flex; align-items: center; gap: 2rem; padding: .6rem 1.2rem; background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+h1 { font-size: 1.15rem; margin: 0; }
+nav button { background: none; border: none; padding: .5rem .9rem; font-size: .95rem; cursor: pointer; border-radius: 6px; color: var(--fg); }
+nav button.active { background: var(--accent); color: #fff; }
+main { max-width: 980px; margin: 0 auto; padding: 1rem 1.2rem 4rem; }
+.tab { display: none; }
+.tab.active { display: block; }
+h2 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+label { display: block; margin: .6rem 0; font-weight: 600; }
+label small { display: block; font-weight: 400; color: #666; }
+input[type=text], input[type=password], select { font: inherit; padding: .45rem .6rem; border: 1px solid var(--line); border-radius: 6px; width: 100%; max-width: 30rem; }
+select[multiple] { min-width: 14rem; }
+.row { display: flex; gap: .8rem; align-items: center; flex-wrap: nowrap; margin: .6rem 0; }
+.row.wrap { flex-wrap: wrap; }
+.row input { width: auto; }
+button, .button { font: inherit; padding: .5rem 1rem; border-radius: 6px; border: 1px solid var(--line); background: var(--card); cursor: pointer; text-decoration: none; color: var(--fg); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+.hint { color: #666; font-size: .88rem; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: .35rem .6rem; border-bottom: 1px solid var(--line); font-size: .9rem; }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); }
+.stage-dots span { display: inline-block; width: .8rem; height: .8rem; border-radius: 50%; background: #ccc; margin-right: 3px; }
+.stage-dots span.done { background: var(--ok); }
+.task { display: flex; align-items: center; gap: .8rem; padding: .45rem .6rem; border-bottom: 1px solid var(--line); }
+.task .name { flex: 1; }
+.task progress { width: 180px; }
+.task .status-done { color: var(--ok); } .task .status-failed, .task .status-blocked { color: var(--err); }
+.task .status-running { color: var(--accent); } .task .status-cancelled, .task .status-skipped { color: #888; }
+#job-log { max-height: 300px; overflow: auto; background: #111; color: #ddd; padding: .8rem; border-radius: 8px; font-size: .8rem; }
+.review-item { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: .8rem; align-items: start; border: 1px solid var(--line); border-radius: 10px; padding: .8rem; margin: .8rem 0; background: var(--card); }
+.review-item img { max-width: 100%; border: 1px solid var(--line); border-radius: 6px; }
+.review-item .meta { font-size: .85rem; color: #555; }
+.slide-pick { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+.corrected { outline: 2px solid var(--accent); }
+article#guide-body { white-space: pre-wrap; font-size: .92rem; max-height: 70vh; overflow: auto; }
+.pill { display: inline-block; padding: .05rem .5rem; border-radius: 99px; font-size: .78rem; background: #eee; margin-left: .4rem; }
+.deck-row { border: 1px solid var(--line); border-radius: 10px; padding: .7rem .9rem; margin: .6rem 0; background: var(--card); }
+.chip-list { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .4rem; }
+.chip { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid var(--line); border-radius: 99px; padding: .25rem .7rem; font-weight: 400; font-size: .85rem; cursor: pointer; margin: 0; user-select: none; }
+.chip:has(input:checked) { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip input { accent-color: #fff; margin: 0; }
