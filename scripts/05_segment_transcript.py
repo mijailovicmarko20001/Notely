@@ -17,6 +17,7 @@ Output:
 """
 
 import json
+import os
 import sys
 import argparse
 from pathlib import Path
@@ -34,10 +35,14 @@ def load_json(path):
 
 
 def save_json(path, data):
-    """Save JSON to file."""
+    """Save JSON via a temp file + atomic rename, so a killed process never
+    leaves a truncated-but-non-empty artifact that a later run's
+    exists()-and-nonempty skip check would wrongly trust as done."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, 'w') as f:
+    tmp = path.with_name(f"{path.name}.tmp{os.getpid()}")
+    with open(tmp, 'w') as f:
         json.dump(data, f, indent=2)
+    tmp.replace(path)
 
 
 def assign_transcript_to_runs(timeline, transcript_segments):

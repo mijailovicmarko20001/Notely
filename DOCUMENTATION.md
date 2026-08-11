@@ -337,13 +337,19 @@ The same seam-thinking applies to other pipeline organs:
   less ambiguous than the current 936-slide one).
 - **amd64 Docker build** is untested (`docker buildx --platform
   linux/amd64`) — needed for Intel/Windows students.
-- **Web UI guide tab renders raw markdown** — no images/math; the PDF is
-  the polished view. A small client-side renderer would close that gap.
+- ~~Web UI guide tab renders raw markdown~~ — fixed 2026-08-11: renders
+  client-side (marked.js + MathJax, both CDN) instead of plain text.
 - **No test suite** — the scheduler and progress parsers have ad-hoc test
   scripts from development (worth formalizing into `tests/`); the pipeline
   itself is validated by artifact inspection.
-- **In-memory job state** — a server restart forgets the running job
-  (subprocesses die with it). Fine for a single-user tool; persisting the
-  queue would allow resume-after-restart.
+- ~~In-memory job state~~ — investigated 2026-08-11: the transient
+  run-status view is lost on restart, but that's cosmetic (artifact-
+  existence-based success already makes re-running after a restart
+  skip-and-continue for free). Found and fixed a sharper bug behind the
+  same symptom instead: every stage wrote its output with plain
+  `open(path, "w")`, so a process killed mid-write could leave a
+  non-empty-but-corrupt artifact that `artifact_ok` would trust as done,
+  silently corrupting resume. All stage 1-7 outputs + the Review tab's
+  timeline rewrite now go through a temp-file-then-atomic-rename helper.
 - **Truncated overviews** from the 1024-token era remain in some lecture
   files until those lectures' notes are regenerated.

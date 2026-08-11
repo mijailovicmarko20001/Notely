@@ -47,6 +47,7 @@ Notes:
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -215,8 +216,13 @@ def process_lecture(
     events = detect_events(video_path, interval, threshold, crop, frames_dir)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    with open(output_json, "w", encoding="utf-8") as f:
+    # Temp file + atomic rename: a killed process can never leave a
+    # truncated-but-non-empty artifact that a later run's exists()-and-
+    # nonempty skip check would wrongly trust as done.
+    tmp_json = output_json.with_name(f"{output_json.name}.tmp{os.getpid()}")
+    with open(tmp_json, "w", encoding="utf-8") as f:
         json.dump(events, f, indent=2)
+    tmp_json.replace(output_json)
 
     print(f"[done] {lecture_id}: {len(events)} frame events -> {output_json}")
 

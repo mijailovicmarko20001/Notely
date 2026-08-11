@@ -6,6 +6,7 @@ manual fixes done for lecture01) and stage 05+ is re-run with --force.
 """
 
 import json
+import os
 import time
 
 from .config import OUTPUT_DIR
@@ -106,6 +107,11 @@ def apply_corrections(lecture_id: str, corrections: list) -> dict:
             merged.append(e)
     data["timeline"] = merged
 
-    with open(timeline_path, "w") as f:
+    # Temp file + atomic rename: a killed process (e.g. the server restarts
+    # mid-request) can never leave a truncated-but-non-empty timeline that
+    # stage 4's own exists()-and-nonempty skip check would wrongly trust.
+    tmp_path = timeline_path.with_name(f"{timeline_path.name}.tmp{os.getpid()}")
+    with open(tmp_path, "w") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    tmp_path.replace(timeline_path)
     return {"applied": applied, "timeline_entries": len(merged)}

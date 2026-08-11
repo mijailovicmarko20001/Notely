@@ -16,6 +16,7 @@ Optional cross-lecture LLM pass left as TODO.
 
 import sys
 import json
+import os
 import argparse
 from pathlib import Path
 
@@ -109,10 +110,14 @@ def assemble_guide(force=False):
     toc = build_table_of_contents(lectures)
     full_guide = toc + '\n'.join(content_parts)
 
-    # Write output
+    # Write output. Temp file + atomic rename: a killed process can never
+    # leave a truncated-but-non-empty study_guide.md that a later run's
+    # exists()-and-nonempty skip check would wrongly trust as done.
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, 'w') as f:
+    tmp_output = output_path.with_name(f"{output_path.name}.tmp{os.getpid()}")
+    with open(tmp_output, 'w') as f:
         f.write(full_guide)
+    tmp_output.replace(output_path)
 
     print(f"Study guide assembled into {output_path}")
     print(f"Included {len(lectures)} lectures: {', '.join(lectures)}")

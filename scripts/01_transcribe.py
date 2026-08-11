@@ -144,8 +144,13 @@ def transcribe_lecture(lecture_id: str, model_size: str, force: bool = False) ->
                 lecture_id, tmp_wav_path, model_size, forced_language, vocab_prompt
             )
 
-        with open(output_path, "w", encoding="utf-8") as f:
+        # Temp file + atomic rename: a killed process (SIGKILL, docker stop,
+        # host crash) can never leave a truncated-but-non-empty transcript
+        # that the next run's exists()-and-nonempty skip check would trust.
+        tmp_output = output_path.with_name(f"{output_path.name}.tmp{os.getpid()}")
+        with open(tmp_output, "w", encoding="utf-8") as f:
             json.dump(transcript, f, ensure_ascii=False, indent=2)
+        tmp_output.replace(output_path)
 
         print(f"[done] {lecture_id}: wrote {len(transcript['segments'])} segments -> {output_path}")
 

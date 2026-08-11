@@ -87,10 +87,26 @@ the working checklist, that one is the record of *why*.
       parsers (`webui/progress.py`) have ad-hoc dev scripts from
       debugging — worth formalizing into `tests/` so scheduler/lane logic
       doesn't silently regress.
-- [ ] **In-memory job state.** A server restart forgets the running job
-      (subprocesses die with it) — fine for single-user local use, but
-      annoying mid-batch-run. Consider persisting the queue/lane state so a
-      restart can resume rather than requiring a manual re-kick.
+- [x] **In-memory job state — investigated, found a sharper underlying bug
+      and fixed that instead.** The transient run-status view (which task is
+      running, live log) is genuinely lost on restart, but that's mostly
+      cosmetic: success is judged by artifact existence
+      (`progress.py::artifact_ok`), so re-clicking Run after a restart
+      already skips completed stages and continues — no queue-persistence
+      layer needed for that part. The real bug: every stage wrote its
+      output with a plain `open(path, "w")`, which truncates immediately.
+      A process killed mid-write (the exact scenario a restart implies)
+      could leave a non-empty-but-corrupt artifact that `artifact_ok`
+      (exists + size > 0) would trust as done — the next run would skip
+      re-generating it, and the following stage would crash loading invalid
+      JSON. Fixed by writing every gating artifact (stages 1-7's JSON/MD
+      outputs, plus the Review tab's timeline rewrite) via a temp file +
+      atomic rename, so a kill can only ever leave the *old* artifact or
+      the *complete new one*, never a partial one. Verified the helpers in
+      isolation (content correctness, overwrite, nested dirs, zero leftover
+      temp files) — did not force-rerun any real stage against production
+      output, since that would have destroyed lecture01's manually
+      corrected timeline.
 - [ ] **amd64 Docker build is untested** (`docker buildx --platform
       linux/amd64 build .`) — needed before handing this to Intel/Windows
       students; only Apple Silicon has been validated so far.

@@ -93,6 +93,27 @@ def load_dotenv_if_available() -> None:
         pass
 
 
+def _write_json_atomic(path: Path, data) -> None:
+    """Write via a temp file + atomic rename so a killed process never
+    leaves a truncated-but-non-empty file behind."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp{os.getpid()}")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    tmp.replace(path)
+
+
+def _write_text_atomic(path: Path, text: str) -> None:
+    """Same guarantee as _write_json_atomic, for the final notes/<id>.md —
+    the one file webui/progress.py::artifact_ok checks to decide stage 6
+    is done and skippable on a later run."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp{os.getpid()}")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+    tmp.replace(path)
+
+
 def add_slide_number_to_heading(note_text: str, slide_number) -> str:
     """
     Deterministically prefix the note's first `##` heading with its slide
@@ -171,19 +192,16 @@ def generate_slide_note(
         response = client.messages.create(**request_payload)
     except anthropic_mod.APIError as e:
         print(f"  [{index}/{total}] slide {slide_number}: ERROR: {e}", file=sys.stderr)
-        with open(raw_path, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "prompt": request_payload,
-                    "response": None,
-                    "model": model,
-                    "usage": None,
-                    "error": str(e),
-                },
-                f,
-                indent=2,
-                ensure_ascii=False,
-            )
+        _write_json_atomic(
+            raw_path,
+            {
+                "prompt": request_payload,
+                "response": None,
+                "model": model,
+                "usage": None,
+                "error": str(e),
+            },
+        )
         return {
             "skipped": False,
             "error": True,
@@ -199,18 +217,15 @@ def generate_slide_note(
         "output_tokens": response.usage.output_tokens,
     }
 
-    with open(raw_path, "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "prompt": request_payload,
-                "response": note_text,
-                "model": model,
-                "usage": usage,
-            },
-            f,
-            indent=2,
-            ensure_ascii=False,
-        )
+    _write_json_atomic(
+        raw_path,
+        {
+            "prompt": request_payload,
+            "response": note_text,
+            "model": model,
+            "usage": usage,
+        },
+    )
 
     print(
         f"  [{index}/{total}] slide {slide_number}: ok "
@@ -349,9 +364,7 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
             + "\n"
         )
 
-    OUTPUT_NOTES_DIR.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(md_parts))
+    _write_text_atomic(output_path, "\n".join(md_parts))
 
     status = f" ({len(failed_slides)} slide(s) failed)" if failed_slides else ""
     print(

@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -170,7 +171,12 @@ def process_lecture(lecture_id: str, force: bool) -> None:
         return
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    out_json.write_text(json.dumps(slides, indent=2))
+    # Temp file + atomic rename: a killed process can never leave a
+    # truncated-but-non-empty artifact that a later run's exists()-and-
+    # nonempty skip check would wrongly trust as done.
+    tmp_json = out_json.with_name(f"{out_json.name}.tmp{os.getpid()}")
+    tmp_json.write_text(json.dumps(slides, indent=2))
+    tmp_json.replace(out_json)
     print(f"[{lecture_id}] wrote {len(slides)} slides -> {out_json}")
 
 

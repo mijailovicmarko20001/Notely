@@ -87,9 +87,17 @@ def load_json(path: Path):
 
 
 def save_json(path: Path, data) -> None:
+    """Write via a temp file + atomic rename so a killed process (SIGKILL,
+    docker stop, host crash) can never leave a truncated-but-non-empty
+    artifact — `path.exists() and size > 0` is exactly what
+    webui/progress.py::artifact_ok trusts to decide a stage is done and
+    skippable on the next run; a partial `open(path, "w")` write would pass
+    that check while being invalid JSON, silently corrupting resume."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
+    tmp = path.with_name(f"{path.name}.tmp{os.getpid()}")
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
+    tmp.replace(path)
 
 
 def ocr_frame(image_path: Path, lang: str = "eng") -> str:
