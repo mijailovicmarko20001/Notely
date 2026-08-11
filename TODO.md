@@ -138,14 +138,35 @@ the working checklist, that one is the record of *why*.
       deliberately left for when it's actually needed rather than done
       speculatively.
 
-- [ ] **Opt-in cloud transcription backend** (Groq-hosted Whisper, OpenAI,
-      Deepgram/AssemblyAI, ElevenLabs Scribe) for machines without a usable
-      GPU — the seam already exists (`WHISPER_BACKEND` dispatch in
-      `01_transcribe.py` returns a uniform `{language, segments}` shape).
-      Must stay opt-in and clearly labeled — recordings leaving the machine
-      is a real privacy trade-off for a project that's deliberately
-      local-first. Require segment/word-level timestamps (segmentation
-      depends on them) and keep the vocabulary-priming trick.
+- [x] **Opt-in cloud transcription backend — Groq implemented, needs a
+      live-account smoke test before trusting it.** `WHISPER_BACKEND=groq`
+      + `GROQ_API_KEY` in `01_transcribe.py::transcribe_with_groq`. Opt-in
+      only, never the default, clearly labeled as sending audio off-machine
+      (matches the privacy stance this item called for). Doesn't benefit
+      this project's own machine (already has the faster native `mlx`
+      path) — built for students without a usable GPU, per the reason this
+      item was on the list in the first place.
+      Encodes a compressed Opus/Ogg file for upload instead of reusing the
+      uncompressed WAV (Groq's ~25MB free-tier cap; the raw WAV blows past
+      that for anything over ~15 minutes) — a real, tested difference from
+      how `01_transcribe.py` was written before this. Returns segment-level
+      timestamps (`response_format=verbose_json`) and passes the same
+      vocabulary-priming prompt the other backends already build.
+      **Verification status, precisely:** no Groq API key was available to
+      test against, so the actual network round-trip is unverified — but
+      that gap is narrower than "written from docs and hoped": installed
+      the real `groq` SDK and checked its `transcriptions.create()`
+      signature matches what's called, then fed its response model a
+      synthetic verbose_json payload and confirmed `.language` comes back
+      via attribute access while `.segments` comes back as a list of
+      **plain dicts** (Pydantic `extra="allow"` doesn't recursively type
+      extra fields) — exactly what the dict-or-attribute `_groq_field`
+      helper is built to handle; pure attribute access would have crashed.
+      5 new unit tests cover that helper. Chunking for lectures whose
+      compressed audio still exceeds the cap is explicitly not
+      implemented — fails with a clear error pointing at the local
+      backends instead of a half-tested timestamp-restitching attempt.
+      Run one real lecture through it before trusting it for a batch.
 - [x] **Better OCR/matching, cheap first step done: image-hash pre-pass.**
       Added `frame_hash`/`hamming_distance` (dHash, PIL only, no new
       dependency) to stage 4: consecutive event frames within a small

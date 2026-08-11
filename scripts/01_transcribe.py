@@ -103,6 +103,26 @@ def extract_audio(video_path: Path, wav_path: Path) -> None:
         raise RuntimeError(f"ffmpeg failed extracting audio from {video_path}:\n{stderr}")
 
 
+def extract_audio_compressed(video_path: Path, out_path: Path, bitrate: str = "24k") -> None:
+    """Extract mono 16kHz audio directly from a video as compressed Opus/Ogg
+    -- for backends with an upload size cap (currently just Groq, see
+    transcribe_with_groq). Opus at 24kbps is a very small file for speech
+    while staying intelligible: a 90-minute lecture comes out around
+    16MB, comfortably under Groq's ~25MB free-tier limit, vs. ~170MB for
+    the uncompressed WAV every other backend uses."""
+    cmd = [
+        "ffmpeg", "-y", "-i", str(video_path),
+        "-vn", "-ac", "1", "-ar", "16000",
+        "-c:a", "libopus", "-b:a", bitrate,
+        str(out_path),
+    ]
+    print(f"[audio] extracting compressed audio: {video_path.name} -> {out_path.name} ({bitrate})")
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        stderr = result.stderr.decode(errors="replace")
+        raise RuntimeError(f"ffmpeg failed compressing audio from {video_path}:\n{stderr}")
+
+
 def transcribe_lecture(lecture_id: str, model_size: str, force: bool = False) -> None:
     """Transcribe a single lecture's video and write its transcript JSON."""
     video_path = INPUT_VIDEOS_DIR / f"{lecture_id}.mp4"
@@ -124,25 +144,35 @@ def transcribe_lecture(lecture_id: str, model_size: str, force: bool = False) ->
 
     # WHISPER_BACKEND=mlx uses Apple's MLX framework (M-series GPU): benchmarked
     # 20.1x realtime vs 5.2x for the CPU path on the same audio, same quality.
-    # Default remains faster-whisper — mlx only exists on Apple Silicon.
+    # WHISPER_BACKEND=groq sends audio to Groq's hosted Whisper API instead of
+    # transcribing locally -- opt-in only, see transcribe_with_groq. Default
+    # remains faster-whisper — mlx only exists on Apple Silicon, groq needs an
+    # API key and sends lecture audio off-machine.
     backend = os.environ.get("WHISPER_BACKEND", "faster-whisper").lower()
 
     try:
-        extract_audio(video_path, tmp_wav_path)
-
         forced_language = os.environ.get("WHISPER_LANGUAGE") or None
         vocab_prompt = build_vocabulary_prompt(lecture_id)
         if vocab_prompt:
             print(f"[whisper] {lecture_id}: priming with {len(vocab_prompt)} chars of slide vocabulary")
 
-        if backend == "mlx":
-            transcript = transcribe_with_mlx(
-                lecture_id, tmp_wav_path, model_size, forced_language, vocab_prompt
+        if backend == "groq":
+            # Groq does its own (compressed) audio extraction, since it needs
+            # a small upload rather than the uncompressed WAV the local
+            # backends use -- no need to also extract_audio() here.
+            transcript = transcribe_with_groq(
+                lecture_id, video_path, forced_language, vocab_prompt
             )
         else:
-            transcript = transcribe_with_faster_whisper(
-                lecture_id, tmp_wav_path, model_size, forced_language, vocab_prompt
-            )
+            extract_audio(video_path, tmp_wav_path)
+            if backend == "mlx":
+                transcript = transcribe_with_mlx(
+                    lecture_id, tmp_wav_path, model_size, forced_language, vocab_prompt
+                )
+            else:
+                transcript = transcribe_with_faster_whisper(
+                    lecture_id, tmp_wav_path, model_size, forced_language, vocab_prompt
+                )
 
         # Temp file + atomic rename: a killed process (SIGKILL, docker stop,
         # host crash) can never leave a truncated-but-non-empty transcript
@@ -182,6 +212,118 @@ def transcribe_with_mlx(lecture_id, wav_path, model_size, forced_language, vocab
         for s in result["segments"]
     ]
     return {"language": result.get("language") or forced_language or "", "segments": segments}
+
+
+GROQ_MAX_UPLOAD_MB = 25  # Groq's free-tier audio upload cap, as of when this was written
+
+
+def _groq_field(obj, key):
+    """Groq SDK responses may hand back objects (attribute access) or
+    plain dicts (subscript access) depending on SDK version -- support
+    both rather than guessing which. Works for the top-level response
+    (e.g. "language") as well as each segment (e.g. "start"/"end"/"text")."""
+    return obj[key] if isinstance(obj, dict) else getattr(obj, key)
+
+
+def transcribe_with_groq(lecture_id, video_path, forced_language, vocab_prompt) -> dict:
+    """Cloud transcription via Groq's hosted Whisper API.
+
+    NOT run against a live Groq account (no API key was available while
+    building this) -- that gap is real, but narrower than it sounds: the
+    installed `groq` SDK's own request signature and response parsing were
+    checked directly (not just assumed from docs). `client.audio.
+    transcriptions.create()`'s real parameters match what's passed below
+    exactly. More importantly, verbose_json's extra fields (`language`,
+    `segments`, `duration`) aren't in the SDK's strictly-typed response
+    model (which only declares `text`) -- but the model uses Pydantic
+    `extra="allow"`, and feeding it a synthetic verbose_json payload
+    confirmed `.language` comes back via plain attribute access while
+    `.segments` comes back as a list of *plain dicts*, not nested
+    objects -- exactly what _groq_field's dict-or-attribute fallback below
+    is built to handle (pure attribute access on segments would have
+    crashed). What's genuinely unverified is the network round-trip itself
+    (auth, rate limits, the model name being currently valid, real audio
+    producing the same response shape as a synthetic test payload) --
+    run it once against a short lecture before trusting it for real, and
+    check https://console.groq.com/docs/speech-to-text for API changes
+    since this was written.
+
+    Privacy note: unlike every other backend, this sends lecture audio to
+    a third party (Groq). Opt-in only via WHISPER_BACKEND=groq — never the
+    default — exactly because of that trade-off; see DOCUMENTATION.md §5.1
+    for the fuller discussion of why cloud transcription stays opt-in in
+    this project.
+
+    Mainly useful on machines without a usable local GPU (this project's
+    own machine already has a faster local path via WHISPER_BACKEND=mlx,
+    so this backend doesn't help there -- it exists for other students'
+    hardware).
+    """
+    from groq import Groq  # lazy import; optional dependency, see requirements.txt
+
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "WHISPER_BACKEND=groq requires GROQ_API_KEY "
+            "(get one at https://console.groq.com/keys)"
+        )
+
+    # Groq's API has a request size cap (25MB on the free tier, per its
+    # docs as of when this was written). Uncompressed 16kHz mono PCM WAV
+    # blows past that for anything over ~15 minutes, so encode audio
+    # directly from the video into a small compressed file instead of
+    # reusing the WAV the other backends extract.
+    tmp_fd, tmp_name = tempfile.mkstemp(suffix=".ogg", prefix=f"{lecture_id}_groq_")
+    os.close(tmp_fd)
+    compressed_path = Path(tmp_name)
+    try:
+        extract_audio_compressed(video_path, compressed_path)
+        size_mb = compressed_path.stat().st_size / (1024 * 1024)
+        if size_mb > GROQ_MAX_UPLOAD_MB:
+            raise RuntimeError(
+                f"compressed audio is {size_mb:.1f}MB, over Groq's ~{GROQ_MAX_UPLOAD_MB}MB "
+                "single-upload limit -- this lecture is too long for a single-file Groq "
+                "request. Chunking isn't implemented (real scope: re-stitching timestamps "
+                "across chunks correctly needs testing against a live account this "
+                "backend never had). Use WHISPER_BACKEND=faster-whisper or mlx for this "
+                "lecture instead."
+            )
+
+        model = os.environ.get("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
+        print(
+            f"[whisper] {lecture_id}: transcribing via Groq API (model='{model}', "
+            f"upload={size_mb:.1f}MB, language={'pinned ' + forced_language if forced_language else 'auto'})..."
+        )
+
+        client = Groq(api_key=api_key)
+        with open(compressed_path, "rb") as f:
+            response = client.audio.transcriptions.create(
+                file=(compressed_path.name, f.read()),
+                model=model,
+                language=forced_language,
+                prompt=vocab_prompt or None,
+                response_format="verbose_json",
+            )
+    finally:
+        if compressed_path.exists():
+            compressed_path.unlink()
+
+    raw_segments = _groq_field(response, "segments")
+    segments = [
+        {
+            "start": float(_groq_field(s, "start")),
+            "end": float(_groq_field(s, "end")),
+            "text": _groq_field(s, "text").strip(),
+        }
+        for s in raw_segments
+    ]
+    try:
+        detected_language = _groq_field(response, "language")
+    except (KeyError, AttributeError):
+        detected_language = None
+    detected_language = detected_language or forced_language or ""
+    print(f"[whisper] {lecture_id}: Groq transcription complete, {len(segments)} segment(s), language={detected_language}")
+    return {"language": detected_language, "segments": segments}
 
 
 def transcribe_with_faster_whisper(lecture_id, wav_path, model_size, forced_language, vocab_prompt) -> dict:

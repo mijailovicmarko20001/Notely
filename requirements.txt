@@ -3,6 +3,10 @@ anthropic>=0.40
 faster-whisper>=1.1
 # Apple-GPU transcription backend (WHISPER_BACKEND=mlx): ~4x faster than CPU
 mlx-whisper>=0.4; sys_platform == "darwin" and platform_machine == "arm64"
+# Cloud transcription backend (WHISPER_BACKEND=groq), opt-in only -- needs
+# GROQ_API_KEY. UNVERIFIED against a live account, see 01_transcribe.py::
+# transcribe_with_groq. Not needed unless you set WHISPER_BACKEND=groq.
+groq>=0.11
 opencv-python-headless>=4.10   # headless: no GUI libs needed (Docker-friendly); cv2 API-identical
 numpy>=1.26
 scikit-learn>=1.4

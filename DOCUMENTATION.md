@@ -32,7 +32,7 @@ stage can be re-run alone and inspected.
 
 ```
 [0] 00_fetch_videos.py        YouTube URL ──► input/videos/<id>.mp4         (yt-dlp)
-[1] 01_transcribe.py          video ──► output/transcripts/<id>.json        (whisper: mlx GPU or faster-whisper CPU)
+[1] 01_transcribe.py          video ──► output/transcripts/<id>.json        (whisper: mlx GPU, faster-whisper CPU, or opt-in Groq cloud)
 [2] 02_extract_slides.py      deck ──► output/slides_extracted/<id>.json    (+ PNG per slide; PyMuPDF / python-pptx)
 [3] 03_detect_slide_changes.py video ──► output/frame_events/<id>.json      (OpenCV frame diff + crop)
 [4] 04_match_frames_to_slides.py events+slides ──► output/slide_timelines/<id>.json
@@ -247,8 +247,9 @@ normal case.
 |---|---|---|
 | `WHISPER_MODEL` | `large-v3-turbo` | benchmark winner |
 | `WHISPER_LANGUAGE` | `sr` | auto-detect misfired to "bs"; **unset for other courses or auto-detect** |
-| `WHISPER_BACKEND` | `mlx` | this Mac's GPU; Docker/non-Apple uses default `faster-whisper` |
+| `WHISPER_BACKEND` | `mlx` | this Mac's GPU; Docker/non-Apple uses default `faster-whisper`; `groq` is a third, opt-in cloud option (§5.1) |
 | `WHISPER_MLX_REPO` | `mlx-community/whisper-large-v3-turbo` | MLX-converted model |
+| `GROQ_API_KEY` / `GROQ_WHISPER_MODEL` | (unset on this machine) | only read when `WHISPER_BACKEND=groq`; see §5.1 for verification status |
 | `OCR_LANG` | `srp_latn+eng` | slide language; needs matching tesseract traineddata |
 | `NOTES_MODEL` | `claude-sonnet-5` | note generation model |
 | `ANTHROPIC_API_KEY` | (secret) | stage 6 only |
@@ -265,6 +266,7 @@ normal case.
 | Audio extraction params | `01_transcribe.py::extract_audio` | 16 kHz mono PCM WAV |
 | Vocabulary-prompt budget | `01_transcribe.py` | `VOCAB_PROMPT_MAX_CHARS = 700` |
 | CPU whisper threads/compute defaults | `01_transcribe.py` | 4 / `auto` (env-overridable) |
+| Groq upload cap / compressed-audio bitrate | `01_transcribe.py::GROQ_MAX_UPLOAD_MB` / `extract_audio_compressed` | 25 MB / 24kbps Opus (~16MB for a 90-min lecture) |
 | Slide render DPI | `02_extract_slides.py` | 150 |
 | Frame sample interval | `03` default | 1.5 s |
 | Matcher margins | `04` defaults | backward 0.15, stay 0.05, confidence 0.25, min-forward-score 0.05 |
@@ -301,22 +303,40 @@ normal case.
 
 ## 5. Improvement points
 
-### 5.1 External transcription services (documented per request)
+### 5.1 External transcription services
 
 The transcription backend is already an internal seam — stage 1 dispatches
-on `WHISPER_BACKEND` to either `transcribe_with_mlx` or
-`transcribe_with_faster_whisper`, both returning the same shape:
+on `WHISPER_BACKEND` to `transcribe_with_mlx`, `transcribe_with_faster_whisper`,
+or (added 2026-08-11) `transcribe_with_groq`, all returning the same shape:
 
 ```python
 {"language": str, "segments": [{"start": float, "end": float, "text": str}]}
 ```
 
-Adding a cloud backend is therefore one function + one env value. Worth
-considering:
+**Groq backend: implemented, needs a live-account smoke test before
+trusting it.** `WHISPER_BACKEND=groq` + `GROQ_API_KEY`. Sends a compressed
+Opus/Ogg encode of the audio (not the uncompressed WAV the local backends
+use — Groq's free tier caps uploads around 25MB, which the raw WAV blows
+past for anything over ~15 minutes) to Groq's hosted Whisper API. The
+request construction and response parsing were checked against the
+installed `groq` SDK directly — its `transcriptions.create()` signature
+matches what's called, and feeding its response model a synthetic
+verbose_json payload confirmed `.language` comes back via plain attribute
+access while `.segments` comes back as a list of **plain dicts** (Pydantic
+`extra="allow"` doesn't recursively type nested extra fields) — which is
+exactly what the dict-or-attribute `_groq_field` helper is built to
+handle. What's still genuinely unverified is the live network round-trip:
+auth, rate limits, the model name being currently valid, and real audio
+producing the same response shape as the synthetic test. Chunking for
+lectures whose compressed audio still exceeds the upload cap is not
+implemented — it fails with a clear error telling you to use a local
+backend for that lecture instead, rather than a half-tested attempt at
+re-stitching timestamps across chunks.
+
+Other options worth considering the same way:
 
 | Service | Draw | Watch out |
 |---|---|---|
-| Groq-hosted whisper | extremely fast + cheap, same model family (quality known) | file-upload size limits → chunk long lectures |
 | OpenAI (whisper / gpt-4o-transcribe) | strong quality, simple API | cost per audio-hour; verify Serbian |
 | Deepgram / AssemblyAI | word-level timestamps, diarization | Serbian support varies by tier — test first |
 | ElevenLabs Scribe | high multilingual accuracy | newer, pricing |
