@@ -252,6 +252,7 @@ normal case.
 | Frame sample interval | `03` default | 1.5 s |
 | Matcher margins | `04` defaults | backward 0.15, stay 0.05, confidence 0.25, min-forward-score 0.05 |
 | OCR excerpt length | `04` | 150 chars |
+| Frame dHash dedup threshold | `04::DHASH_DEDUP_THRESHOLD` | 3 (of 64 bits) — calibrated against all 22 lectures' real detected events, see §5.1 |
 | Min dwell before merge | `05` default | 5.0 s |
 | Note/overview token caps | `06` | `MAX_TOKENS = 8192` (both calls) |
 | Overview heading text | `06` summary prompt | `## Pregled predavanja` (Serbian; prompt asks model to translate for other languages) |
@@ -321,9 +322,18 @@ The same seam-thinking applies to other pipeline organs:
 - **OCR (stage 4):** tesseract mangles formula-heavy slides, structurally
   depressing their match confidence. A cloud vision OCR — or skipping text
   entirely and asking a multimodal model "which of these slide images is
-  this frame?" — would raise matching accuracy where it's weakest. (An
-  image-hash pre-pass for near-identical frames would be a free local win
-  first.)
+  this frame?" — would raise matching accuracy where it's weakest, but is
+  real scope (cost, privacy, a new dependency) left for when OCR quality
+  is actually the bottleneck.
+  ~~An image-hash pre-pass for near-identical frames would be a free local
+  win first~~ — done 2026-08-11: `frame_hash`/`hamming_distance` (dHash,
+  PIL only) in `04_match_frames_to_slides.py` skip a second OCR call for
+  consecutive event frames within a small Hamming distance. Threshold (3
+  of 64 bits) calibrated against all 22 lectures' real detected events,
+  not guessed — several lectures (17, 21, 22, 10, 06, 14, 18, 20) have
+  genuine near-duplicate consecutive events this catches; the closest
+  distance between any two frames stage 3 judged genuinely different
+  stayed well clear of the threshold across the whole course.
 - **Note generation:** Anthropic's Batch API halves cost for non-urgent
   runs; prompt caching would cut the repeated system-prompt cost; both are
   drop-in changes inside stage 6.

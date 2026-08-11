@@ -100,6 +100,43 @@ def save_json(path: Path, data) -> None:
     tmp.replace(path)
 
 
+DHASH_SIZE = 8
+# Hamming distance (of 64 bits) below which two consecutive event frames are
+# treated as near-duplicates and skip a second OCR call. Chosen from real
+# data, not guessed: across all 22 lectures in this project's course, the
+# smallest distance between two frames stage 3 judged genuinely *different*
+# was well above this; several lectures also have real near-duplicate
+# consecutive events (distance 0-3 -- e.g. a cursor-triggered false slide-
+# change event, or an animation frame) that this threshold safely catches
+# without risking a false merge of two visually similar-but-different slides
+# (e.g. a multi-slide formula derivation).
+DHASH_DEDUP_THRESHOLD = 3
+
+
+def frame_hash(image_path: Path, hash_size: int = DHASH_SIZE) -> int:
+    """Difference hash (dHash) of a frame image: resize to (n+1)xn grayscale,
+    then one bit per pixel for whether it's darker than its right neighbor.
+    Cheap (~ms) and dependency-free (PIL only, already required for OCR) way
+    to catch near-identical consecutive frames before spending an OCR call
+    on both -- OCR is this stage's own long pole (see the per-frame progress
+    marker below)."""
+    from PIL import Image
+
+    with Image.open(image_path) as img:
+        img = img.convert("L").resize((hash_size + 1, hash_size), Image.LANCZOS)
+        pixels = list(img.getdata())
+    bits = 0
+    for row in range(hash_size):
+        row_start = row * (hash_size + 1)
+        for col in range(hash_size):
+            bits = (bits << 1) | int(pixels[row_start + col] > pixels[row_start + col + 1])
+    return bits
+
+
+def hamming_distance(a: int, b: int) -> int:
+    return bin(a ^ b).count("1")
+
+
 def ocr_frame(image_path: Path, lang: str = "eng") -> str:
     """OCR a single frame image with pytesseract; returns stripped text ('' on failure)."""
     import pytesseract
@@ -477,11 +514,26 @@ def process_lecture(
         matches = []
     else:
         print(f"[{lecture_id}] OCR'ing {len(events)} event frames (lang={ocr_lang})...")
+        prev_hash, prev_ocr_text, n_deduped = None, "", 0
         for i, event in enumerate(events):
             frame_path = PROJECT_ROOT / event["frame_image_path"]
             # per-frame progress marker — OCR is this stage's long pole
-            print(f"  [ocr {i + 1}/{len(events)}] {frame_path.name}", flush=True)
-            event["ocr_text"] = ocr_frame(frame_path, lang=ocr_lang)
+            h = frame_hash(frame_path)
+            if prev_hash is not None and hamming_distance(h, prev_hash) <= DHASH_DEDUP_THRESHOLD:
+                # Near-identical to the immediately preceding event's frame
+                # (e.g. a cursor-triggered false slide-change, or an
+                # animation frame stage 3 also flagged) -- reuse its OCR
+                # text instead of spending a second OCR call on the same
+                # content.
+                event["ocr_text"] = prev_ocr_text
+                n_deduped += 1
+                print(f"  [ocr {i + 1}/{len(events)}] {frame_path.name} (near-duplicate, OCR skipped)", flush=True)
+            else:
+                print(f"  [ocr {i + 1}/{len(events)}] {frame_path.name}", flush=True)
+                event["ocr_text"] = ocr_frame(frame_path, lang=ocr_lang)
+            prev_hash, prev_ocr_text = h, event["ocr_text"]
+        if n_deduped:
+            print(f"[{lecture_id}] skipped OCR for {n_deduped}/{len(events)} near-duplicate frame(s)")
 
         slide_numbers = sorted(s["slide_number"] for s in slides)
         slide_refs = build_slide_reference_texts(slides)

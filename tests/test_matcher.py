@@ -139,3 +139,52 @@ def test_collapse_falls_back_to_last_event_timestamp_without_duration():
     timeline, notes = m4.collapse_to_timeline(matches, video_duration=None)
     assert timeline[0]["end"] == 5.0
     assert any("video end is unknown" in n or "true video end" in n for n in notes)
+
+
+# --- frame_hash / hamming_distance (OCR dedup pre-pass) ---------------------
+
+def _make_image(tmp_path, name, fill):
+    from PIL import Image
+    path = tmp_path / name
+    Image.new("RGB", (64, 48), color=fill).save(path)
+    return path
+
+
+def test_hamming_distance_identical_hashes_is_zero():
+    assert m4.hamming_distance(0b1010, 0b1010) == 0
+
+
+def test_hamming_distance_counts_differing_bits():
+    assert m4.hamming_distance(0b0000, 0b1011) == 3
+
+
+def test_frame_hash_identical_images_have_zero_distance(tmp_path):
+    a = _make_image(tmp_path, "a.png", (200, 200, 200))
+    b = _make_image(tmp_path, "b.png", (200, 200, 200))
+    assert m4.hamming_distance(m4.frame_hash(a), m4.frame_hash(b)) == 0
+
+
+def test_frame_hash_a_solid_image_has_no_gradient_bits(tmp_path):
+    # a perfectly flat image has no left>right pixel transitions anywhere
+    a = _make_image(tmp_path, "flat.png", (128, 128, 128))
+    assert m4.frame_hash(a) == 0
+
+
+def test_frame_hash_distinguishes_very_different_images(tmp_path):
+    # half-black-half-white vs. a checkerboard-ish gradient should not
+    # collide -- sanity check that the hash isn't degenerate
+    from PIL import Image
+    a_path = tmp_path / "a.png"
+    b_path = tmp_path / "b.png"
+    img_a = Image.new("L", (64, 48), color=0)
+    for x in range(32, 64):
+        for y in range(48):
+            img_a.putpixel((x, y), 255)
+    img_a.save(a_path)
+    img_b = Image.new("L", (64, 48), color=255)
+    for x in range(32, 64):
+        for y in range(48):
+            img_b.putpixel((x, y), 0)
+    img_b.save(b_path)
+    dist = m4.hamming_distance(m4.frame_hash(a_path), m4.frame_hash(b_path))
+    assert dist > m4.DHASH_DEDUP_THRESHOLD

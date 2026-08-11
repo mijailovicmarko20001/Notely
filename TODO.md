@@ -124,15 +124,19 @@ the working checklist, that one is the record of *why*.
 
 ## P2 — larger, optional roadmap items
 
-- [ ] **Decide whether Docker packaging is worth continuing to maintain.**
-      Its two limitations (no browser-cookie auth, CPU-only transcription)
-      hit the pipeline's most capability-sensitive stages — this repo's
-      actual output was produced natively, not via Docker (see
-      `DOCUMENTATION.md` §2.4). Options: keep it as an explicitly
-      lower-power/no-setup on-ramp for non-technical students (current
-      framing, already updated in the README); or drop it in favor of a
-      plain setup script (`brew install ffmpeg tesseract tesseract-lang` +
-      `pip install -r requirements.txt`) if it's not pulling its weight.
+- [x] **Decide whether Docker packaging is worth continuing to maintain —
+      decided: keep it.** This project's own framing is "built for a real
+      university course" — the realistic use case is handing this to
+      classmates who aren't developers and won't set up Python/ffmpeg/
+      tesseract themselves. `docker compose up` with zero other setup is
+      worth the reduced capability for that audience, as long as it's
+      never presented as the *best* path (already fixed in P0 — README
+      now recommends developer mode when Python is available, and
+      Docker's limitations are stated up front rather than discovered
+      mid-run). No code change from this decision beyond what P0 already
+      did; the amd64-build-untested item above is the one open follow-up,
+      deliberately left for when it's actually needed rather than done
+      speculatively.
 
 - [ ] **Opt-in cloud transcription backend** (Groq-hosted Whisper, OpenAI,
       Deepgram/AssemblyAI, ElevenLabs Scribe) for machines without a usable
@@ -142,12 +146,26 @@ the working checklist, that one is the record of *why*.
       is a real privacy trade-off for a project that's deliberately
       local-first. Require segment/word-level timestamps (segmentation
       depends on them) and keep the vocabulary-priming trick.
-- [ ] **Better OCR/matching for formula-heavy slides.** Tesseract mangles
-      math, which structurally depresses match confidence exactly where
-      it's weakest. Options: a cloud vision OCR, or skip text entirely and
-      ask a multimodal model "which slide image is this frame" directly.
-      Cheap first step: an image-hash pre-pass to collapse near-identical
-      frames before OCR runs at all.
+- [x] **Better OCR/matching, cheap first step done: image-hash pre-pass.**
+      Added `frame_hash`/`hamming_distance` (dHash, PIL only, no new
+      dependency) to stage 4: consecutive event frames within a small
+      Hamming distance reuse the previous frame's OCR text instead of
+      spending a second OCR call. Threshold (3 of 64 bits) picked from
+      real data, not guessed: checked all 22 lectures' actual detected
+      events first — several (lecture17, 21, 22, 10, 06, 14, 18, 20) have
+      genuine near-duplicate consecutive events (Hamming distance 0-3,
+      e.g. a cursor-triggered false slide-change or an animation frame),
+      while the closest distance between two frames stage 3 judged
+      genuinely *different* stayed well clear of that threshold across
+      the whole course — zero false-merge risk at this setting on the
+      data that exists. Verified end-to-end through the real module
+      against real frame images (not just the standalone calibration
+      script) plus 5 new synthetic-image unit tests.
+      **Still open, bigger scope:** the actual formula-OCR-quality problem
+      (Tesseract mangles math) isn't touched by this — that needs a cloud
+      vision OCR or a multimodal "which slide is this" approach, both
+      real design decisions (cost, privacy, new dependency) left for when
+      OCR quality is actually the bottleneck someone hits.
 - [ ] **Anthropic Batch API + prompt caching for stage 6** — batch halves
       cost for non-urgent runs; caching the repeated system prompt cuts
       per-slide cost further. Both are drop-in changes inside
