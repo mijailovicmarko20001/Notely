@@ -152,6 +152,15 @@
   </section>
 </main>
 
+<!-- Guide-tab rendering only (client-side markdown + math for the study
+     guide preview; stage 08's PDF export does the same server-side with
+     Chrome). Needs internet the first time the tab is opened — same
+     external-CDN trade-off DOCUMENTATION.md already notes for PDF export. -->
+<script>
+  MathJax = { tex: { inlineMath: [['$', '$']], displayMath: [['$$', '$$']] } };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

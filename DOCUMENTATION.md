@@ -261,7 +261,8 @@ normal case.
 | SSE poll interval / event buffer | `webui/jobs.py`, `api.py` | 250 ms / 2000 events |
 | Server port | `main.py`, compose, README | 8000 |
 | PDF page setup + styling | `08_export_pdf.py::HTML_TEMPLATE` | A4, 18/16 mm margins, Georgia |
-| MathJax source | `08` | jsDelivr CDN — **PDF export needs internet** |
+| MathJax source | `08` + Guide tab | jsDelivr CDN — **PDF export and the Study Guide tab's rendered preview both need internet** (raw markdown/math still downloadable offline via `/files/study_guide.md`) |
+| Markdown parser (Guide tab) | `static/index.html` | marked.js via jsDelivr CDN — client-side render of the assembled guide, mirrors `08_export_pdf.py`'s math-stashing so LaTeX survives the markdown pass |
 | Chrome binary candidates | `08::CHROME_CANDIDATES` | mac + linux paths |
 | Tesseract languages in image | `Dockerfile` | `srp-latn` + `eng` baked in; other languages need an image edit |
 | UI whisper-model dropdown | `static/index.html` | small/medium/large-v3 list |

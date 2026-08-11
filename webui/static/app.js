@@ -400,11 +400,41 @@ $("#btn-apply-review").addEventListener("click", async () => {
 
 /* ---------- guide ---------- */
 $("#btn-refresh-guide").addEventListener("click", loadGuide);
+
+// Mirrors scripts/08_export_pdf.py::markdown_to_html: stash $...$/$$...$$
+// before handing text to the markdown parser (otherwise LaTeX underscores
+// like x_a get read as emphasis markers), restore after, then MathJax
+// typesets the restored math in place.
+function renderGuideMarkdown(mdText) {
+  const stash = [];
+  const guarded = mdText.replace(/\$\$[\s\S]*?\$\$|\$[^$\n]+\$/g, (m) => {
+    stash.push(m);
+    return ` MATH${stash.length - 1} `;
+  });
+  let html = marked.parse(guarded);
+  html = html.replace(/ MATH(\d+) /g, (_, i) => stash[Number(i)]);
+  // study_guide.md's image paths are relative to output/, which is what
+  // /files/ is mounted at (webui/main.py) — same root stage 08 resolves
+  // relative paths against for the PDF.
+  html = html.replace(/(src|href)="(?!https?:|\/|data:)([^"]*)"/g, (_, attr, p) => `${attr}="/files/${p}"`);
+  return html;
+}
+
 async function loadGuide() {
   const g = await api("/guide");
   $("#guide-download").hidden = !g.exists;
   $("#guide-pdf").hidden = !g.exists;
-  $("#guide-body").textContent = g.exists ? g.markdown : "Nothing assembled yet — run the pipeline first.";
+  const body = $("#guide-body");
+  if (!g.exists) {
+    body.textContent = "Nothing assembled yet — run the pipeline first.";
+    return;
+  }
+  body.innerHTML = renderGuideMarkdown(g.markdown);
+  try {
+    await window.MathJax?.typesetPromise?.([body]);
+  } catch (e) {
+    console.warn("MathJax typesetting failed (offline? CDN blocked?):", e);
+  }
 }
 
 /* ---------- boot ---------- */

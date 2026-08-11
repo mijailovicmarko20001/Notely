@@ -74,10 +74,15 @@ the working checklist, that one is the record of *why*.
       pages, not the previously-documented 936/310 split — that number was
       from an earlier/larger pool upload session; worth a sanity check
       next time a full pool is re-uploaded.
-- [ ] **Study Guide tab renders raw markdown** in the web UI — no images,
-      no math. The exported PDF is the only polished view. A small
-      client-side markdown+MathJax renderer would close that gap for
-      students who don't want to download the PDF.
+- [x] **Study Guide tab renders raw markdown.** Now renders client-side via
+      marked.js + MathJax (both CDN, same jsDelivr/MathJax combo stage 08
+      already uses for the PDF — no new offline trade-off). Mirrors
+      `08_export_pdf.py`'s math-stashing trick so LaTeX underscores survive
+      the markdown pass, and rewrites relative image/link paths against
+      `/files/` (where `output/` is mounted). Verified: the regex logic
+      against real `study_guide.md` content (Node, isolated from the CDN
+      dependency) and a live server smoke test (`/api/guide`, `/static/app.js`,
+      and a sample slide image all 200).
 - [ ] **No test suite.** The scheduler (`webui/jobs.py`) and progress
       parsers (`webui/progress.py`) have ad-hoc dev scripts from
       debugging — worth formalizing into `tests/` so scheduler/lane logic

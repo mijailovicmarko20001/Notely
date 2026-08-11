@@ -40,7 +40,15 @@ th, td { text-align: left; padding: .35rem .6rem; border-bottom: 1px solid var(-
 .review-item .meta { font-size: .85rem; color: #555; }
 .slide-pick { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
 .corrected { outline: 2px solid var(--accent); }
-article#guide-body { white-space: pre-wrap; font-size: .92rem; max-height: 70vh; overflow: auto; }
+article#guide-body { font-size: .95rem; max-height: 70vh; overflow: auto; line-height: 1.55; }
+article#guide-body h1 { font-size: 1.35rem; border-bottom: 1px solid var(--line); padding-bottom: .3em; margin-top: 2em; }
+article#guide-body h1:first-child { margin-top: 0; }
+article#guide-body h2 { font-size: 1.1rem; margin-top: 1.4em; }
+article#guide-body img { max-width: 100%; border: 1px solid var(--line); border-radius: 6px; display: block; margin: .6em auto; }
+article#guide-body table { margin: .8em 0; }
+article#guide-body code { background: #0000000d; padding: .1em .35em; border-radius: 4px; font-size: .88em; }
+article#guide-body hr { border: none; border-top: 1px solid var(--line); margin: 1.6em 0; }
+article#guide-body mjx-container[display="true"] { overflow-x: auto; overflow-y: hidden; }
 .pill { display: inline-block; padding: .05rem .5rem; border-radius: 99px; font-size: .78rem; background: #eee; margin-left: .4rem; }
 .deck-row { border: 1px solid var(--line); border-radius: 10px; padding: .7rem .9rem; margin: .6rem 0; background: var(--card); }
 .chip-list { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .4rem; }
