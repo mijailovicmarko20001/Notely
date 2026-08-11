@@ -207,8 +207,14 @@ assembled guide (this course's is ~440K chars/~110K tokens), materially
 more expensive than a single lecture's "a few cents." Verified the
 insertion logic (TOC → index → lecture content ordering, both-lecture
 presence, graceful no-API-key skip, zero calls when the flag is off) end
-to end against a scratch project root with the network call stubbed out
-— not run against the real study guide, since that spends real money.
+to end against a scratch project root with the network call stubbed out,
+then ran it for real against this course's guide with explicit
+go-ahead: 179,367 input / 2,795 output tokens (real tokenization came in
+above the rough char/4 estimate — Serbian + LaTeX is denser than plain
+English), genuinely useful output (real cross-lecture groupings, working
+`#lectureNN` anchor links, a recurring-emphases section that found
+material repeated across 7 lectures). `study_guide.md`/`.pdf` now
+include it.
 
 **A global forward-jump score floor turned out not to fully fix the known
 lecture01 residual.** Added `min_forward_score` (default 0.05, §4.1) as a

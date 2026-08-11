@@ -187,20 +187,22 @@ the working checklist, that one is the record of *why*.
       cut. Worth doing later as an explicit opt-in mode (e.g. `--batch`
       falls back to an indeterminate spinner like stages 2/5/7 already
       do), not as a silent default swap.
-- [x] **Cross-lecture topic index — implemented, not yet run for real.**
+- [x] **Cross-lecture topic index — implemented and run for real.**
       `07_assemble.py --topic-index` (off by default): one extra Claude
       call over the whole assembled guide, inserted after the TOC before
       the per-lecture content. Explicitly opt-in and CLI-only (not wired
-      into the web UI or automatic pipeline runs yet) because it's a real
-      API cost over potentially hundreds of thousands of tokens for a
-      full course — this project's own 22-lecture guide is ~440K chars /
-      ~110K tokens, likely tens of cents, not the "few cents" scale a
-      single lecture costs. Verified the wiring end-to-end (TOC -> index
-      -> lecture content ordering, both-lecture presence, the no-API-key
-      graceful-skip path, and that `topic_index=False` makes zero calls)
-      against a scratch project root with the network call stubbed out —
-      **not run against the real study guide**, since that costs real
-      money I didn't spend without asking. Want me to run it for real?
+      into the web UI or automatic pipeline runs yet) — a real API cost
+      over potentially hundreds of thousands of tokens for a full course.
+      Ran it for real against this course's 22-lecture guide with
+      explicit go-ahead: 179,367 input / 2,795 output tokens (real
+      tokenization came in higher than the ~110K rough estimate — Serbian
+      text + LaTeX is denser than plain English). Output quality is
+      genuinely good on inspection: correct Serbian, working `#lectureNN`
+      anchor links, real cross-lecture groupings (e.g. jitter/SNR tracked
+      across 5 lectures), and a "Recurring exam-relevant emphases" section
+      that actually found repeated material (the FPGA-clock-jitter warning
+      appearing in 7 different lectures). `study_guide.md` and
+      `study_guide.pdf` both regenerated with it included.
 
 ---
 Sources: `DOCUMENTATION.md` §5 (pre-existing roadmap), repo inspection
