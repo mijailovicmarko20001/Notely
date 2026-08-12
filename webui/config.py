@@ -87,6 +87,12 @@ def read_settings(mask_key: bool = True) -> dict:
     return settings
 
 
+# Slide-deck uploads stream to disk in fixed-size chunks (A3) rather than
+# `await file.read()`-ing the whole thing into RAM -- matters under the
+# memory-capped Docker/colima deployment. Configurable since course decks
+# with heavily scanned/image slides can be large.
+MAX_UPLOAD_BYTES = int(os.environ.get("NOTELY_MAX_UPLOAD_MB", "300")) * 1024 * 1024
+
 MAX_SETTING_LENGTH = 4000  # generous for an API key; just bounds abuse
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")  # includes \n, \r -- see below
 

@@ -1,0 +1,239 @@
+"""Slide-deck business logic: streamed upload persistence, pool merge/dedup,
+and the lecture-matching heuristic behind /slides/suggest (A2).
+
+Kept out of the route handlers so those stay pure HTTP glue; lazy `fitz`/
+`pptx` imports live here (only paid for once a deck is actually touched),
+not in api.py/routes.
+"""
+
+import difflib
+import hashlib
+import json
+import logging
+import re
+import shutil
+import uuid
+from pathlib import Path
+
+from fastapi import UploadFile
+
+from . import config
+from .errors import TooLargeError, ValidationError
+
+log = logging.getLogger("notely.decks")
+
+UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1 MB
+
+
+def _load_json(path, default):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return default
+
+
+async def save_upload_stream(
+    file: UploadFile, dest: Path, max_bytes: int = config.MAX_UPLOAD_BYTES, allow_empty: bool = False
+) -> int:
+    """Stream `file` to `dest` in chunks instead of buffering the whole
+    upload in RAM (A3). Writes to a `.part` sibling and renames on success,
+    so a client abort or an over-cap upload never leaves a partial file at
+    `dest`. Raises errors.TooLargeError past max_bytes -- callers map that
+    to HTTP 413 via the app-wide NotelyError handler.
+    """
+    tmp = dest.with_name(dest.name + f".part{uuid.uuid4().hex[:8]}")
+    written = 0
+    try:
+        with open(tmp, "wb") as out:
+            while True:
+                chunk = await file.read(UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > max_bytes:
+                    raise TooLargeError(f"upload exceeds {max_bytes // (1024 * 1024)} MB limit")
+                out.write(chunk)
+        if written == 0 and not allow_empty:
+            raise ValidationError(f"{file.filename or 'upload'}: empty file")
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    tmp.replace(dest)
+    return written
+
+
+# --- pool mode: "I don't know which deck covers which lecture" ------------
+
+def _norm_page_text(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "").lower()).strip()
+
+
+async def save_pool_uploads(files: list[UploadFile], max_bytes: int = config.MAX_UPLOAD_BYTES) -> list[Path]:
+    """Stream every uploaded deck into the pool dir. Pool mode only accepts
+    PDFs (pptx decks would need a LibreOffice conversion pass first)."""
+    pool_dir = config.SLIDES_DIR / "_pool"
+    pool_dir.mkdir(parents=True, exist_ok=True)
+    saved = []
+    for f in files:
+        name = (f.filename or "").strip()
+        if not name.lower().endswith(".pdf"):
+            raise ValidationError(f"{name}: pool mode takes PDFs only — export PPTX decks to PDF first")
+        dest = pool_dir / Path(name).name
+        await save_upload_stream(f, dest, max_bytes)
+        saved.append(dest)
+    return saved
+
+
+def merge_pool(pool_dir: Path | None = None) -> dict:
+    """Merge every deck currently in the pool dir, in filename order,
+    skipping pages whose normalized text exactly matches one already kept.
+    Course decks repeat earlier material heavily (observed: 936 raw pages,
+    only 310 unique, on this project's real pool) -- deduping here instead
+    of after stage 4's OCR makes the haystack stage 4 actually searches ~3x
+    smaller and less ambiguous, for free. Pages with no extractable text
+    (scanned/image-only slides) are never deduped against each other --
+    collapsing them on an empty-string hash match would wrongly merge
+    visually distinct slides, so they're always kept."""
+    import fitz
+
+    pool_dir = pool_dir or (config.SLIDES_DIR / "_pool")
+    pool_files = sorted(pool_dir.glob("*.pdf"))
+    merged = fitz.open()
+    seen_hashes = set()
+    scanned_pages = 0
+    for p in pool_files:
+        with fitz.open(p) as src:
+            for page_index in range(src.page_count):
+                scanned_pages += 1
+                text = _norm_page_text(src[page_index].get_text())
+                if text:
+                    key = hashlib.md5(text.encode()).hexdigest()
+                    if key in seen_hashes:
+                        continue
+                    seen_hashes.add(key)
+                merged.insert_pdf(src, from_page=page_index, to_page=page_index)
+    total_pages = merged.page_count
+    merged_path = pool_dir / "_merged.pdf"
+    merged.save(str(merged_path))
+    merged.close()
+    return {
+        "pool_files": pool_files,
+        "merged_path": merged_path,
+        "total_pages": total_pages,
+        "scanned_pages": scanned_pages,
+    }
+
+
+def distribute_pool_deck(merged_path: Path, lecture_ids) -> None:
+    """Same combined deck for every lecture -- stages pair strictly by
+    filename, and stage 4's content matching figures out per video which
+    slides were actually shown."""
+    for lecture_id in lecture_ids:
+        shutil.copyfile(merged_path, config.SLIDES_DIR / f"{lecture_id}.pdf")
+        (config.SLIDES_DIR / f"{lecture_id}.pptx").unlink(missing_ok=True)
+
+
+# --- per-lecture upload -----------------------------------------------------
+
+def _record_deck_meta(lecture_id: str, original_name: str | None) -> None:
+    meta = _load_json(config.LECTURES_META_PATH, {})
+    meta.setdefault(lecture_id, {})["deck_original_name"] = original_name
+    with open(config.LECTURES_META_PATH, "w") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=2)
+
+
+async def save_deck_for_lectures(
+    file: UploadFile, lecture_ids: list[str], max_bytes: int = config.MAX_UPLOAD_BYTES
+) -> list[str]:
+    """One deck may cover several lectures: stream it once, then copy it
+    under each lecture's name."""
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower()
+    if ext not in ("pdf", "pptx"):
+        raise ValidationError("only .pdf and .pptx decks are supported")
+    config.SLIDES_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = config.SLIDES_DIR / f"_upload_{uuid.uuid4().hex}.{ext}"
+    await save_upload_stream(file, tmp, max_bytes)
+    saved = []
+    try:
+        for lecture_id in lecture_ids:
+            dest = config.SLIDES_DIR / f"{lecture_id}.{ext}"
+            shutil.copyfile(tmp, dest)
+            # remove a stale deck of the other extension so stage 02 pairs deterministically
+            other = config.SLIDES_DIR / f"{lecture_id}.{'pdf' if ext == 'pptx' else 'pptx'}"
+            other.unlink(missing_ok=True)
+            saved.append(dest.name)
+            _record_deck_meta(lecture_id, file.filename)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return saved
+
+
+# --- lecture-matching suggestion -------------------------------------------
+
+def _norm_words(s: str) -> list[str]:
+    return re.sub(r"[^\w\s]", " ", (s or "").lower()).split()
+
+
+def _extract_preview_text(path: Path, ext: str) -> str:
+    """First couple pages/slides of text -- title slide + first content
+    slide -- used as a fingerprint for lecture-matching. Unreadable decks
+    log a warning and return "" so the UI just falls back to no
+    suggestions, rather than the request failing outright."""
+    text = ""
+    try:
+        if ext == "pdf":
+            import fitz
+
+            with fitz.open(str(path)) as doc:
+                text = " ".join(doc[i].get_text() for i in range(min(2, len(doc))))
+        elif ext == "pptx":
+            from pptx import Presentation
+
+            prs = Presentation(str(path))
+            parts = []
+            for slide in list(prs.slides)[:2]:
+                for shape in slide.shapes:
+                    if shape.has_text_frame:
+                        parts.append(shape.text_frame.text)
+            text = " ".join(parts)
+    except Exception:
+        log.warning("could not extract preview text from .%s upload", ext, exc_info=True)
+    return text
+
+
+async def suggest_lectures_for_upload(
+    file: UploadFile, max_bytes: int = config.MAX_UPLOAD_BYTES
+) -> list[dict]:
+    """Suggest which lecture(s) a deck belongs to by comparing its opening
+    slides' text against the video titles. A pre-fill for the UI dropdown,
+    never a silent decision."""
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower()
+    urls = config.load_video_urls()
+    if ext not in ("pdf", "pptx") or not urls:
+        return []
+
+    tmp = config.SLIDES_DIR / f"_suggest_{uuid.uuid4().hex}.{ext}"
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        await save_upload_stream(file, tmp, max_bytes, allow_empty=True)
+        text = _extract_preview_text(tmp, ext)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    deck_words = set(_norm_words(text))
+    meta = _load_json(config.LECTURES_META_PATH, {})
+    scores = []
+    for lecture_id in sorted(urls):
+        title_words = _norm_words(meta.get(lecture_id, {}).get("title", ""))
+        if not title_words or not deck_words:
+            continue
+        # fraction of title words appearing in the deck's opening slides,
+        # with fuzzy tolerance for OCR/diacritic drift
+        hits = sum(
+            1 for w in title_words
+            if w in deck_words or difflib.get_close_matches(w, deck_words, n=1, cutoff=0.85)
+        )
+        scores.append({"lecture_id": lecture_id, "score": round(hits / len(title_words), 3)})
+    scores.sort(key=lambda s: -s["score"])
+    return [s for s in scores if s["score"] >= 0.5][:3]
