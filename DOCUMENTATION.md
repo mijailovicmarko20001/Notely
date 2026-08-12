@@ -69,13 +69,33 @@ FastAPI + vanilla JS single page (no build step). Key modules:
 
 | Module | Role |
 |---|---|
-| `config.py` | paths; `.env`-backed settings (`NOTELY_ENV_FILE` override for Docker) |
+| `config.py` | paths; `.env`-backed settings (`NOTELY_ENV_FILE` override for Docker); `validate_lecture_id()`, the trust-boundary check every filesystem path built from a lecture id goes through |
 | `preflight.py` | checks ffmpeg/ffprobe/tesseract(+langs)/soffice/yt-dlp/JS-runtime/API-key/whisper-cache |
-| `playlist.py` | playlist URL → ordered entries via `yt-dlp --flat-playlist -J` |
-| `jobs.py` | the four-lane scheduler (see §2.3) |
+| `playlist.py` | playlist URL → ordered entries via `yt-dlp --flat-playlist -J`; rejects non-http(s) URLs before they reach yt-dlp's argv |
+| `jobs.py` | the four-lane scheduler (see §2.3); single-lock `JobManager`, `Busy` exception for concurrent-start rejection |
 | `progress.py` | per-stage stdout parsers → percent; artifact-existence success table |
 | `review.py` | stage-4 review data; manual corrections → timeline rewrite → auto re-run 5–7 |
-| `api.py` | all endpoints, incl. deck upload (filename/content pairing + pool mode), PDF export, and a video-frame preview endpoint for the crop-region picker |
+| `models.py` | Pydantic request models (`SettingsUpdate`, `JobRequest`, `Corrections`, etc.) — malformed request bodies 422 instead of 500ing on a missing dict key |
+| `errors.py` | typed domain errors (`ValidationError`/`NotFoundError`/`ConflictError`/`TooLargeError`/`ServerError`) → consistent `{"error": ...}` JSON via a handler in `main.py` |
+| `decks.py` | slide-deck upload/merge/dedup logic, streamed to disk in chunks (`MAX_UPLOAD_BYTES`, `NOTELY_MAX_UPLOAD_MB` env), the lecture-matching heuristic |
+| `media.py` | guide-PDF subprocess orchestration (lock-guarded regen, atomic rename) and the video-frame preview endpoint's ffmpeg orchestration |
+| `routes/` | `settings.py`/`slides.py`/`jobs.py`/`review.py` — the endpoints, one `APIRouter` per resource, mounted under `/api` (this replaced a single 460-line `api.py`) |
+
+**Backend hardening (2026-08-12)** — a grounded audit
+(`BACKEND_TODO.md`) found and fixed real gaps once `docker-compose.yml`
+started publishing the port beyond localhost: path traversal via
+unvalidated lecture ids, no CSRF/DNS-rebinding protection, `.env` line
+injection through settings writes, yt-dlp argument injection via
+user-supplied URLs, a `JobManager` mutating shared state under
+inconsistent locking, and a couple of start/cancel races. `main.py` now
+adds `TrustedHostMiddleware`, a CSRF-style Origin/Referer check on
+state-changing requests, and opt-in `NOTELY_AUTH_TOKEN` bearer auth for
+anyone who widens the Docker port mapping beyond `127.0.0.1`. The old
+`api.py` was split into `routes/` + the service/model/error modules above
+in the same pass. `tests/webui/` and `tests/test_jobs_scheduler.py` cover
+all of it (160 tests total). Full task-by-task rationale in the git log
+(`Security:`/`Concurrency:`/`Architecture:`/`Tests:` commits) and the
+(now-completed) `BACKEND_TODO.md`.
 
 **Frontend redesign (2026-08-12)** — full design-system pass on
 `webui/static/{index.html,style.css,app.js}`: spacing/type/color tokens,
@@ -334,8 +354,10 @@ normal case.
 | Send on-screen frame to vision | `06::NOTES_SEND_FRAME_IMAGE` env | off by default — real added cost, see §3's "Live on-slide annotations" entry |
 | Frame image max dimension (vision) | `06::FRAME_IMAGE_MAX_DIM` | 1568 px (Anthropic's own recommended long-edge max) |
 | Scheduler lane→stage mapping | `webui/jobs.py::_run` | net={0}, cpu={2..5}, api={6}, gpu={1} iff mlx |
-| SSE poll interval / event buffer | `webui/jobs.py`, `api.py` | 250 ms / 2000 events |
-| Server port | `main.py`, compose, README | 8000 |
+| SSE poll interval / event buffer | `webui/jobs.py`, `routes/jobs.py` | 250 ms / 2000 events |
+| Server port | `main.py`, compose, README | 8000, bound to `127.0.0.1` only by default in `docker-compose.yml` (widen + set `NOTELY_AUTH_TOKEN` for LAN access) |
+| Upload size cap | `webui/config.py::MAX_UPLOAD_BYTES` | 300 MB (`NOTELY_MAX_UPLOAD_MB` env, read at process start) |
+| Lecture id format | `webui/config.py::LECTURE_ID_RE` | `^lecture\d{2,}$`, and must exist in `video_urls.json` |
 | PDF page setup + styling | `08_export_pdf.py::HTML_TEMPLATE` | A4, 18/16 mm margins, Georgia |
 | MathJax source | `08` + Guide tab | jsDelivr CDN — **PDF export and the Study Guide tab's rendered preview both need internet** (raw markdown/math still downloadable offline via `/files/study_guide.md`) |
 | Markdown parser (Guide tab) | `static/index.html` | marked.js via jsDelivr CDN — client-side render of the assembled guide, mirrors `08_export_pdf.py`'s math-stashing so LaTeX survives the markdown pass |
