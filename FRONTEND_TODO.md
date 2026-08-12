@@ -369,3 +369,24 @@ of the Setup settings card, the full 22-lecture table, a loaded Review tab
 with real lecture01 data, and the Study Guide TOC) via Playwright against
 the real running app on port 8000 and this project's real course data —
 the two P0 bugs were caught this way, not by reading source.
+
+---
+
+# Out-of-band fix: SSE progress pings flooded `/api/jobs/current` (2026-08-12)
+
+Not from either audit — the user asked directly ("it's posting a shitton of
+GETs, why?") while re-running the pipeline. Traced before fixing: the SSE
+stream (`connectSSE()`) is a single long-lived connection, but every
+`progress`/`stage_start`/`stage_done` ping riding on it triggered its own
+uncoalesced `pollJob()` → `GET /api/jobs/current`. Real pipeline stages emit
+one ping *per unit of work* — one per whisper segment, one per detected/
+OCR'd frame, one per generated slide note — not one per stage.
+
+Measured against this project's real, live, currently-running job rather
+than estimating: **1,753 raw SSE pings vs. 27 actual GET requests over the
+same 12-second window**, before/after, side by side, in the same browser
+session. Fix: `schedulePoll()` coalesces a burst of pings into one
+in-flight request plus at most one follow-up if more pings arrived during
+that request or a short (400ms) cooldown after — `webui/static/app.js`
+only, no backend change, deliberately, since backend files were mid-edit
+from other in-flight work at the time.

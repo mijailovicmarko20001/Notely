@@ -449,9 +449,45 @@ function connectSSE() {
   es.onmessage = (m) => {
     const evt = JSON.parse(m.data);
     if (evt.type === "log") appendLog(evt.line);
-    if (evt.type === "progress" || evt.type === "stage_start" || evt.type === "stage_done") pollJob();
-    if (evt.type === "job_done") { pollJob(); es.close(); es = null; refreshState(); }
+    if (evt.type === "progress" || evt.type === "stage_start" || evt.type === "stage_done") schedulePoll();
+    if (evt.type === "job_done") { schedulePoll(); es.close(); es = null; refreshState(); }
   };
+}
+
+// The SSE stream is just a "something changed" ping, one per progress tick
+// -- and real ticks are frequent: one per whisper segment (hundreds for a
+// single lecture), one per detected/OCR'd frame, one per generated slide
+// note. Naively calling pollJob() per ping meant a full GET
+// /api/jobs/current per ping -- ~900 GETs for one lecture's worth of
+// transcription alone, confirmed against this project's own real
+// lecture01 data (764 whisper segments + 62 frame events + 62 OCR'd
+// frames + 23 notes). schedulePoll() coalesces a burst of pings into one
+// in-flight request plus, if more pings arrived while it was in flight or
+// during a short cooldown after, exactly one follow-up -- so the UI still
+// reflects the latest state promptly without a GET per ping.
+const POLL_COOLDOWN_MS = 400;
+let pollInFlight = false;
+let pollAgainAfter = false;
+let pollCooldownTimer = null;
+function schedulePoll() {
+  if (pollInFlight || pollCooldownTimer) {
+    pollAgainAfter = true;
+    return;
+  }
+  runScheduledPoll();
+}
+function runScheduledPoll() {
+  pollInFlight = true;
+  pollJob().finally(() => {
+    pollInFlight = false;
+    pollCooldownTimer = setTimeout(() => {
+      pollCooldownTimer = null;
+      if (pollAgainAfter) {
+        pollAgainAfter = false;
+        runScheduledPoll();
+      }
+    }, POLL_COOLDOWN_MS);
+  });
 }
 function appendLog(line) {
   const el = $("#job-log");
