@@ -116,6 +116,10 @@ def export_pdf(md_path: Path, pdf_path: Path) -> None:
 def main():
     parser = argparse.ArgumentParser(description="Export study guide or lecture notes to PDF.")
     parser.add_argument("lecture_id", nargs="?", help="export one lecture's notes instead of the full guide")
+    parser.add_argument(
+        "--output", help="write the PDF here instead of the default path "
+        "(callers doing their own temp-file + atomic-rename dance, e.g. the web UI, pass this)"
+    )
     args = parser.parse_args()
 
     if args.lecture_id:
@@ -124,6 +128,8 @@ def main():
     else:
         md_path = OUTPUT_DIR / "study_guide.md"
         pdf_path = OUTPUT_DIR / "study_guide.pdf"
+    if args.output:
+        pdf_path = Path(args.output)
 
     if not md_path.exists():
         print(f"ERROR: {md_path} not found — run the pipeline first", file=sys.stderr)

@@ -22,9 +22,14 @@ import time
 import uuid
 
 from . import progress
-from .config import LOGS_DIR, PROJECT_ROOT, SCRIPTS_DIR, stage_env
+from .config import LOGS_DIR, PROJECT_ROOT, SCRIPTS_DIR, VIDEOS_DIR, stage_env
 
 MAX_EVENTS_IN_MEMORY = 2000
+
+
+class Busy(RuntimeError):
+    """Raised by start_job() when a job is already running -- the API layer
+    maps this to HTTP 409."""
 
 
 def stage_script(stage: int) -> str:
@@ -35,7 +40,7 @@ def stage_script(stage: int) -> str:
 
 
 def get_video_duration(lecture_id: str):
-    video = PROJECT_ROOT / "input" / "videos" / f"{lecture_id}.mp4"
+    video = VIDEOS_DIR / f"{lecture_id}.mp4"
     if not video.exists():
         return None
     try:
@@ -51,11 +56,17 @@ def get_video_duration(lecture_id: str):
 
 class JobManager:
     def __init__(self):
+        # Single mutex for every read/write of self.job, self.events,
+        # self._seq, self._busy (C1). self._cond is the *same* lock wrapped
+        # in a Condition (not a second lock) so scheduler wait/notify and
+        # plain mutation share one consistent view of state -- no more
+        # "mutated under _cond, serialized under _lock" torn reads.
         self._lock = threading.Lock()
+        self._cond = threading.Condition(self._lock)  # scheduler wake-ups
         self._thread = None
         self._procs = {}         # lane name -> running Popen
         self._cancelled = False
-        self._cond = threading.Condition()  # scheduler wake-ups
+        self._busy = False       # guarded by _lock; claim-and-start atomicity (C2)
         self.job = None          # snapshot dict
         self.events = []         # [{seq, type, ...}]
         self._seq = 0
@@ -77,42 +88,55 @@ class JobManager:
     # -- lifecycle --------------------------------------------------------
     @property
     def busy(self) -> bool:
-        return self._thread is not None and self._thread.is_alive()
+        with self._lock:
+            return self._busy
 
     def snapshot(self):
         with self._lock:
             return json.loads(json.dumps(self.job)) if self.job else None
 
     def start_job(self, tasks):
-        """tasks: [(lecture_id|None, stage, argv_extra)] — raises if busy."""
-        if self.busy:
-            raise RuntimeError("a job is already running")
-        job_id = uuid.uuid4().hex[:8]
-        self._cancelled = False
-        self.events = []
-        self._seq = 0
-        self.job = {
-            "id": job_id,
-            "status": "running",
-            "started": time.time(),
-            "tasks": [
-                {
-                    "lecture_id": lec,
-                    "stage": stage,
-                    "stage_name": progress.STAGE_NAMES[stage],
-                    "status": "pending",
-                    "percent": None,
-                    "detail": "",
-                }
-                for lec, stage, _ in tasks
-            ],
-        }
+        """tasks: [(lecture_id|None, stage, argv_extra)] — atomically claims
+        the "one job at a time" slot and raises Busy if one is already
+        running (C2). The check-and-claim happens under the same lock other
+        threads use to read self._busy/self.job, so two concurrent callers
+        can't both win."""
+        with self._lock:
+            if self._busy:
+                raise Busy("a job is already running")
+            self._busy = True
+            job_id = uuid.uuid4().hex[:8]
+            self._cancelled = False
+            # self.events/_seq are deliberately NOT reset here (C3): an SSE
+            # client reconnecting with Last-Event-ID from the previous job
+            # must see a monotonically increasing sequence, not a lower one
+            # that looks like replay/skip.
+            self.job = {
+                "id": job_id,
+                "status": "running",
+                "started": time.time(),
+                "tasks": [
+                    {
+                        "lecture_id": lec,
+                        "stage": stage,
+                        "stage_name": progress.STAGE_NAMES[stage],
+                        "status": "pending",
+                        "percent": None,
+                        "detail": "",
+                    }
+                    for lec, stage, _ in tasks
+                ],
+            }
+        # Thread creation/start happens outside the lock (no need to hold it
+        # for that), but self._busy is already True so no other start_job()
+        # call can slip in and reset self.job/events underneath this job.
         self._thread = threading.Thread(target=self._run, args=(tasks,), daemon=True)
         self._thread.start()
         return job_id
 
     def cancel(self):
-        self._cancelled = True
+        with self._lock:
+            self._cancelled = True
         for proc in list(self._procs.values()):
             if proc and proc.poll() is None:
                 proc.terminate()
@@ -197,7 +221,16 @@ class JobManager:
                 argv, cwd=str(PROJECT_ROOT), env=stage_env(),
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
             )
-            self._procs[lane] = proc
+            # Register in _procs (keyed by lane, including "final" for stage
+            # 7 -- see _run()) before doing anything else, and re-check
+            # _cancelled under the same lock right after registering: closes
+            # the race where cancel() runs between Popen() and this
+            # assignment and would otherwise miss killing this proc (C5).
+            with self._lock:
+                self._procs[lane] = proc
+                cancelled_now = self._cancelled
+            if cancelled_now and proc.poll() is None:
+                proc.terminate()
             for line in proc.stdout:
                 line = line.rstrip("\n")
                 with self._lock:
@@ -208,34 +241,41 @@ class JobManager:
                 if pct is not None:
                     # monotonic: concurrent stage-6 slides complete out of order
                     new_pct = round(pct * 100, 1)
-                    if task["percent"] is None or new_pct > task["percent"]:
-                        task["percent"] = new_pct
-                        self._emit("progress", task_index=i, percent=task["percent"])
+                    emit_pct = None
+                    with self._lock:
+                        if task["percent"] is None or new_pct > task["percent"]:
+                            task["percent"] = new_pct
+                            emit_pct = new_pct
+                    if emit_pct is not None:
+                        self._emit("progress", task_index=i, percent=emit_pct)
                 else:
                     self._emit("log", task_index=i, line=f"[{lecture_id or 'all'}] {line}")
             returncode = proc.wait()
         except Exception as e:
             returncode = -1
-            task["detail"] = str(e)
+            with self._lock:
+                task["detail"] = str(e)
             self._emit("log", task_index=i, line=f"ERROR: {e}")
         finally:
-            self._procs.pop(lane, None)
             with self._lock:
+                self._procs.pop(lane, None)
                 log.flush()
 
-        if self._cancelled:
-            task["status"] = "cancelled"
-        elif returncode != 0:
-            task["status"] = "failed"
-            task["detail"] = task["detail"] or f"exit code {returncode}"
-        elif not progress.artifact_ok(stage, lecture_id):
-            task["status"] = "blocked"
-            task["detail"] = skip_line or "stage produced no output (missing input?)"
-        else:
-            task["status"] = "done"
-            task["percent"] = 100.0
-        self._emit("stage_done", task_index=i, status=task["status"], detail=task["detail"])
-        return task["status"] == "done"
+        with self._lock:
+            if self._cancelled:
+                task["status"] = "cancelled"
+            elif returncode != 0:
+                task["status"] = "failed"
+                task["detail"] = task["detail"] or f"exit code {returncode}"
+            elif not progress.artifact_ok(stage, lecture_id):
+                task["status"] = "blocked"
+                task["detail"] = skip_line or "stage produced no output (missing input?)"
+            else:
+                task["status"] = "done"
+                task["percent"] = 100.0
+            status, detail = task["status"], task["detail"]
+        self._emit("stage_done", task_index=i, status=status, detail=detail)
+        return status == "done"
 
     def _run(self, tasks):
         LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -274,16 +314,28 @@ class JobManager:
                 w.join()
 
             for i, (lecture_id, stage, extra) in final_tasks:
-                if self._cancelled:
-                    self.job["tasks"][i]["status"] = "cancelled"
+                with self._lock:
+                    cancelled_now = self._cancelled
+                    if cancelled_now:
+                        self.job["tasks"][i]["status"] = "cancelled"
+                    else:
+                        self.job["tasks"][i]["status"] = "running"
+                if cancelled_now:
                     continue
+                # lane="final" so this proc lands in self._procs["final"] --
+                # cancel() iterates every proc in self._procs regardless of
+                # lane name, so a cancel arriving mid-assembly still finds
+                # and terminates it (C5).
                 self._run_task("final", i, lecture_id, stage, extra, log)
 
-        self.job["status"] = (
-            "cancelled" if self._cancelled else ("failed" if failed_lectures else "done")
-        )
-        self.job["finished"] = time.time()
-        self._emit("job_done", status=self.job["status"])
+        with self._lock:
+            self.job["status"] = (
+                "cancelled" if self._cancelled else ("failed" if failed_lectures else "done")
+            )
+            self.job["finished"] = time.time()
+            status = self.job["status"]
+            self._busy = False
+        self._emit("job_done", status=status)
 
 
 MANAGER = JobManager()
