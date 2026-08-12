@@ -36,10 +36,14 @@ stage can be re-run alone and inspected.
 [2] 02_extract_slides.py      deck ──► output/slides_extracted/<id>.json    (+ PNG per slide; PyMuPDF / python-pptx)
 [3] 03_detect_slide_changes.py video ──► output/frame_events/<id>.json      (OpenCV frame diff + crop)
 [4] 04_match_frames_to_slides.py events+slides ──► output/slide_timelines/<id>.json
-                                                  + <id>_needs_review.json  (tesseract OCR + TF-IDF + sequential constraint)
+                                                  + <id>_needs_review.json  (tesseract OCR + TF-IDF + sequential constraint;
+                                                                             each timeline entry also keeps its last frame's
+                                                                             image path, for stage 6's opt-in vision path)
 [5] 05_segment_transcript.py  timeline+transcript ──► output/segmented_transcripts/<id>.json
-                                                      (+ duplicate-slide canonicalization)
-[6] 06_generate_notes.py      segments ──► output/notes/<id>.md             (Claude API, concurrent per-slide calls)
+                                                      (+ duplicate-slide canonicalization; carries the representative
+                                                       frame path through to each consolidated slide entry)
+[6] 06_generate_notes.py      segments ──► output/notes/<id>.md             (Claude API, concurrent per-slide calls;
+                                                                             optional vision input, see §3)
 [7] 07_assemble.py            notes/*.md ──► output/study_guide.md          (+ optional --topic-index: one more Claude call)
 [8] 08_export_pdf.py          study_guide.md ──► output/study_guide.pdf     (headless Chrome + MathJax)
 ```
@@ -192,6 +196,36 @@ reader), each note embeds its rendered slide PNG, and each lecture opens
 with a generated overview ("Pregled predavanja") including collected
 exam-relevant emphases.
 
+**Live on-slide annotations were an invisible content channel until
+2026-08-12** — a real gap the user noticed by watching the recordings
+(professors annotating a slide while presenting it — writing, drawing,
+circling), not something the earlier audit had surfaced. Before this,
+that content was captured nowhere: stage 4 OCRs the actual displayed
+frame only to match it to a slide number, then discards the text;
+stage 6's prompt was built purely from the deck's own extracted text,
+and never sent any image at all. Two gaps, and OCR alone doesn't fix
+either well — this course's recordings are hand-drawn ink over a
+Zoom-shared PDF, and Tesseract (built for printed text) mangles
+handwriting/diagrams badly, the same failure mode already documented for
+formula-heavy printed slides.
+
+Fixed with vision, not better OCR: stage 4's collapsed timeline now keeps
+each run's *last* event frame (`last_frame_image_path` — annotations
+accumulate over a slide's dwell time, so the last frame is the most
+complete state); stage 5 carries the chronologically-latest one through
+consolidation (a revisited slide may pick up more annotation on its
+second visit); stage 6, opt-in via `NOTES_SEND_FRAME_IMAGE` (real added
+cost — vision tokens on every slide call, never silently on), sends that
+frame to Claude alongside the existing text and embeds it in the note
+markdown too, labeled distinctly from the clean deck render. The image
+is downscaled to Anthropic's own recommended max dimension before
+encoding (frame captures are full video resolution; sending more than
+that just wastes bandwidth). `SYSTEM_PROMPT` stayed a static string
+(so prompt caching, added earlier the same day, still hits) — the
+image-handling rule is phrased as "if you receive an image..." rather
+than varying the prompt text per call, so it's correct whether or not a
+particular slide has a frame available.
+
 **PDF export.** pandoc/LaTeX was rejected (huge toolchain, fragile with
 Serbian + images). Instead: markdown → HTML with math segments protected
 from the markdown parser → headless Chrome `--print-to-pdf` with MathJax
@@ -278,6 +312,8 @@ normal case.
 | Topic index guide-length cap | `07::MAX_GUIDE_CHARS` | 350,000 chars — defensive margin above this course's real ~440K-char/~110K-token guide, well under Claude's context window |
 | "Professor's notes:" label | `06::SYSTEM_PROMPT` | English, by design |
 | Notes concurrency default | `06` | 4 (`NOTES_CONCURRENCY` env) |
+| Send on-screen frame to vision | `06::NOTES_SEND_FRAME_IMAGE` env | off by default — real added cost, see §3's "Live on-slide annotations" entry |
+| Frame image max dimension (vision) | `06::FRAME_IMAGE_MAX_DIM` | 1568 px (Anthropic's own recommended long-edge max) |
 | Scheduler lane→stage mapping | `webui/jobs.py::_run` | net={0}, cpu={2..5}, api={6}, gpu={1} iff mlx |
 | SSE poll interval / event buffer | `webui/jobs.py`, `api.py` | 250 ms / 2000 events |
 | Server port | `main.py`, compose, README | 8000 |

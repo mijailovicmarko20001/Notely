@@ -383,6 +383,15 @@ def collapse_to_timeline(matches: list[dict], video_duration: float | None) -> t
     Last slide's end: video duration via ffprobe if the source video is
     available, else falls back to the last event's own timestamp (with a
     note explaining the fallback was used), else null.
+
+    Also keeps the LAST event's frame_image_path per run as
+    `last_frame_image_path` -- the actual on-screen capture of that slide
+    right before the professor moved on, as opposed to the clean deck
+    render stage 2 produces. Live annotations (writing/drawing on the
+    slide) accumulate over the run's dwell time, so the last frame is the
+    most complete one. Used downstream (stage 6, opt-in via
+    NOTES_SEND_FRAME_IMAGE) to let note generation see -- and let a human
+    reader see -- what was actually on screen, not just the printed deck.
     """
     notes = []
     if not matches:
@@ -426,6 +435,7 @@ def collapse_to_timeline(matches: list[dict], video_duration: float | None) -> t
                 "start": start,
                 "end": end,
                 "confidence": round(float(confidence), 4),
+                "last_frame_image_path": run[-1]["frame_image_path"],
             }
         )
 

@@ -124,18 +124,22 @@ def test_empty_slide_numbers_returns_empty():
 
 def test_collapse_merges_consecutive_same_slide_events():
     matches = [
-        {"timestamp": 0.0, "slide_number": 1, "score": 0.9},
-        {"timestamp": 1.0, "slide_number": 1, "score": 0.8},
-        {"timestamp": 2.0, "slide_number": 2, "score": 0.7},
+        {"timestamp": 0.0, "slide_number": 1, "score": 0.9, "frame_image_path": "a.png"},
+        {"timestamp": 1.0, "slide_number": 1, "score": 0.8, "frame_image_path": "b.png"},
+        {"timestamp": 2.0, "slide_number": 2, "score": 0.7, "frame_image_path": "c.png"},
     ]
     timeline, notes = m4.collapse_to_timeline(matches, video_duration=10.0)
     assert len(timeline) == 2
-    assert timeline[0] == {"slide_number": 1, "start": 0.0, "end": 2.0, "confidence": 0.9}
+    assert timeline[0] == {
+        "slide_number": 1, "start": 0.0, "end": 2.0, "confidence": 0.9,
+        "last_frame_image_path": "b.png",  # last event in the run, not the first
+    }
     assert timeline[1]["start"] == 2.0 and timeline[1]["end"] == 10.0
+    assert timeline[1]["last_frame_image_path"] == "c.png"
 
 
 def test_collapse_falls_back_to_last_event_timestamp_without_duration():
-    matches = [{"timestamp": 5.0, "slide_number": 1, "score": 0.9}]
+    matches = [{"timestamp": 5.0, "slide_number": 1, "score": 0.9, "frame_image_path": "a.png"}]
     timeline, notes = m4.collapse_to_timeline(matches, video_duration=None)
     assert timeline[0]["end"] == 5.0
     assert any("video end is unknown" in n or "true video end" in n for n in notes)

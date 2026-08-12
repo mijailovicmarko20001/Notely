@@ -170,10 +170,16 @@ def consolidate_by_slide_number(timeline, run_transcripts, removed, merges):
     already-seen slide).
 
     Returns an ordered list of dicts:
-        {slide_number, transcript_text, start, end, windows, merged_from}
+        {slide_number, transcript_text, start, end, windows, merged_from,
+         frame_image_path}
     where start/end are the first window's start and the last window's end
-    (informational only), and `windows` lists every [start, end] pair that
-    contributed, so the true total dwell time is recoverable if needed.
+    (informational only), `windows` lists every [start, end] pair that
+    contributed, so the true total dwell time is recoverable if needed, and
+    `frame_image_path` is the last non-null `last_frame_image_path` across
+    every contributing run (chronologically last, since a slide revisited
+    later may have more/different annotations than its first appearance) --
+    or None if no run carried one (e.g. a timeline from before stage 4
+    started tracking this).
     """
     order = []
     by_slide = {}
@@ -187,6 +193,7 @@ def consolidate_by_slide_number(timeline, run_transcripts, removed, merges):
                 "windows": [],
                 "chunks": [],
                 "merged_from": [],
+                "frame_image_path": None,
             }
             order.append(slide_num)
 
@@ -196,6 +203,9 @@ def consolidate_by_slide_number(timeline, run_transcripts, removed, merges):
         if chunk:
             entry["chunks"].append(chunk)
         entry["merged_from"].extend(merges.get(idx, []))
+        frame_path = slide_entry.get('last_frame_image_path')
+        if frame_path:
+            entry["frame_image_path"] = frame_path  # chronologically last wins
 
     consolidated = []
     for slide_num in order:
@@ -207,6 +217,7 @@ def consolidate_by_slide_number(timeline, run_transcripts, removed, merges):
             "end": entry["windows"][-1][1],
             "windows": entry["windows"],
             "merged_from": entry["merged_from"],
+            "frame_image_path": entry["frame_image_path"],
         })
 
     return consolidated
@@ -308,6 +319,7 @@ def segment_transcript(lecture_id, min_dwell=5.0, force=False):
             'end': entry['end'],
             'windows': entry['windows'],
             'merged_from': entry['merged_from'],
+            'frame_image_path': entry.get('frame_image_path'),
         })
 
     # Save output

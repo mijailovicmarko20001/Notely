@@ -64,12 +64,13 @@ MAX_TOKENS = 8192
 SYSTEM_PROMPT = r"""You are generating condensed study notes for a university lecture slide, combining the text that was on the slide with what the professor said aloud while that slide was on screen.
 
 For each slide you are given:
-- the slide's title and body text (what was visually on the slide)
+- the slide's title and body text (what was visually on the slide, from the original deck file)
 - the slide's speaker notes, if any (author-written notes attached to the slide deck itself — NOT something the professor said aloud; use them only as background context)
 - a transcript of what the professor said while this slide was displayed
+- SOMETIMES an image: an actual screen capture of the slide as it was displayed during the lecture (distinct from the deck's own text above). If you receive this image, it may show the professor writing, drawing, circling, underlining, or otherwise annotating the slide live — content that exists ONLY in that image, nowhere in the deck text. Treat anything visible in the image that is NOT already covered by the given slide text as professor-added content, exactly like something said aloud: fold it into "Professor's notes" (a formula the professor derived on the slide, a diagram they sketched, a term they circled for emphasis, a correction they wrote over the original text). If the image just matches the printed slide with nothing added, or you did not receive an image for this slide, say nothing about the image itself — never mention "the image" or "the screenshot" as a thing in the note.
 
 Your job:
-- Preserve anything the professor said that is NOT on the slide: examples, clarifications, corrections, asides like "this will be on the exam," and edge cases. This is the most valuable part of the note — do not drop it or bury it.
+- Preserve anything the professor said or wrote that is NOT on the slide: examples, clarifications, corrections, asides like "this will be on the exam," edge cases, and anything hand-written/drawn live per the image rule above. This is the most valuable part of the note — do not drop it or bury it.
 - Keep definitions and formulas exact. Do not loosely paraphrase a definition or formula — reproduce it precisely as given (on the slide or spoken), correcting it only if the professor explicitly corrects the slide.
 - Every formula, without exception, must be written as proper LaTeX math: `$...$` for a short inline expression (e.g. a single symbol or variable referenced in a sentence), `$$...$$` on its own line for a standalone equation or derivation step. Never render a formula as plain text or with unicode math symbols substituting for LaTeX commands (no "∫ from −∞ to +∞ of ...", no bare "x_a(t)" outside math delimiters, no unicode sub/superscript characters like ₋ⁿ) — always use real LaTeX commands (`\int`, `\sum`, `\infty`, `_{...}`, `^{...}`, `\delta`, `\pi`, etc.) inside `$`/`$$` delimiters instead. Extend this to slide-provided OCR'd formulas too: if the slide text contains a garbled or unicode-notation version of a formula, transcribe it into clean LaTeX rather than reproducing the garbling.
 - Do not just restate the slide's bullets in different words — that adds no value over the slide itself.
@@ -77,7 +78,7 @@ Your job:
 - Output structured markdown:
   - The slide title as a `##` heading.
   - Key points from the slide as a bullet list.
-  - A `**Professor's notes:**` subsection containing only verbal-only content (examples, clarifications, corrections, exam hints, edge cases) that the professor added beyond the slide. Do not put slide-only content in this subsection.
+  - A `**Professor's notes:**` subsection containing only content the professor added beyond the printed slide — verbally (examples, clarifications, corrections, exam hints, edge cases) or by writing/drawing on the slide live (see the image rule above). Do not put slide-only content in this subsection.
 - If the transcript for this slide adds nothing beyond what's already on the slide, do not pad the note — write a single line such as "*No additional commentary beyond the slide.*" instead of a "Professor's notes" subsection.
 - Be concise. This is a study aid meant to be read in minutes, not a transcript.
 - LANGUAGE: write the entire note in the same language as the lecture content (the slide text and transcript). Never translate it and never mix languages within a note — if the lecture is in Serbian, every sentence you write is in Serbian (LaTeX, standard abbreviations like ADC/SNR, and the literal subsection label "Professor's notes:" are the only exceptions).
@@ -112,6 +113,41 @@ def _write_text_atomic(path: Path, text: str) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(text)
     tmp.replace(path)
+
+
+# Anthropic's own recommended long-edge max for vision inputs -- larger
+# just wastes bandwidth/latency without a quality gain (the API downscales
+# past this anyway). Frame captures from stage 3 are full video resolution
+# cropped to the slide region, easily larger than this.
+FRAME_IMAGE_MAX_DIM = 1568
+
+
+def load_frame_image_b64(frame_image_path: str) -> str | None:
+    """Load, downscale if needed, and base64-encode a video frame for the
+    vision API. Returns None (never raises) on any failure -- a missing or
+    unreadable frame should fall back to text-only for that slide, not
+    fail note generation. frame_image_path is relative to PROJECT_ROOT,
+    the same convention stage 3/4 already use."""
+    import base64
+    import io
+    from PIL import Image
+
+    path = PROJECT_ROOT / frame_image_path
+    if not path.exists():
+        return None
+    try:
+        with Image.open(path) as img:
+            img = img.convert("RGB")
+            if max(img.size) > FRAME_IMAGE_MAX_DIM:
+                scale = FRAME_IMAGE_MAX_DIM / max(img.size)
+                new_size = (max(1, round(img.width * scale)), max(1, round(img.height * scale)))
+                img = img.resize(new_size, Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            return base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception as e:  # noqa: BLE001 - best-effort, never fatal
+        print(f"  warning: failed to load frame image {path}: {e}", file=sys.stderr)
+        return None
 
 
 def add_slide_number_to_heading(note_text: str, slide_number) -> str:
@@ -167,6 +203,7 @@ def generate_slide_note(
     index: int,
     total: int,
     raw_dir: Path,
+    send_frame_image: bool = False,
 ) -> dict:
     """Generate notes for a single slide. Returns a result dict; never raises."""
     slide_number = slide.get("slide_number", index)
@@ -178,6 +215,26 @@ def generate_slide_note(
         return {"skipped": True, "error": False, "slide_number": slide_number}
 
     user_prompt = build_user_prompt(slide)
+
+    # NOTES_SEND_FRAME_IMAGE (opt-in, off by default -- real added cost):
+    # attach the actual on-screen capture of this slide, not just its
+    # extracted deck text, so live annotations (writing/drawing the deck
+    # file itself never had) reach the model. See SYSTEM_PROMPT's image
+    # rule for how it's used, and DOCUMENTATION.md for the full feature.
+    frame_attached = False
+    content = []
+    if send_frame_image:
+        frame_path = slide.get("frame_image_path")
+        if frame_path:
+            b64 = load_frame_image_b64(frame_path)
+            if b64:
+                content.append({
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": "image/png", "data": b64},
+                })
+                frame_attached = True
+    content.append({"type": "text", "text": user_prompt})
+
     request_payload = {
         "model": model,
         "max_tokens": MAX_TOKENS,
@@ -190,11 +247,22 @@ def generate_slide_note(
         # for blocks under its minimum cacheable size rather than
         # rejecting the request.
         "system": [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
-        "messages": [{"role": "user", "content": user_prompt}],
+        "messages": [{"role": "user", "content": content}],
     }
 
     raw_dir.mkdir(parents=True, exist_ok=True)
     raw_path = raw_dir / f"slide_{slide_number:03d}.json"
+
+    # A sanitized copy for the debug dump: the real request_payload's base64
+    # image data would otherwise bloat every raw/slide_NNN.json file by
+    # however large the (downscaled) frame PNG is -- record that one was
+    # attached and which frame, not the bytes themselves.
+    debug_content = [
+        {**block, "source": {**block["source"], "data": f"<omitted, {len(block['source']['data'])} base64 chars>"}}
+        if block.get("type") == "image" else block
+        for block in content
+    ]
+    debug_prompt = {**request_payload, "messages": [{"role": "user", "content": debug_content}]}
 
     try:
         response = client.messages.create(**request_payload)
@@ -203,11 +271,12 @@ def generate_slide_note(
         _write_json_atomic(
             raw_path,
             {
-                "prompt": request_payload,
+                "prompt": debug_prompt,
                 "response": None,
                 "model": model,
                 "usage": None,
                 "error": str(e),
+                "frame_image_attached": frame_attached,
             },
         )
         return {
@@ -231,10 +300,11 @@ def generate_slide_note(
     _write_json_atomic(
         raw_path,
         {
-            "prompt": request_payload,
+            "prompt": debug_prompt,
             "response": note_text,
             "model": model,
             "usage": usage,
+            "frame_image_attached": frame_attached,
         },
     )
 
@@ -242,8 +312,9 @@ def generate_slide_note(
         f" cache_read={usage['cache_read_input_tokens']}" if usage["cache_read_input_tokens"] else
         f" cache_write={usage['cache_creation_input_tokens']}" if usage["cache_creation_input_tokens"] else ""
     )
+    frame_note = " +frame_image" if frame_attached else ""
     print(
-        f"  [{index}/{total}] slide {slide_number}: ok "
+        f"  [{index}/{total}] slide {slide_number}: ok{frame_note} "
         f"(input={usage['input_tokens']} output={usage['output_tokens']} tokens{cache_note})"
     )
 
@@ -253,6 +324,7 @@ def generate_slide_note(
         "slide_number": slide_number,
         "text": note_text,
         "usage": usage,
+        "frame_image_attached": frame_attached,
     }
 
 
@@ -280,8 +352,14 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
     model = os.environ.get("NOTES_MODEL", DEFAULT_MODEL)
     client = anthropic_mod.Anthropic(max_retries=5)
 
+    # Opt-in, off by default -- a real added cost (vision tokens on every
+    # slide call), not a free win, so this doesn't happen silently. See
+    # SYSTEM_PROMPT's image rule and DOCUMENTATION.md for the full feature.
+    send_frame_image = os.environ.get("NOTES_SEND_FRAME_IMAGE", "0") == "1"
+
     total = len(slides)
-    print(f"[{lecture_id}] generating notes for {total} slide(s) with model={model}")
+    frame_note = " (sending on-screen frame images to the model)" if send_frame_image else ""
+    print(f"[{lecture_id}] generating notes for {total} slide(s) with model={model}{frame_note}")
 
     md_parts = [f"# {lecture_id}\n"]
     failed_slides = []
@@ -289,6 +367,7 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
     total_output_tokens = 0
     total_cache_write_tokens = 0
     total_cache_read_tokens = 0
+    frames_attached = 0
 
     # Per-slide calls are independent, so issue them concurrently — the
     # stage's wall time is pure API latency otherwise. Results are collected
@@ -300,7 +379,10 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
     concurrency = max(1, int(os.environ.get("NOTES_CONCURRENCY", "4")))
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         futures = [
-            pool.submit(generate_slide_note, client, anthropic_mod, model, slide, i, total, raw_dir)
+            pool.submit(
+                generate_slide_note, client, anthropic_mod, model, slide, i, total, raw_dir,
+                send_frame_image=send_frame_image,
+            )
             for i, slide in enumerate(slides, start=1)
         ]
         results = [f.result() for f in futures]  # index-aligned with slides
@@ -319,9 +401,25 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
         if embed_images:
             image_path = images_dir / f"slide_{deck_number:03d}.png"
             if image_path.exists():
-                image_line = (
+                image_line += (
                     f"\n![slide {position}]"
                     f"(../slides_extracted/{lecture_id}_images/slide_{deck_number:03d}.png)\n"
+                )
+        # The actual on-screen capture (may show live annotations the deck
+        # render above can't), embedded alongside it -- same flag that
+        # controls whether the model saw it, since if we're already paying
+        # to fetch/encode the frame, showing it to a human reader too is
+        # free. frame_image_path is relative to PROJECT_ROOT (e.g.
+        # "output/frame_events/<id>_frames/event_NNN.png"); notes live one
+        # level under output/, same as the slides_extracted embed above, so
+        # strip the leading "output/" and point one directory up.
+        if send_frame_image:
+            frame_rel = slide.get("frame_image_path")
+            if frame_rel and (PROJECT_ROOT / frame_rel).exists():
+                frame_md_path = "../" + "/".join(Path(frame_rel).parts[1:])
+                image_line += (
+                    f"\n![slide {position} as shown during the lecture]"
+                    f"({frame_md_path})\n"
                 )
 
         if result["skipped"]:
@@ -341,6 +439,8 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
         total_output_tokens += usage["output_tokens"]
         total_cache_write_tokens += usage.get("cache_creation_input_tokens", 0)
         total_cache_read_tokens += usage.get("cache_read_input_tokens", 0)
+        if result.get("frame_image_attached"):
+            frames_attached += 1
         note = add_slide_number_to_heading(result["text"], position)
         if image_line:
             # image goes directly under the slide's heading line
@@ -390,9 +490,10 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
         f" cache_write={total_cache_write_tokens} cache_read={total_cache_read_tokens}"
         if (total_cache_write_tokens or total_cache_read_tokens) else ""
     )
+    frames_summary = f" frame_images={frames_attached}/{total}" if send_frame_image else ""
     print(
         f"[done] {lecture_id}: wrote notes -> {output_path}{status} "
-        f"(total tokens: input={total_input_tokens} output={total_output_tokens}{cache_summary})"
+        f"(total tokens: input={total_input_tokens} output={total_output_tokens}{cache_summary}{frames_summary})"
     )
 
     return True

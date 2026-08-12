@@ -225,7 +225,37 @@ the working checklist, that one is the record of *why*.
       appearing in 7 different lectures). `study_guide.md` and
       `study_guide.pdf` both regenerated with it included.
 
+## P3 — user-identified gaps (not from the original audit)
+
+- [x] **Live on-slide annotations weren't captured anywhere.** Raised by
+      the user 2026-08-12, watching the recordings: professors write/draw
+      on slides while presenting (this course: hand-drawn ink over a
+      Zoom-shared PDF). Traced it precisely before fixing anything: stage
+      4 OCRs the real displayed frame only to match it to a slide number,
+      then discards the text; stage 6 never sent any image to Claude at
+      all, ever, so anything visual-only was invisible twice over.
+      Fixed with vision, not better OCR (Tesseract mangles handwriting
+      the same way it already mangles printed formulas): stage 4's
+      collapsed timeline keeps each run's last frame
+      (`last_frame_image_path`); stage 5 carries the chronologically-last
+      one through consolidation across revisits; stage 6, opt-in via
+      `NOTES_SEND_FRAME_IMAGE` (real added cost, off by default), sends
+      that frame to Claude and embeds it in the note markdown labeled
+      separately from the clean deck render. Downscaled before encoding
+      (Anthropic's own recommended max dimension). `SYSTEM_PROMPT` stayed
+      static so prompt caching still applies regardless of whether a
+      given slide has a frame attached.
+      Verified without spending any API money: 9 new unit tests (frame-path
+      propagation through stages 4/5 including the "revisit picks the
+      later frame" case, image loading/downscaling/encoding against both a
+      real project frame and synthetic oversized/corrupt images), plus a
+      full dry run of `process_lecture` with a stubbed Claude client
+      confirming the right slides get an image attached, the debug JSON
+      never leaks raw base64 data, and the flag-off path is unchanged from
+      before this feature existed. **Not yet run against the live API** —
+      that's the one thing left to confirm before trusting it for a batch.
+
 ---
 Sources: `DOCUMENTATION.md` §5 (pre-existing roadmap), repo inspection
 2026-08-11 (no `.git`, no `.gitignore`, stale `.env.example`, divergent
-`data/` vs top-level trees).
+`data/` vs top-level trees), user-reported gaps 2026-08-12.

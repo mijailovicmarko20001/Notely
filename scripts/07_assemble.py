@@ -66,12 +66,17 @@ def parse_lecture_id_from_filename(filename):
 def read_lecture_notes(path):
     """Read a lecture note file, fixing image paths for the guide's location.
 
-    Notes live in output/notes/ and embed slide images as
-    ../slides_extracted/...; the assembled guide lives one level up in
-    output/, where the same images are at slides_extracted/...
+    Notes live in output/notes/ and embed images as ../slides_extracted/...
+    (the clean deck render) and, when NOTES_SEND_FRAME_IMAGE was on,
+    ../frame_events/... too (the actual on-screen capture, showing any live
+    annotations). The assembled guide lives one level up in output/, where
+    both are one directory shallower.
     """
     with open(path) as f:
-        return f.read().replace("](../slides_extracted/", "](slides_extracted/")
+        text = f.read()
+    text = text.replace("](../slides_extracted/", "](slides_extracted/")
+    text = text.replace("](../frame_events/", "](frame_events/")
+    return text
 
 
 def _write_json_atomic(path, data) -> None:
