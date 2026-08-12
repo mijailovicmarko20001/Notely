@@ -224,3 +224,148 @@ Sources: full read of `webui/static/index.html`, `webui/static/style.css`,
 architecture constraint; live verification via Playwright + headless
 Chromium against the real running app and this project's real 22-lecture
 course data.
+
+---
+
+# Round 3 — "more modern design, better UX" (2026-08-12, not yet started)
+
+The previous two rounds fixed *broken* — inconsistent tokens, invisible
+Cancel buttons, unreachable dark mode. This round is about something
+softer: the app is functionally solid now but still reads as a plain
+back-office admin tool (dense tables, raw checkbox grids, unstyled native
+form controls) rather than a polished product. Analyzed the same way as
+before — rendered all 5 tabs plus close-ups in a real browser against
+this project's real 22-lecture course data — rather than redesigning from
+vibes. Two real *bugs* turned up in the process; those are called out
+separately from the subjective "modern" polish, since they're worth
+fixing regardless of how anyone feels about the aesthetic.
+
+## P0 — real bugs found during this pass (fix regardless of the redesign)
+
+- [ ] **The Whisper-model dropdown silently renders blank.**
+      `loadSetup()` does `$("#set-whisper").value = s.settings.
+      WHISPER_MODEL`, but `<select>`'s three hardcoded `<option>`s are
+      `small`/`medium`/`large-v3` — and this course's actual (and per
+      `DOCUMENTATION.md` §4.1, *benchmark-recommended*) setting is
+      `large-v3-turbo`, which matches none of them. Setting `.value` to a
+      string with no matching `<option>` leaves the select showing
+      nothing at all, not even a placeholder — confirmed via
+      `sel.value === ''` and `sel.options[sel.selectedIndex] ===
+      undefined` in a live page, not just eyeballing it. A student who's
+      already followed the benchmarking advice in the docs opens Setup
+      and sees an apparently-empty, possibly-broken-looking dropdown.
+      Fix: either add `large-v3-turbo` (and ideally `large-v3` variants
+      generally) as real options, or fall back to an `<option>` element
+      synthesized from the actual current value when it doesn't match
+      the static list, so the field never just renders empty.
+- [ ] **`fmtDur(0)` returns `""` instead of `"0:00"`.** `function fmtDur(s)
+      { if (!s) return ""; ... }` — `0` is falsy in JS, so a slide
+      matched at the very start of the video (`timestamp: 0`, a common,
+      normal case — it's literally slide 1) renders "Video frame @" with
+      nothing after the `@`, confirmed in a real Review-tab screenshot.
+      Fix: check `s == null` instead of `!s`.
+
+## P1 — information density reads as "admin panel," not a product
+
+- [ ] **Chip grids show every item, always fully expanded, with no
+      summary.** The Run tab's lecture selector shows all 22 lecture
+      chips and all 8 stage chips, every one checked, by default — the
+      overwhelmingly common case ("run everything") is presented as 30
+      individually-rendered checked checkboxes instead of a one-line
+      summary ("All 22 lectures, all 8 stages") with a "Customize"
+      disclosure to expand into the current grid. Same shape of problem
+      as the deck-mapping checkbox list Round 1 already fixed with a
+      filter — this is the same issue one level up, on the far more
+      common "just run it" path.
+- [ ] **The "Slides never shown" list in Review is an unbroken wall of
+      text.** `un.map(s => "#" + s.slide_number + " " + s.title).
+      join(" · ")` — on this course's real data (a pooled deck, so this
+      is the normal case, not an edge case) that's 60-80+ items
+      concatenated into one giant run-on paragraph with no visual
+      structure. Should be a compact chip/tag list (reuses the existing
+      `chip()`-adjacent visual language) or a collapsed "81 slides never
+      shown, click to expand" — not a paragraph a human has to parse
+      word by word to find anything in.
+- [ ] **Match confidence is a bare float with no visual read.** Every
+      review item shows `score 0.21` etc. as plain text — a new user has
+      no built-in sense of whether 0.21 is "fine" or "concerning" without
+      already knowing stage 4's scoring scale. A small horizontal meter
+      or a toned pill (reusing the `pill()`/`tone-*` system Round 1
+      already built for exactly this kind of "is this number good or
+      bad" signal) would communicate it in the same glance instead of
+      requiring the reader to do the interpretation themselves.
+- [ ] **The environment-check table is heavier than its content.** 9
+      short pass/fail rows (`ffmpeg ✓ /opt/homebrew/bin/ffmpeg`, etc.) sit
+      in a full bordered `<table>` with header-weight spacing — reads
+      like a database dump for what's really a short status checklist.
+      A denser status-grid or list treatment (icon + label + detail,
+      no table chrome) would look more like a modern setup wizard and
+      less like an ops dashboard.
+
+## P2 — componentry that's still bare-native-HTML
+
+- [ ] **The deck-upload file input is the unstyled OS-native control**
+      (`<input type="file">`, renders as "Choose Files / No file chosen"
+      in whatever the browser's default is) — every other control in the
+      app went through the Round 1 design-system pass except this one,
+      the literal center of the "upload slide decks" step. A styled
+      drag-and-drop dropzone (dashed border, drop-here copy, falls back
+      to click-to-browse) would both look considerably more current and
+      make the multi-file upload flow more discoverable.
+- [ ] **Icons are unicode glyphs, not a consistent set.** ✓ ✗ ☀ ☾ ◐ ! ✕ —
+      rendering depends on the browser/OS's fallback font for those
+      codepoints, which is why they already look slightly different in
+      weight/alignment across the app (compare the preflight table's ✓
+      to the theme toggle's ☀). A small inline-SVG icon set (even a dozen
+      icons: check, cross, warning, sun, moon, auto/system, upload, play,
+      stop) sized and aligned consistently would read as noticeably more
+      "designed" for very little added complexity — still no icon
+      library dependency, just a handful of hand-picked SVG paths.
+- [ ] **Empty states are one plain sentence.** "No lectures yet.", "No
+      file chosen", an empty Review body before you pick a lecture — all
+      just text, no icon, no shape, nothing to look at. A minimal empty-
+      state treatment (a simple icon + the existing copy + the relevant
+      CTA button, reusing `nextStep()`'s pattern) turns "nothing here"
+      moments into part of the guided flow instead of a dead end.
+
+## P3 — depth, motion, and the Review tab's scroll fatigue
+
+- [ ] **Overall visual depth is thin.** Round 1 added `--shadow-sm`/
+      `--shadow-md` tokens but they're only used on `.card`; most of the
+      interface is still flat fills + 1px borders. A more current feel
+      (2020s SaaS, not 2016 flat-design) usually means slightly more
+      shadow/elevation on interactive elements (buttons lifting subtly on
+      hover, the active nav pill having a touch of shadow instead of pure
+      flat color) and a bit more confident use of the accent color
+      (e.g. a subtle gradient on the primary button) rather than solid
+      fills everywhere.
+- [ ] **The Review tab becomes a very long scroll on a real course.**
+      On this course's real lecture01 data (9 flagged items) the Review
+      tab is already a multi-screen scroll; lectures with 100+ flagged
+      items (this course has several, per the nav badge) would be
+      brutal. A "1 of 9" paginated/queue treatment — review one item,
+      decide, advance — would keep the page short and turn review into a
+      quick rhythm instead of a scroll-and-hunt exercise. (Bulk actions
+      like "accept all above some confidence threshold" are a reasonable
+      companion to this, not a replacement for it — some items still need
+      a human's actual judgment.)
+
+## P4 — cross-cutting, needs a decision, not started
+
+- [ ] **The Study Guide's Table of Contents shows only `lectureNN`, no
+      titles** — confirmed against the real guide (`lecture01` through
+      `lecture22`, no lecture content visible in the list at all). This
+      isn't purely a frontend fix: `07_assemble.py::build_table_of_
+      contents` builds the TOC from bare lecture ids, so the markdown
+      itself has no titles to render even if the frontend styled the
+      list better. Flagging rather than starting, since it touches a
+      pipeline script currently being worked on for other reasons — worth
+      a quick backend addition (thread the lecture title, already stored
+      in `lectures.json`, into the TOC) whenever that file is next free.
+
+---
+Sources for this round: rendered all 5 tabs (light + dark, plus close-ups
+of the Setup settings card, the full 22-lecture table, a loaded Review tab
+with real lecture01 data, and the Study Guide TOC) via Playwright against
+the real running app on port 8000 and this project's real course data —
+the two P0 bugs were caught this way, not by reading source.
