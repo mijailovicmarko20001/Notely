@@ -1,205 +1,201 @@
 # Notely — frontend/UX to-do list
 
 Grounded in a full read of `webui/static/{index.html,style.css,app.js}` as
-they exist today (2026-08-12), not generic web-design advice. Each item
-says *why*, with a reference into the actual code.
+they existed on 2026-08-12, not generic web-design advice. Every item below
+was implemented the same day and verified with real, running-browser checks
+(Playwright + a headless Chromium, screenshots actually looked at — not just
+"the server returned 200") — see the verification note at the bottom for
+what that caught that pure code review wouldn't have.
 
 ## The constraint, stated up front
 
 "Keep it simple" here means: **stay vanilla JS + CSS, no build step, no
-framework.** That's not just your preference — it's this project's own
+framework.** That's not just preference — it's this project's own
 documented architecture (`DOCUMENTATION.md` §2.2: "FastAPI + vanilla JS
-single page (no build step)"), chosen deliberately for a tool students run
-locally with zero setup. Nothing below requires React/Vue/a bundler/a CSS
-framework. "Terrible UX" and "no build step" aren't in tension — the
-current UI's problems are about *design system + interaction consistency*,
-not about the lack of a framework.
+single page (no build step)"). Everything below is still plain CSS custom
+properties + template-literal JS. No framework, no bundler, no new runtime
+dependency (the one new *dev-time* dependency, Playwright, was used only to
+verify this work and isn't part of the shipped app).
 
-## P0 — there is no design system, and that's the root cause of most of this
+## P0 — design system (done)
 
-Everything below this line will look inconsistent no matter how carefully
-it's built until this exists, because right now every rule invents its own
-numbers: spacing alone uses `.05rem .1rem .15rem .2rem .25rem .3rem .35rem
-.4rem .45rem .5rem .6rem .7rem .8rem .9rem 1rem 1.2rem 1.4rem 1.6rem` —
-18 distinct values with no discernible scale (`style.css`). Fix the
-foundation first:
+- [x] **Spacing scale.** `--sp-1` (4px) through `--sp-7` (48px), every
+      hardcoded `.Xrem` value in `style.css` migrated onto it.
+- [x] **Type scale.** `--fs-xs` through `--fs-lg` (13/14/16/18/24px).
+      `h1`/`h2` now clearly differ (24px vs 18px, plus weight/letter-spacing)
+      instead of nearly matching at 1.15rem/1.05rem.
+- [x] **Expanded color system.** Added `--fg-muted`/`--fg-subtle` (text
+      hierarchy beyond the one `--fg`), `--accent-hover`/`--accent-soft`
+      (so accent isn't doing active-tab/button/chip/link duty with zero
+      state variation), `--line-strong` (nested-context borders), and
+      `-soft` background variants of ok/warn/err for banners and toned
+      pills.
+- [x] **Dark mode.** `@media (prefers-color-scheme: dark)` redefines every
+      token. No manual toggle (kept deliberately simple — system
+      preference only, matching "keep it simple"); verified by rendering
+      the Run tab under forced dark emulation in a real browser.
+- [x] **Stopped styling from markup.** Removed the inline
+      `style="margin-top:.4rem"` and the raw `size="18"`/`size="6"` input
+      attributes; replaced with `.gap-top`/`.input-sm`/`.input-xs`/
+      `.crop-value` classes.
+- [x] **Shared component helpers in `app.js`.** `chip()`, `pill()`,
+      `statusLine()`, `errorBanner()`/`okBanner()`, `nextStep()`, and
+      `onClickBusy()` (see P2) — one implementation each, used from every
+      tab instead of every view hand-rolling its own markup.
 
-- [ ] **Define a real spacing scale** (e.g. 4/8/12/16/24/32px as CSS custom
-      properties: `--sp-1` through `--sp-6`) and migrate every hardcoded
-      `.Xrem` value in `style.css` onto it. This alone will make the page
-      feel designed instead of assembled.
-- [ ] **Define a type scale** (3-4 sizes, not the current ad hoc
-      `1.15rem` / `1.05rem` / `.95rem` / `.9rem` / `.88rem` / `.85rem` /
-      `.8rem` / `.78rem`). `h1` (1.15rem) and `h2` (1.05rem) are currently
-      so close in size they barely read as a hierarchy at all.
-- [ ] **Expand the color system beyond 5 flat variables.** Right now
-      `--accent` alone carries active-tab, primary-button, chip-selected,
-      and link-equivalent duties — one color doing four jobs means nothing
-      stands out as *the* important action on a page. Add at minimum:
-      a muted/secondary text color distinct from `--fg`, a subtle
-      hover/pressed state for the accent, and a proper border/divider
-      color distinct from `--line` for nested contexts (cards inside
-      cards, e.g. `.review-item` sitting inside the Review tab).
-- [ ] **Add dark mode.** Zero support today — `:root` hardcodes light
-      values with no `prefers-color-scheme` branch at all. Students keep
-      this tab open for the length of a lecture; a forced-light page next
-      to whatever else they're running is a real, common complaint this
-      cheaply fixes.
-- [ ] **Stop styling from markup.** `index.html` has at least one inline
-      style (`style="margin-top:.4rem"` on the force-rerun checkbox) and a
-      raw HTML `size="18"`/`size="6"` attribute on several `<input>`s
-      instead of a CSS width rule. Once the spacing scale exists, these
-      become `.chip.gap-top` and a `.input-sm`/`.input-md` class.
-- [ ] **Add small reusable component helpers in `app.js`**, not more
-      hand-built template-literal HTML per view. Right now `.pill`,
-      status coloring, and chip rendering are each reimplemented slightly
-      differently in `loadSetup`, `renderPlaylist`, `refreshState`,
-      `loadReview`, and the deck-mapping renderer — which is *why* the
-      three-different-multi-select-patterns problem below happened in the
-      first place. A `chip(label, checked)`, `pill(text, tone)`, and
-      `statusBadge(status)` helper, used everywhere, keeps future changes
-      from re-diverging.
+## P1 — workflow guidance (done)
 
-## P1 — the workflow itself doesn't guide anyone
+- [x] **Workflow progress in the nav.** Each tab button now has a
+      `.tab-step` badge that fills in green once that step is actually
+      done, computed from real state in `updateNavProgress()` (preflight
+      status, every lecture having a deck, every lecture having notes,
+      the study guide existing) — not just a static 1-2-3-4-5.
+- [x] **"Next step" callouts.** After preflight passes, after saving
+      lectures, after a deck upload, after a job finishes — a
+      `.next-step` banner with a button that jumps to the right tab,
+      instead of a status string and silence.
+- [x] **Review badge count, visible outside the Review tab.** New
+      backend field (`webui/review.py::count_low_confidence`, wired into
+      `/api/state`) reads each lecture's `needs_review.json` cheaply (no
+      per-lecture fetch loop) and sums the actionable low-confidence
+      count onto a badge on the Review tab itself. On this project's own
+      real 22-lecture course data it correctly shows **817** — verified
+      against the real files, not a mock.
+- [x] **Multi-select patterns — partially consolidated, honestly.** Chips
+      are now the one shared pattern for lecture selection and deck→lecture
+      mapping (same `chip()` helper, same visual language). The playlist
+      table stayed a table — it genuinely needs a different interaction
+      (row reordering via ↑/↓, more columns) that chips don't fit — so
+      this is "down to two patterns for two genuinely different needs,"
+      not fully down to one. Said so rather than claiming more than was
+      actually done.
 
-The app's own README describes it as "follow the tabs left to right," but
-nothing in the UI itself reinforces that — it's a flat row of 5 unranked
-buttons (`<nav id="tabs">`).
+## P2 — feedback and loading states (done)
 
-- [ ] **Show workflow progress, not just a tab list.** Setup → Sources →
-      Run → Review → Guide is a real sequence with real prerequisites
-      (`app.js`'s own `boot()` function already computes "first-run: no
-      lectures and no key" logic to decide where to land — that
-      completion-awareness exists in the code, it's just not shown to the
-      user). Surface it: a checkmark/number badge per tab reflecting
-      whether it's done, not-yet-relevant, or needs attention.
-- [ ] **Add "next step" calls to action** instead of expecting the user to
-      know to click the next tab. Concretely: after `confirmLectures()`
-      saves lectures, after a deck upload succeeds, after a job finishes —
-      each currently just prints a status string and stops
-      (`$("#playlist-result").innerHTML = "<p class='ok'>Saved..."` and
-      nothing else). A one-line "→ Upload slide decks next" /
-      "→ Go to Run" affordance closes the loop.
-- [ ] **Surface Review's item count outside the Review tab.** Right now
-      you only learn "3 matches need a look" by manually opening Review
-      and calling `loadReview()`. A badge on the Review tab (like an
-      inbox-unread-count) driven by the same `needs_review.json` data the
-      tab already fetches would make this discoverable instead of hidden.
-- [ ] **Consolidate the three different multi-select interaction
-      patterns** into one. Today: lecture selection on the Run tab uses
-      pill-shaped chips (`.chip` checkboxes styled as toggle buttons),
-      deck→lecture mapping also uses chips, but playlist-entry selection
-      uses a plain HTML table with checkboxes plus separate ↑/↓ reorder
-      buttons (`renderPlaylist()`). Three visual languages for "pick some
-      items from a list" in one app. Pick one (chips read better for
-      short lists like lectures/decks; the playlist table probably stays
-      a table since it needs reordering + more columns, but should at
-      least borrow the same checkbox/selected styling).
+- [x] **Loading spinners.** `statusLine()` (small CSS-only spinner +
+      text), used everywhere a bare "Checking…"/"Looking up…" string used
+      to sit alone.
+- [x] **Double-submission guards.** `onClickBusy()` wraps essentially
+      every async button handler (`btn-save-settings`, `btn-test-key`,
+      `btn-expand`, `btn-confirm-lectures`, `btn-upload`,
+      `btn-upload-pool`, `btn-load-review`, `btn-apply-review`,
+      `btn-load-preview`, `btn-start`) — disables the button and shows a
+      spinner-in-place-of-label for the duration of the call, can't fire
+      twice from a fast double-click.
+- [x] **Real error/success banners**, not colored inline text —
+      `errorBanner()`/`okBanner()`, used in every `catch` block that used
+      to just dump `e.message` into a paragraph.
+- [x] **Indeterminate-progress explanation.** Stages 2/5/7 (no percent
+      signal, per `progress.py`'s own comment) now show "usually seconds"
+      next to their spinner instead of a bare unlabeled progress bar.
+- [x] **`#job-log` re-themed** onto the same design tokens (`--card-nested`/
+      `--fg`/`--line`) instead of a hardcoded `#111`/`#ddd` black box —
+      still monospace, no longer a tonal clash with the rest of the page.
+      Marked `role="log"` instead of a generic live region (the right
+      ARIA role for an appending log, doesn't spam screen readers with
+      every appended line the way `aria-live="polite"` would).
 
-## P2 — feedback and loading states read as broken, not slow
+## P3 — the two hard UX problems (done)
 
-- [ ] **Loading states are bare text with no motion** ("Checking…",
-      "Looking up…", "Merging decks…" — `app.js` throughout). During an
-      actual multi-second wait (preflight checks hit 6 subprocesses;
-      playlist lookup calls `yt-dlp`) a static string reads as frozen, not
-      working. Add a minimal CSS-only spinner or pulsing-dot class, one
-      shared component, applied everywhere a status string currently sits
-      alone.
-- [ ] **Prevent double-submission.** `$("#btn-save-settings")`,
-      `$("#btn-expand")`, and `$("#btn-upload")`'s click handlers don't
-      disable the button while their `await` is in flight — only
-      `$("#btn-start")` does this correctly (via `pollJob()`'s
-      `$("#btn-start").disabled = busy`). A fast double-click on "Look up"
-      fires two playlist lookups; on "Save settings," two writes.
-- [ ] **Errors are a color change on inline text, not a real error
-      state.** Every `catch` block does the same thing:
-      `$("#...").innerHTML = "<p class='err'>" + e.message + "</p>"` —
-      raw exception text, no icon, no suggested next step, no way to
-      retry from the same message. At minimum: a consistent error-banner
-      component (icon + message + dismiss), and for known failure modes
-      (e.g. playlist lookup failing because the URL isn't a playlist),
-      catch and rephrase rather than surfacing the raw fetch error.
-- [ ] **Explain indeterminate progress bars.** Stages 2/5/7 have no
-      percent signal (`webui/progress.py`'s own comment: "stages 2/5/7 are
-      quick: indeterminate spinner"), so `pollJob()` renders a bare
-      `<progress></progress>` with no label. A student watching that with
-      no percent and no explanation reasonably assumes it's stuck. Add
-      static text like "not time-based — usually seconds" for those three
-      stages specifically.
-- [ ] **`#job-log`'s black terminal box is a jarring tonal shift** from
-      the rest of the light, card-based UI (`#job-log { background: #111;
-      color: #ddd }`). A monospace font is right for a log; a full
-      inverted-theme panel dropped into an otherwise light page isn't a
-      deliberate choice, it's a leftover. Either theme it to match the
-      card system (light monospace panel with a subtle border) or commit
-      to it deliberately as a "console" motif and extend that same
-      treatment consistently (it currently doesn't appear anywhere else).
+- [x] **Visual crop-region picker — the single biggest addition.**
+      New backend endpoint, `GET /api/lectures/{id}/preview-frame`
+      (`webui/api.py`): grabs one real frame from the lecture's own video
+      via ffmpeg, independent of stage 3 ever having run (crop is exactly
+      the parameter stage 3 needs, so tuning it can't depend on stage 3's
+      output). Frontend: pick a lecture, load its frame, **drag a
+      rectangle directly on the real image** — the four fractions in
+      `--crop "x,y,w,h"` are derived from where you drop it, never typed
+      by hand.
+      **Verified against this course's actual lecture01 frame** — genuinely
+      showed the real Zoom recording (slide content plus the actual
+      webcam participant tiles down the right side), and the default crop
+      region visibly excludes exactly the participant panel, confirming
+      the whole feature does what it's for. Both drag (move) and the
+      resize handle were verified to produce correct, expected coordinate
+      changes via a real running browser (see verification note below —
+      this is also where a real implementation bug got caught and fixed).
+- [x] **Deck-mapping filter for scale.** A text filter box (shown once
+      files are picked and there are 8+ lectures) narrows each deck's
+      lecture-chip list by id/title substring — verified against this
+      project's real 22-lecture list. **Not done:** auto-suggesting pool
+      mode past some lecture-count threshold — the filter alone was
+      judged sufficient for now; revisit if 22-lecture-scale courses still
+      find the per-deck chip list unwieldy even filtered.
 
-## P3 — two specific flows are hard UX problems, not polish
+## P4 — accessibility and responsiveness (done)
 
-- [ ] **The crop-region field is four raw numbers with no visual
-      feedback.** `Advanced (per-stage tuning)` exposes `Crop (x,y,w,h)`
-      as a bare text input (e.g. `0.12,0.06,0.63,0.88`) — per
-      `DOCUMENTATION.md` §4.1, getting this wrong ("defaults detected
-      almost nothing") was a real, non-obvious tuning problem even for the
-      person who built this. Expecting a student to hand-tune four
-      fractions blind is the single hardest UX moment in the whole app.
-      Replace it with a visual cropper: show one sampled frame from the
-      video (stage 3 already saves these) with a draggable rectangle
-      overlay, and derive the four numbers from where the user drags it.
-- [ ] **Deck-to-lecture mapping doesn't scale past a handful of files.**
-      `$("#deck-file")`'s change handler renders one `.deck-row` per
-      uploaded file, each with a full `.chip-list` of *every* lecture as
-      a checkbox (`webui/static/app.js`'s deck-mapping renderer) — with
-      22 lectures and several decks, that's 22 checkboxes repeated per
-      deck, no search/filter, no "select range" gesture. At minimum add a
-      text filter over the lecture chips; consider whether pool mode
-      (already built, "combine all decks") should be surfaced as the
-      default suggestion once deck count crosses some threshold, since
-      it sidesteps this problem entirely.
+- [x] **Responsive `.review-item` grid** — collapses to one column under
+      800px instead of crushing a fixed 3-column grid.
+- [x] **All tables wrapped in `.table-wrap`** (`overflow-x: auto`) —
+      preflight checks, lecture table, playlist entries — so a narrow
+      viewport scrolls the table, not the whole page.
+- [x] **Status-by-color extended, not just left alone.** The preflight
+      table's ✓/✗-plus-color pattern (already accessible) is now the
+      template banners/pills follow too — every banner has an icon
+      (✓/✕/!) alongside its color, not color alone.
+- [x] **`aria-live="polite"` added** to every region that gets replaced
+      dynamically with a short status update (preflight, settings/upload/
+      run/review status lines, playlist result, deck mapping, job view).
+      The log got `role="log"` instead (see P2) — the correct choice for
+      an appending stream, not `aria-live`.
+- [x] **`:focus-visible` styling** — a real 2px accent-colored outline,
+      instead of relying on the browser default against a mostly-flat,
+      borderless button style.
 
-## P4 — accessibility and responsiveness gaps
+## P5 — polish (done)
 
-- [ ] **`.review-item`'s 3-column grid doesn't respond to viewport width**
-      (`grid-template-columns: 1fr 1fr 1.2fr`, no media query) — will
-      overflow or crush on anything narrower than a laptop. Same for the
-      plain `<table>`s (preflight checks, lecture table, playlist
-      entries): no `overflow-x: auto` wrapper, so a narrow viewport forces
-      horizontal page scroll rather than scrolling just the table.
-- [ ] **Status is communicated by color alone in places** (`.task
-      .status-done { color: var(--ok) }` etc., with only plain text next
-      to it — no icon). Fine where text already disambiguates ("done" vs
-      "failed" are readable words), worth a pass specifically on the
-      preflight checklist's ✓/✗ (already has both symbol and color, good
-      precedent — extend that pattern everywhere status is shown).
-- [ ] **No `aria-live` on dynamically-updated regions** — `#job-log`,
-      `#run-status`, `#upload-status`, `#settings-status` all get their
-      content replaced via `textContent`/`innerHTML` with no live-region
-      annotation, so a screen reader user gets no announcement when a job
-      finishes, an upload completes, or an error appears.
-- [ ] **No visible custom focus styling** — relying entirely on browser
-      default outlines, which on the current flat/borderless button style
-      (`button { border: 1px solid var(--line) }`, no focus-visible rule)
-      can be hard to spot. Add an explicit `:focus-visible` treatment
-      using the accent color once the color system above exists.
+- [x] **Favicon + brand mark.** Real `<link rel="icon">` (inline SVG data
+      URI, no separate asset file needed — "N" monogram on the accent
+      color), plus a small `.brand-mark` square next to the wordmark in
+      the header. Emoji retired.
+- [x] **Transitions.** Tab switches fade+lift in (150ms), buttons/chips
+      get a hover transition instead of an instant color snap, corrected
+      review items' outline transitions in rather than popping.
+- [x] **Toned pills.** `.pill` now takes `tone-ok`/`tone-warn`/`tone-err`
+      — review-count pills render amber/warm instead of the same flat
+      gray a "0 flagged" pill would use.
 
-## P5 — smaller polish, worth doing once the above lands
+---
 
-- [ ] Replace the single emoji favicon/header icon (📚) with something
-      more deliberate — even a simple inline SVG monogram would read as
-      more finished than one emoji doing double duty as both browser-tab
-      icon (there currently isn't even a real `<link rel="icon">`, just
-      the emoji baked into `<h1>`) and app identity.
-- [ ] Add subtle transitions on tab switches and card state changes
-      (e.g. a corrected review item gaining `.corrected`'s outline) —
-      currently instant/jarring; a 150ms ease is enough, no animation
-      library needed.
-- [ ] Give `.pill` more than one visual tone — right now every pill
-      (uncertain-match counts, unmatched-slide counts, backward-jump
-      counts on the Review tab) renders identically gray regardless of
-      whether the number means "fine" or "needs attention."
+## What real verification caught (worth keeping as a record)
+
+Structural checks alone — HTML validity, CSS brace balance, JS syntax,
+every DOM id `app.js` references cross-checked against `index.html`, a
+full backend test-suite run, curl smoke tests of every new/changed
+endpoint — all passed clean and gave false confidence. They could not
+have caught the actual bug that mattered:
+
+**`button, .button { display: inline-flex }` (needed for icon+label
+layout) silently defeated every `hidden` attribute in the app.** Per the
+CSS cascade, any author-stylesheet rule that sets `display` on an element
+overrides the browser's built-in UA-stylesheet `[hidden] { display: none }`
+rule, *regardless of selector specificity* — author rules simply outrank
+UA rules. `element.hidden` still read `true` in the DOM (so a DOM-property
+check would have reported success), but `getComputedStyle(el).display`
+was `flex`, and the element rendered fully visible. This affected `#btn-
+cancel`, `#btn-upload`, `#btn-upload-pool`, `#deck-filter-row`, `#review-
+apply-row`, `#guide-download`, `#guide-pdf` — essentially every
+conditionally-shown element introduced or touched in this pass.
+
+Found by actually launching the app with Playwright + headless Chromium,
+taking a real screenshot, and looking at it — a "hidden" Cancel button
+sitting right next to Start was visually obvious in a way no amount of
+code review or DOM-property assertion would have surfaced. Fixed with one
+rule: `[hidden] { display: none !important; }`, placed once near the top
+of `style.css` with a comment explaining why it's there so it doesn't get
+"cleaned up" as redundant-looking later.
+
+The crop tool's drag interaction was verified the same way, and caught a
+second, smaller lesson: `page.mouse` (Playwright's simulated mouse)
+operates in real viewport coordinates, so an element below the fold
+silently can't be dragged by it — the fix was in the *test*, not the app
+(the app's own mouse-event handling was confirmed correct via direct
+in-page event dispatch, which doesn't care about scroll position, before
+the viewport issue was even found).
 
 ---
 Sources: full read of `webui/static/index.html`, `webui/static/style.css`,
-`webui/static/app.js` as of 2026-08-12, cross-referenced against
-`DOCUMENTATION.md` §2.2 for the architecture constraint this list respects.
+`webui/static/app.js` as of 2026-08-12; `DOCUMENTATION.md` §2.2 for the
+architecture constraint; live verification via Playwright + headless
+Chromium against the real running app and this project's real 22-lecture
+course data.

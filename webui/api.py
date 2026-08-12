@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -84,6 +85,10 @@ def get_state():
             "title": meta.get(lecture_id, {}).get("title", lecture_id),
             "deck": deck,
             "stages": stages,
+            # cheap (small-file-read only) so it's safe to include on every
+            # state refresh -- lets the UI show a review-needed badge
+            # without a per-lecture fetch loop
+            "needs_review_count": review.count_low_confidence(lecture_id) if stages.get(4) else 0,
         })
     return {
         "lectures": lectures,
@@ -407,3 +412,49 @@ def guide_pdf():
         if r.returncode != 0 or not pdf.exists():
             raise HTTPException(500, f"PDF export failed: {(r.stderr or r.stdout)[-500:]}")
     return FileResponse(pdf, media_type="application/pdf", filename="study_guide.pdf")
+
+
+@router.get("/lectures/{lecture_id}/preview-frame")
+def preview_frame(lecture_id: str, t: float = 60.0):
+    """One frame from the lecture's own video, for the crop-region picker
+    (FRONTEND_TODO.md's visual cropper). Deliberately doesn't depend on
+    stage 3 having run -- crop is exactly the parameter stage 3 needs, so
+    tuning it can't wait for stage 3's own output. Grabs a frame directly
+    with ffmpeg instead, independent of the full sampling pipeline."""
+    import subprocess
+    import tempfile
+
+    from fastapi.responses import FileResponse
+    from starlette.background import BackgroundTask
+
+    video_path = config.VIDEOS_DIR / f"{lecture_id}.mp4"
+    if not video_path.exists():
+        raise HTTPException(404, f"no video for {lecture_id} yet — run stage 0 first")
+
+    fd, tmp_name = tempfile.mkstemp(suffix=".jpg")
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+
+    def _grab(seek: float) -> bool:
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-ss", str(seek), "-i", str(video_path),
+             "-frames:v", "1", "-q:v", "3", str(tmp_path)],
+            capture_output=True, timeout=30,
+        )
+        return r.returncode == 0 and tmp_path.exists() and tmp_path.stat().st_size > 0
+
+    try:
+        # t may be past a short video's end -- fall back to the first frame
+        if not _grab(t) and not _grab(0):
+            raise HTTPException(500, "ffmpeg could not extract a preview frame from this video")
+    except subprocess.TimeoutExpired:
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(504, "timed out extracting a preview frame")
+    except FileNotFoundError:
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(500, "ffmpeg not found")
+
+    return FileResponse(
+        tmp_path, media_type="image/jpeg",
+        background=BackgroundTask(lambda: tmp_path.unlink(missing_ok=True)),
+    )

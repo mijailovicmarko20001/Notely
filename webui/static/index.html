@@ -4,17 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Notely — Lecture Study Notes</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%234a5fc1'/%3E%3Ctext x='16' y='23' font-family='system-ui,sans-serif' font-weight='700' font-size='19' fill='white' text-anchor='middle'%3EN%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <header>
-  <h1>📚 Notely</h1>
+  <div class="brand"><span class="brand-mark">N</span><h1>Notely</h1></div>
   <nav id="tabs">
-    <button data-tab="setup">Setup</button>
-    <button data-tab="sources">Lectures &amp; Slides</button>
-    <button data-tab="run">Run</button>
-    <button data-tab="review">Review</button>
-    <button data-tab="guide">Study Guide</button>
+    <button data-tab="setup"><span class="tab-step" id="step-setup">1</span>Setup</button>
+    <button data-tab="sources"><span class="tab-step" id="step-sources">2</span>Lectures &amp; Slides</button>
+    <button data-tab="run"><span class="tab-step" id="step-run">3</span>Run</button>
+    <button data-tab="review"><span class="tab-step" id="step-review">4</span>Review<span class="tab-badge" id="review-badge" hidden></span></button>
+    <button data-tab="guide"><span class="tab-step" id="step-guide">5</span>Study Guide</button>
   </nav>
 </header>
 
@@ -22,7 +23,9 @@
   <!-- SETUP -->
   <section id="tab-setup" class="tab">
     <h2>Environment check</h2>
-    <div id="preflight" class="card">Checking…</div>
+    <div id="preflight" class="card" aria-live="polite">
+      <span class="status-line"><span class="spinner"></span>Checking…</span>
+    </div>
     <h2>Settings</h2>
     <div class="card">
       <label>Anthropic API key
@@ -45,14 +48,16 @@
       <div class="row">
         <button id="btn-save-settings" class="primary">Save settings</button>
         <button id="btn-test-key">Test API key</button>
-        <span id="settings-status"></span>
+        <span id="settings-status" class="status-line" aria-live="polite"></span>
       </div>
     </div>
+    <div id="setup-next"></div>
   </section>
 
   <!-- SOURCES -->
   <section id="tab-sources" class="tab">
-    <h2>1 · Add lecture videos</h2>
+    <div class="step-label">Step 1</div>
+    <h2>Add lecture videos</h2>
     <div class="card">
       <label>YouTube playlist or video URL
         <div class="row">
@@ -60,19 +65,23 @@
           <button id="btn-expand" class="primary">Look up</button>
         </div>
       </label>
-      <div id="playlist-result"></div>
+      <div id="playlist-result" aria-live="polite"></div>
     </div>
-    <h2>2 · Upload slide decks</h2>
+    <div class="step-label">Step 2</div>
+    <h2>Upload slide decks</h2>
     <div class="card">
       <p>Pick one or more PDF/PPTX decks. Each deck is matched to a lecture by the number in its
         filename (e.g. <code>lecture03.pdf</code>, <code>week3.pptx</code>) — adjust below if the guess
         is wrong. One deck may cover several lectures.</p>
       <input type="file" id="deck-file" accept=".pdf,.pptx" multiple>
-      <div id="deck-mapping"></div>
+      <div class="row gap-top" id="deck-filter-row" hidden>
+        <input type="text" id="deck-filter" placeholder="Filter lectures by id or title…">
+      </div>
+      <div id="deck-mapping" aria-live="polite"></div>
       <div class="row">
         <button id="btn-upload" class="primary" hidden>Upload all</button>
         <button id="btn-upload-pool" hidden>Don't know the pairing — combine all decks</button>
-        <span id="upload-status"></span>
+        <span id="upload-status" class="status-line" aria-live="polite"></span>
       </div>
       <p class="hint">“Combine all decks” merges every selected PDF into one big deck shared by all
         lectures — the matcher then works out from each video which slides were actually shown.
@@ -81,6 +90,7 @@
     </div>
     <h2>Current lectures</h2>
     <div id="lecture-table" class="card">No lectures yet.</div>
+    <div id="sources-next"></div>
   </section>
 
   <!-- RUN -->
@@ -100,27 +110,44 @@
         <label class="chip"><input type="checkbox" value="6" checked> 6 · Generate notes</label>
         <label class="chip"><input type="checkbox" value="7" checked> 7 · Assemble guide</label>
       </div>
-      <label class="chip" style="margin-top:.4rem"><input type="checkbox" id="run-force"> Re-do stages that already ran</label>
+      <label class="chip gap-top"><input type="checkbox" id="run-force"> Re-do stages that already ran</label>
       <details><summary>Advanced (per-stage tuning)</summary>
-        <div class="row wrap" id="adv-options">
-          <label>Crop (x,y,w,h) <input id="opt-crop" size="18"></label>
-          <label>Change threshold <input id="opt-threshold" size="6"></label>
-          <label>Sample interval s <input id="opt-interval" size="6"></label>
-          <label>OCR lang <input id="opt-ocr_lang" size="12"></label>
-          <label>Min dwell s <input id="opt-min_dwell" size="6"></label>
+        <div class="stack gap-top">
+          <div>
+            <label>Crop region (stage 3 — which part of the frame is the slide)</label>
+            <div class="row wrap">
+              <select id="crop-lecture-pick"></select>
+              <button id="btn-load-preview" type="button">Load a preview frame</button>
+              <span id="crop-preview-status" class="status-line" aria-live="polite"></span>
+            </div>
+            <div class="crop-tool" id="crop-tool" hidden>
+              <div class="crop-frame" id="crop-frame">
+                <img id="crop-img" alt="Sample video frame for setting the slide-crop region">
+                <div class="crop-rect" id="crop-rect"><div class="handle br" id="crop-handle"></div></div>
+              </div>
+              <div class="crop-readout" id="crop-readout"></div>
+            </div>
+            <input id="opt-crop" class="crop-value gap-top" placeholder="0,0,1,1">
+          </div>
+          <div class="row wrap">
+            <label>Change threshold <input id="opt-threshold" class="input-xs"></label>
+            <label>Sample interval s <input id="opt-interval" class="input-xs"></label>
+            <label>OCR lang <input id="opt-ocr_lang" class="input-sm"></label>
+            <label>Min dwell s <input id="opt-min_dwell" class="input-xs"></label>
+          </div>
         </div>
       </details>
       <div class="row">
         <button id="btn-start" class="primary">Start</button>
         <button id="btn-cancel" hidden>Cancel</button>
-        <span id="run-status"></span>
+        <span id="run-status" class="status-line" aria-live="polite"></span>
       </div>
       <p class="hint">Transcription runs on your CPU — expect roughly the lecture's own duration
         (or more) per lecture with the medium model. Leave the tab open or come back later;
         progress survives reloads.</p>
     </div>
-    <div id="job-view"></div>
-    <details id="log-wrap"><summary>Log</summary><pre id="job-log"></pre></details>
+    <div id="job-view" aria-live="polite"></div>
+    <details id="log-wrap"><summary>Log</summary><pre id="job-log" role="log" aria-label="Job log"></pre></details>
   </section>
 
   <!-- REVIEW -->
@@ -133,10 +160,10 @@
       <select id="review-lecture"></select>
       <button id="btn-load-review" class="primary">Load</button>
     </div>
-    <div id="review-body"></div>
+    <div id="review-body" aria-live="polite"></div>
     <div class="row" id="review-apply-row" hidden>
       <button id="btn-apply-review" class="primary">Apply corrections &amp; rebuild notes</button>
-      <span id="review-status"></span>
+      <span id="review-status" class="status-line" aria-live="polite"></span>
     </div>
   </section>
 

@@ -17,6 +17,21 @@ def _load(path):
         return json.load(f)
 
 
+def count_low_confidence(lecture_id: str) -> int:
+    """Cheap count of actionable review items (the ones the Review tab's
+    apply-corrections flow actually acts on -- unmatched_slides and
+    backward_jumps are informational-only there, so not counted here) for
+    a nav badge. Doesn't load slide images/timeline data, just the small
+    needs_review.json. 0 if stage 4 hasn't produced one yet."""
+    review_path = OUTPUT_DIR / "slide_timelines" / f"{lecture_id}_needs_review.json"
+    if not review_path.exists():
+        return 0
+    try:
+        return len(_load(review_path).get("low_confidence_matches", []))
+    except (json.JSONDecodeError, OSError):
+        return 0
+
+
 def get_review_data(lecture_id: str) -> dict:
     timeline_path = OUTPUT_DIR / "slide_timelines" / f"{lecture_id}.json"
     review_path = OUTPUT_DIR / "slide_timelines" / f"{lecture_id}_needs_review.json"

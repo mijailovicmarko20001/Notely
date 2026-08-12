@@ -75,7 +75,26 @@ FastAPI + vanilla JS single page (no build step). Key modules:
 | `jobs.py` | the four-lane scheduler (see §2.3) |
 | `progress.py` | per-stage stdout parsers → percent; artifact-existence success table |
 | `review.py` | stage-4 review data; manual corrections → timeline rewrite → auto re-run 5–7 |
-| `api.py` | all endpoints, incl. deck upload (filename/content pairing + pool mode) and PDF export |
+| `api.py` | all endpoints, incl. deck upload (filename/content pairing + pool mode), PDF export, and a video-frame preview endpoint for the crop-region picker |
+
+**Frontend redesign (2026-08-12)** — full design-system pass on
+`webui/static/{index.html,style.css,app.js}`: spacing/type/color tokens,
+dark mode, a visual drag-to-crop region picker (backed by the new
+`GET /api/lectures/{id}/preview-frame` endpoint), workflow-progress
+indicators in the nav, a review-item-count badge, consistent loading/
+error states, double-submit guards, and accessibility passes
+(`aria-live`, `role="log"`, responsive tables/grids, `:focus-visible`).
+Full rationale and per-item verification notes in `FRONTEND_TODO.md`
+(kept as a standalone document, same pattern as `TODO.md`). One real bug
+worth remembering: `button, .button { display: inline-flex }` silently
+defeated the browser's `[hidden] { display: none }` rule for every
+conditionally-shown element in the app — author `display` rules always
+outrank the UA stylesheet regardless of specificity. `element.hidden`
+still read `true` in the DOM the whole time, so this only surfaced via an
+actual rendered screenshot, not code review or DOM-property checks.
+Fixed with a single `[hidden] { display: none !important; }` rule now
+sitting near the top of `style.css`, commented so it isn't mistaken for
+dead code later.
 
 ### 2.3 The four-lane scheduler
 
