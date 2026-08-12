@@ -9,7 +9,7 @@ import json
 import os
 import time
 
-from .config import OUTPUT_DIR
+from .config import OUTPUT_DIR, validate_lecture_id
 
 
 def _load(path):
@@ -33,6 +33,9 @@ def count_low_confidence(lecture_id: str) -> int:
 
 
 def get_review_data(lecture_id: str) -> dict:
+    # api.py already validates, but this module builds filesystem paths from
+    # lecture_id directly -- don't rely on callers to have done it.
+    lecture_id = validate_lecture_id(lecture_id)
     timeline_path = OUTPUT_DIR / "slide_timelines" / f"{lecture_id}.json"
     review_path = OUTPUT_DIR / "slide_timelines" / f"{lecture_id}_needs_review.json"
     slides_path = OUTPUT_DIR / "slides_extracted" / f"{lecture_id}.json"
@@ -75,6 +78,7 @@ def apply_corrections(lecture_id: str, corrections: list) -> dict:
     """corrections: [{timestamp, slide_number|null}] — null drops the entry
     (its window merges into the previous entry, matching how the lecture01
     manual fixes were done)."""
+    lecture_id = validate_lecture_id(lecture_id)
     timeline_path = OUTPUT_DIR / "slide_timelines" / f"{lecture_id}.json"
     data = _load(timeline_path)
     timeline = data.get("timeline", [])

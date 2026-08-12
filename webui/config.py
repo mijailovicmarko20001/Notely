@@ -4,7 +4,9 @@ Mirrors the stage scripts' convention: everything is relative to the project
 root (the parent of this package), so the working directory never matters.
 """
 
+import json
 import os
+import re
 from pathlib import Path
 
 from dotenv import dotenv_values, set_key
@@ -25,6 +27,31 @@ ENV_PATH = Path(os.environ.get("NOTELY_ENV_FILE") or PROJECT_ROOT / ".env")
 
 VIDEO_URLS_PATH = INPUT_DIR / "video_urls.json"
 LECTURES_META_PATH = INPUT_DIR / "lectures.json"
+
+# Lecture ids are the trust boundary for every filesystem path built from
+# user input (slide decks, review/timeline files, video files, job argv).
+# Centralized here so every entry point (path params, form fields, JSON
+# bodies) validates the same way instead of trusting Starlette's "no slash
+# in a path segment" as the only guard.
+LECTURE_ID_RE = re.compile(r"^lecture\d{2,}$")
+
+
+def load_video_urls() -> dict:
+    try:
+        with open(VIDEO_URLS_PATH) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def validate_lecture_id(lecture_id: str, must_exist: bool = True) -> str:
+    """Raise ValueError unless lecture_id is a well-formed id (and, by
+    default, an id actually configured in video_urls.json)."""
+    if not isinstance(lecture_id, str) or not LECTURE_ID_RE.match(lecture_id):
+        raise ValueError(f"invalid lecture id: {lecture_id!r}")
+    if must_exist and lecture_id not in load_video_urls():
+        raise ValueError(f"unknown lecture id: {lecture_id!r}")
+    return lecture_id
 
 # Settings the UI exposes, with defaults. Course-specific defaults come from
 # the validated lecture01 run (see CLAUDE.md / memory).
@@ -60,15 +87,32 @@ def read_settings(mask_key: bool = True) -> dict:
     return settings
 
 
+MAX_SETTING_LENGTH = 4000  # generous for an API key; just bounds abuse
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")  # includes \n, \r -- see below
+
+
 def write_settings(updates: dict) -> None:
-    """Persist settings to .env without clobbering unrelated keys."""
+    """Persist settings to .env without clobbering unrelated keys.
+
+    Values land verbatim in .env (a `KEY=value` line per set_key), and
+    stage_env() feeds .env straight into every stage subprocess's
+    environment -- a newline in a value would inject an arbitrary extra
+    line (e.g. smuggling in a second ANTHROPIC_API_KEY=... entry), so
+    control characters and oversized values are rejected outright rather
+    than sanitized.
+    """
     ENV_PATH.touch(exist_ok=True)
     for k, v in updates.items():
         if k not in SETTING_KEYS or v is None:
             continue
         if k == "ANTHROPIC_API_KEY" and (not v or v.endswith("…")):
             continue  # empty or masked value round-tripped from the UI
-        set_key(str(ENV_PATH), k, str(v), quote_mode="never")
+        v = str(v)
+        if len(v) > MAX_SETTING_LENGTH:
+            raise ValueError(f"{k}: value too long (max {MAX_SETTING_LENGTH} chars)")
+        if _CONTROL_CHAR_RE.search(v):
+            raise ValueError(f"{k}: control characters are not allowed")
+        set_key(str(ENV_PATH), k, v, quote_mode="always")
 
 
 def get_api_key() -> str:

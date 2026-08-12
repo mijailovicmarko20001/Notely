@@ -2,12 +2,27 @@
 "use strict";
 
 const $ = (sel) => document.querySelector(sel);
-const api = async (path, opts = {}) => {
+
+// Only relevant when the server is started with NOTELY_AUTH_TOKEN set
+// (e.g. exposed beyond localhost, see docker-compose.yml). No-op otherwise.
+const AUTH_TOKEN_KEY = "notely-auth-token";
+const api = async (path, opts = {}, _retried = false) => {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
   const r = await fetch("/api" + path, {
-    headers: opts.body && !(opts.body instanceof FormData) ? { "Content-Type": "application/json" } : {},
+    headers: {
+      ...(opts.body && !(opts.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     ...opts,
     body: opts.body && !(opts.body instanceof FormData) ? JSON.stringify(opts.body) : opts.body,
   });
+  if (r.status === 401 && !_retried) {
+    const entered = prompt("This Notely instance requires an access token:");
+    if (entered) {
+      localStorage.setItem(AUTH_TOKEN_KEY, entered.trim());
+      return api(path, opts, true);
+    }
+  }
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
   return r.json();
 };
@@ -426,7 +441,11 @@ const INDETERMINATE_STAGES = new Set([2, 5, 7]);
 let es = null;
 function connectSSE() {
   if (es) es.close();
-  es = new EventSource("/api/jobs/current/events");
+  // EventSource can't set an Authorization header, so pass the token (if
+  // any) as a query param -- the server accepts either for this endpoint.
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  const qs = token ? `?token=${encodeURIComponent(token)}` : "";
+  es = new EventSource("/api/jobs/current/events" + qs);
   es.onmessage = (m) => {
     const evt = JSON.parse(m.data);
     if (evt.type === "log") appendLog(evt.line);

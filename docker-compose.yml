@@ -2,7 +2,22 @@ services:
   notely:
     build: .
     ports:
-      - "8000:8000"
+      # Bound to loopback only: this UI has no auth by default and starts
+      # jobs / writes files / can overwrite the stored Anthropic key on any
+      # request it receives. If you need LAN access (e.g. running on a NAS
+      # or home server), change this to "8000:8000" AND set NOTELY_AUTH_TOKEN
+      # below -- otherwise anyone on your network (or any website open in a
+      # browser on this machine, via DNS rebinding) can drive the pipeline.
+      - "127.0.0.1:8000:8000"
+    environment:
+      # Uncomment and set a long random value to require an Authorization:
+      # Bearer <token> header on every /api request -- required if you widen
+      # the port mapping above beyond localhost.
+      # - NOTELY_AUTH_TOKEN=change-me-to-something-long-and-random
+      # Comma-separated extra Host headers to accept (e.g. a LAN hostname/IP)
+      # if you're not accessing this via localhost/127.0.0.1.
+      # - NOTELY_ALLOWED_HOSTS=notely.local
+      PYTHONUNBUFFERED: "1"
     volumes:
       # Everything persistent — your videos, slides, generated notes, API key,
       # and the downloaded transcription model — lives in ./data on your machine.

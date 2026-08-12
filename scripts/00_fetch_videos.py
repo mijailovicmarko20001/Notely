@@ -94,7 +94,10 @@ def run_yt_dlp(url: str, output_path: Path, cookies_browser: str | None) -> _YtD
         cmd += ["--js-runtimes", "node"]
     if cookies_browser:
         cmd += ["--cookies-from-browser", cookies_browser]
-    cmd.append(url)
+    # "--" separates options from the positional URL -- defense in depth in
+    # case a malformed/malicious value ever lands in video_urls.json outside
+    # the web UI's own validation (webui/config.py's URL check).
+    cmd += ["--", url]
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
     )
