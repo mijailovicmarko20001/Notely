@@ -12,6 +12,36 @@ const api = async (path, opts = {}) => {
   return r.json();
 };
 
+/* ---------- theme toggle: auto (system) -> light -> dark -> auto.
+   Explicit choices persist in localStorage; a tiny inline script in
+   index.html's <head> applies the stored choice before style.css even
+   loads, so there's no flash of the wrong theme on reload. ---------- */
+const THEME_KEY = "notely-theme";
+function currentTheme() {
+  const t = localStorage.getItem(THEME_KEY);
+  return t === "light" || t === "dark" ? t : "auto";
+}
+function applyTheme(theme) {
+  if (theme === "auto") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+}
+function renderThemeToggle() {
+  const t = currentTheme();
+  const icon = t === "light" ? "☀" : t === "dark" ? "☾" : "◐";
+  const label = t === "light" ? "Light" : t === "dark" ? "Dark" : "Auto";
+  $("#theme-toggle").innerHTML = `<span class="theme-icon">${icon}</span>${label}`;
+  $("#theme-toggle").title = `Color theme: ${label} (click to change)`;
+}
+$("#theme-toggle").addEventListener("click", () => {
+  const next = { auto: "light", light: "dark", dark: "auto" }[currentTheme()];
+  if (next === "auto") localStorage.removeItem(THEME_KEY);
+  else localStorage.setItem(THEME_KEY, next);
+  applyTheme(next);
+  renderThemeToggle();
+});
+applyTheme(currentTheme());
+renderThemeToggle();
+
 /* ---------- shared UI components (one implementation, used everywhere —
    see FRONTEND_TODO.md P0: divergent hand-rolled markup per view was why
    chips/pills/status looked slightly different in every tab) ---------- */

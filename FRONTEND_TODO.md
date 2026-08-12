@@ -30,10 +30,22 @@ verify this work and isn't part of the shipped app).
       state variation), `--line-strong` (nested-context borders), and
       `-soft` background variants of ok/warn/err for banners and toned
       pills.
-- [x] **Dark mode.** `@media (prefers-color-scheme: dark)` redefines every
-      token. No manual toggle (kept deliberately simple — system
-      preference only, matching "keep it simple"); verified by rendering
-      the Run tab under forced dark emulation in a real browser.
+- [x] **Dark mode, plus a manual toggle (added 2026-08-12, later the same
+      day).** Originally shipped system-preference-only; the user's own
+      system prefers dark, and asked for a way to get light mode
+      regardless. Added a 3-state toggle in the header (Auto → Light →
+      Dark → Auto), persisted in `localStorage`, applied via a tiny
+      inline pre-paint script in `index.html`'s `<head>` so an explicit
+      choice never flashes the system default first (verified: `data-
+      theme` is already set in the DOM immediately after a reload, before
+      `app.js` even runs). CSS pattern: light tokens stay on bare `:root`;
+      the dark `@media` block is guarded with `:not([data-theme="light"])`
+      so an explicit light choice can override a dark system preference;
+      a separate `:root[data-theme="dark"]` block (same values) lets an
+      explicit dark choice override a light system preference. Verified
+      all three states (auto/forced-light/forced-dark) render the correct
+      computed background color in a real browser, including across a
+      page reload.
 - [x] **Stopped styling from markup.** Removed the inline
       `style="margin-top:.4rem"` and the raw `size="18"`/`size="6"` input
       attributes; replaced with `.gap-top`/`.input-sm`/`.input-xs`/
@@ -154,6 +166,19 @@ verify this work and isn't part of the shipped app).
 - [x] **Toned pills.** `.pill` now takes `tone-ok`/`tone-warn`/`tone-err`
       — review-count pills render amber/warm instead of the same flat
       gray a "0 flagged" pill would use.
+
+## Post-ship fix: dark-mode active-tab contrast (2026-08-12)
+
+The user sent a screenshot of the dark-mode nav and said it "isn't really
+nice to look at." Rendered it myself before guessing at a fix: the active
+tab's highlight (`--accent-soft`, the pill background behind the current
+tab) was `#262b47` against a `--card` background of `#202126` — close
+enough in luminance that the "active" state read as muddy instead of
+crisp, unlike the light-mode version of the same pill which pops cleanly
+against white. Brightened `--accent-soft` (and audited/brightened the
+other three `-soft` tokens the same way, since they had the same
+card-contrast problem waiting to surface elsewhere) to `#2f376c`/etc. —
+verified side by side, in a real browser, before and after.
 
 ---
 

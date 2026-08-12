@@ -52,8 +52,16 @@
   --focus-ring: #4a5fc1;
 }
 
+/* Dark palette lives in both places on purpose: the media-query block
+   applies it when the OS/browser prefers dark AND the user hasn't
+   explicitly overridden that (`:not([data-theme="light"])`); the
+   attribute block applies it when the user explicitly picked dark via
+   the toggle, regardless of what the OS prefers. Same values in both —
+   duplicated rather than shared via a third variable layer, since that
+   would make the cascade harder to reason about for a two-state toggle
+   this simple. See the toggle button wiring in app.js. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #17181b;
     --card: #202126;
     --card-nested: #26272d;
@@ -66,20 +74,47 @@
     --accent: #7c8ce8;
     --accent-hover: #96a3ee;
     --accent-fg: #12131a;
-    --accent-soft: #262b47;
+    --accent-soft: #2f376c;
 
     --ok: #6bc472;
-    --ok-soft: #17281a;
+    --ok-soft: #1e3823;
     --warn: #e3a749;
-    --warn-soft: #302510;
+    --warn-soft: #3c2c10;
     --err: #ef7b7a;
-    --err-soft: #341a1a;
+    --err-soft: #402020;
 
     --focus-ring: #96a3ee;
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
     --shadow-md: 0 4px 16px rgba(0, 0, 0, .45);
   }
+}
+:root[data-theme="dark"] {
+  --bg: #17181b;
+  --card: #202126;
+  --card-nested: #26272d;
+  --fg: #ecebe7;
+  --fg-muted: #a6a5a0;
+  --fg-subtle: #77766f;
+  --line: #34353b;
+  --line-strong: #43444b;
+
+  --accent: #7c8ce8;
+  --accent-hover: #96a3ee;
+  --accent-fg: #12131a;
+  --accent-soft: #2f376c;
+
+  --ok: #6bc472;
+  --ok-soft: #1e3823;
+  --warn: #e3a749;
+  --warn-soft: #3c2c10;
+  --err: #ef7b7a;
+  --err-soft: #402020;
+
+  --focus-ring: #96a3ee;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, .45);
 }
 
 /* ============================================================
@@ -156,6 +191,16 @@ nav#tabs button.active .tab-step { border-color: var(--accent); color: var(--acc
   border-radius: var(--radius-pill); background: var(--warn); color: #fff;
   font-size: .68rem; font-weight: 700; line-height: 1;
 }
+.theme-toggle {
+  margin-left: auto; flex: none;
+  background: none; border: 1px solid var(--line-strong); color: var(--fg-muted);
+  border-radius: var(--radius-pill); padding: var(--sp-1) var(--sp-3);
+  font: inherit; font-size: var(--fs-xs); font-weight: 600; cursor: pointer;
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  transition: background-color .12s ease, color .12s ease;
+}
+.theme-toggle:hover { background: var(--card-nested); color: var(--fg); }
+.theme-toggle .theme-icon { font-size: .9em; }
 
 main { max-width: 1040px; margin: 0 auto; padding: var(--sp-5) var(--sp-5) var(--sp-7); }
 .tab { display: none; }

@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Notely — Lecture Study Notes</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%234a5fc1'/%3E%3Ctext x='16' y='23' font-family='system-ui,sans-serif' font-weight='700' font-size='19' fill='white' text-anchor='middle'%3EN%3C/text%3E%3C/svg%3E">
+<script>
+  // Applied before style.css loads, so an explicit theme choice never
+  // flashes the system-default theme first. app.js owns the toggle
+  // button itself (needs the DOM); this only needs localStorage.
+  try {
+    var t = localStorage.getItem("notely-theme");
+    if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -17,6 +26,7 @@
     <button data-tab="review"><span class="tab-step" id="step-review">4</span>Review<span class="tab-badge" id="review-badge" hidden></span></button>
     <button data-tab="guide"><span class="tab-step" id="step-guide">5</span>Study Guide</button>
   </nav>
+  <button id="theme-toggle" class="theme-toggle" type="button" title="Switch color theme"></button>
 </header>
 
 <main>
