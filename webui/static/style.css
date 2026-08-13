@@ -149,6 +149,17 @@ h2:first-child { margin-top: 0; }
 h3 { font-size: var(--fs-base); margin: var(--sp-4) 0 var(--sp-2); }
 a { color: var(--accent); }
 code { font-size: .9em; }
+/* Shared inline-SVG icon sizing (icon() helper in app.js) -- replaces the
+   unicode glyphs (✓ ✗ ☀ ☾ ◐ ! ✕) that rendered slightly differently
+   across contexts depending on the browser/OS fallback font
+   (FRONTEND_TODO.md Round 3 P2). currentColor means every icon inherits
+   whatever text color its container already sets -- no per-icon color
+   rules needed. */
+.icon {
+  width: 1em; height: 1em; flex: none; vertical-align: -.125em;
+  stroke: currentColor; fill: none; stroke-width: 2.2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
 
 /* ============================================================
    Header + nav (with per-tab progress state)
@@ -175,7 +186,7 @@ nav#tabs button {
   transition: background-color .12s ease, color .12s ease;
 }
 nav#tabs button:hover { background: var(--card-nested); color: var(--fg); }
-nav#tabs button.active { background: var(--accent-soft); color: var(--accent); }
+nav#tabs button.active { background: var(--accent-soft); color: var(--accent); box-shadow: var(--shadow-sm); }
 .tab-step {
   display: inline-flex; align-items: center; justify-content: center;
   width: 1.15rem; height: 1.15rem; border-radius: 50%;
@@ -184,7 +195,7 @@ nav#tabs button.active { background: var(--accent-soft); color: var(--accent); }
 }
 nav#tabs button.active .tab-step { border-color: var(--accent); color: var(--accent); }
 .tab-step.step-done { background: var(--ok); border-color: var(--ok); color: #fff; }
-.tab-step.step-done::before { content: "✓"; }
+.tab-step svg { width: .65rem; height: .65rem; }
 .tab-badge {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 1.1rem; height: 1.1rem; padding: 0 .3rem;
@@ -254,13 +265,20 @@ button, .button {
   padding: var(--sp-2) var(--sp-4); border-radius: var(--radius-md);
   border: 1px solid var(--line-strong); background: var(--card); color: var(--fg);
   cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: var(--sp-2);
-  transition: background-color .12s ease, border-color .12s ease, transform .05s ease;
+  transition: background-color .12s ease, border-color .12s ease, transform .05s ease, box-shadow .12s ease;
 }
-button:hover:not(:disabled), .button:hover { background: var(--card-nested); }
-button:active:not(:disabled) { transform: translateY(1px); }
-button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
-button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+button:hover:not(:disabled), .button:hover { background: var(--card-nested); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+button:active:not(:disabled) { transform: translateY(1px); box-shadow: none; }
+button.primary {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 100%, white 8%), var(--accent));
+  border-color: var(--accent); color: var(--accent-fg); box-shadow: var(--shadow-sm);
+}
+button.primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-hover) 100%, white 8%), var(--accent-hover));
+  border-color: var(--accent-hover); box-shadow: var(--shadow-md);
+}
 button:disabled { opacity: .5; cursor: default; }
+button:disabled:hover { box-shadow: none; transform: none; }
 button.busy { position: relative; color: transparent !important; pointer-events: none; }
 button.busy::after {
   content: ""; position: absolute; inset: 0; margin: auto; width: 1rem; height: 1rem;
@@ -283,6 +301,20 @@ button.primary.busy::after { color: var(--accent-fg); }
 .chip:hover { border-color: var(--fg-subtle); }
 .chip:has(input:checked) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .chip input { accent-color: var(--accent); margin: 0; }
+
+/* Collapsed-by-default summary for a chip-list, with a "Customize" toggle
+   to expand into the full grid (FRONTEND_TODO.md Round 3 P1: the Run tab
+   showed 22+8 always-checked chips by default -- the overwhelmingly
+   common "just run everything" case rendered as 30 checkboxes instead of
+   one line). The underlying .chip-list stays in the DOM either way, just
+   hidden, so checkbox state survives toggling. */
+.chip-summary {
+  display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+  margin-top: var(--sp-2);
+}
+.chip-summary .count { font-size: var(--fs-sm); color: var(--fg-muted); }
+.chip-summary button { padding: var(--sp-1) var(--sp-3); font-size: var(--fs-xs); }
+.chip-list.collapsed { display: none; }
 
 /* ============================================================
    Pills / status badges (toned, not one flat gray)
@@ -321,6 +353,17 @@ button.primary.busy::after { color: var(--accent-fg); }
 .banner-icon { flex: none; font-weight: 800; }
 
 /* ============================================================
+   Empty states (icon + copy + optional CTA, not a bare sentence --
+   FRONTEND_TODO.md Round 3 P2)
+   ============================================================ */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: var(--sp-2); padding: var(--sp-6) var(--sp-4); color: var(--fg-muted);
+}
+.empty-state .icon { width: 1.8rem; height: 1.8rem; color: var(--fg-subtle); }
+.empty-state strong { color: var(--fg); font-size: var(--fs-sm); }
+
+/* ============================================================
    Next-step callout
    ============================================================ */
 .next-step {
@@ -330,6 +373,22 @@ button.primary.busy::after { color: var(--accent-fg); }
   margin-top: var(--sp-3); font-size: var(--fs-sm); font-weight: 600;
 }
 .next-step button { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+
+/* ============================================================
+   Compact status grid (preflight checks) -- replaces a full <table>
+   for what's really a short pass/fail checklist (FRONTEND_TODO.md
+   Round 3 P1: a table's header/border chrome outweighed 9 short rows).
+   ============================================================ */
+.status-grid { display: flex; flex-direction: column; }
+.status-row {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) 0; border-bottom: 1px solid var(--line);
+}
+.status-row:last-child { border-bottom: none; }
+.status-row .icon { width: 1.1rem; height: 1.1rem; }
+.status-row .icon.ok { color: var(--ok); } .status-row .icon.warn { color: var(--warn); }
+.status-row .name { font-weight: 600; font-size: var(--fs-sm); width: 9rem; flex: none; }
+.status-row .detail { font-size: var(--fs-xs); color: var(--fg-muted); }
 
 /* ============================================================
    Tables — wrapped so overflow scrolls the table, not the page
@@ -366,12 +425,32 @@ td:nth-child(2) { white-space: normal; } /* title columns may wrap */
 }
 
 /* ============================================================
-   Sources tab: deck mapping
+   Sources tab: deck mapping + styled file dropzone
    ============================================================ */
 .deck-row {
   border: 1px solid var(--line); border-radius: var(--radius-md);
   padding: var(--sp-3) var(--sp-4); margin: var(--sp-2) 0; background: var(--card);
 }
+/* Wraps a real (visually-hidden but focusable) <input type=file> -- click
+   or drag-and-drop both work, and it's still a real file input for
+   keyboard/screen-reader users, just restyled instead of replaced
+   (FRONTEND_TODO.md Round 3 P2: this was the one control that never got
+   the Round 1 design-system pass). */
+.dropzone {
+  position: relative; display: flex; flex-direction: column; align-items: center;
+  gap: var(--sp-2); text-align: center; padding: var(--sp-6) var(--sp-4);
+  border: 2px dashed var(--line-strong); border-radius: var(--radius-lg);
+  background: var(--card-nested); color: var(--fg-muted); cursor: pointer;
+  transition: border-color .12s ease, background-color .12s ease;
+}
+.dropzone:hover, .dropzone.drag-over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.dropzone .icon { width: 1.8rem; height: 1.8rem; }
+.dropzone strong { color: var(--fg); font-size: var(--fs-sm); }
+.dropzone.drag-over strong { color: var(--accent); }
+.dropzone input[type=file] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+}
+.dropzone-files { font-size: var(--fs-xs); color: var(--fg-muted); margin-top: var(--sp-1); }
 
 /* ============================================================
    Crop tool (visual region picker over a sample frame)
@@ -411,6 +490,48 @@ td:nth-child(2) { white-space: normal; } /* title columns may wrap */
 .review-item .meta { font-size: var(--fs-xs); color: var(--fg-muted); }
 .slide-pick { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
 .corrected { outline: 2px solid var(--accent); outline-offset: 2px; transition: outline-color .15s ease; }
+
+/* Confidence meter: a bare "score 0.21" gives a new user nothing to go on
+   without already knowing stage 4's scoring scale (FRONTEND_TODO.md
+   Round 3 P1). A small toned bar communicates "how sure" at a glance;
+   the number stays next to it for anyone who wants the precise value. */
+.confidence {
+  display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); color: var(--fg-muted);
+}
+.confidence-bar {
+  width: 4rem; height: .4rem; border-radius: var(--radius-pill);
+  background: var(--card-nested); border: 1px solid var(--line); overflow: hidden; flex: none;
+}
+.confidence-bar > span { display: block; height: 100%; border-radius: inherit; }
+.confidence-bar > span.tone-err { background: var(--err); }
+.confidence-bar > span.tone-warn { background: var(--warn); }
+.confidence-bar > span.tone-ok { background: var(--ok); }
+
+/* Compact tag list for "slides never shown" -- was one giant comma-joined
+   paragraph on real pooled-deck data (60-80+ items); a wrapped tag grid
+   is scannable the way a run-on sentence isn't (FRONTEND_TODO.md Round 3
+   P1). Read-only, so lighter than an interactive .chip (no border/hover). */
+.tag-list { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-2); }
+.tag {
+  display: inline-flex; background: var(--card-nested); color: var(--fg-muted);
+  border-radius: var(--radius-sm); padding: .15rem .5rem; font-size: var(--fs-xs);
+}
+
+/* Review queue: one item at a time instead of a long scroll
+   (FRONTEND_TODO.md Round 3 P3 -- real lectures on this course have
+   100+ flagged items). */
+.review-pager {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3); margin: var(--sp-3) 0;
+}
+.review-pager .position { font-size: var(--fs-sm); color: var(--fg-muted); font-weight: 600; }
+.review-dots { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin: var(--sp-2) 0; max-width: 100%; }
+.review-dot {
+  width: .55rem; height: .55rem; border-radius: 50%; background: var(--line-strong);
+  border: none; padding: 0; cursor: pointer; flex: none;
+}
+.review-dot.current { background: var(--accent); transform: scale(1.4); }
+.review-dot.done { background: var(--ok); }
 
 /* ============================================================
    Study guide

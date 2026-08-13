@@ -27,6 +27,37 @@ const api = async (path, opts = {}, _retried = false) => {
   return r.json();
 };
 
+/* ---------- icon set (inline SVG, currentColor -- replaces the unicode
+   glyphs ✓ ✗ ☀ ☾ ◐ ! ✕ that rendered slightly differently depending on
+   the browser/OS fallback font. FRONTEND_TODO.md Round 3 P2. Feather-
+   style outline icons, 24x24 viewBox, stroke via the shared .icon CSS
+   class so no per-icon color/sizing rules are needed anywhere they're
+   used. Declared before the theme toggle below: icon() is a hoisted
+   function declaration so call order wouldn't normally matter, but
+   ICON_PATHS is a const, which stays in the temporal dead zone until its
+   own declaration line runs -- renderThemeToggle() calls icon() at
+   top-level, immediately, on page load, so this block has to come first
+   or that call throws "Cannot access 'ICON_PATHS' before initialization"
+   (a real bug caught by an uncaught pageerror in live verification: it
+   silently killed the entire script, so NOT ONE network request fired,
+   not even the boot() sequence -- confirmed via request/response
+   tracing, not by guessing from the symptom). ---------- */
+const ICON_PATHS = {
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  cross: '<path d="M18 6 6 18"/><path d="M6 6l12 12"/>',
+  warn: '<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/>',
+  auto: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/>',
+  upload: '<path d="M12 16V4M12 4l-5 5M12 4l5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
+  inbox: '<path d="M4 12h4l2 3h4l2-3h4"/><path d="M4 12 5.5 4.5A2 2 0 0 1 7.5 3h9a2 2 0 0 1 2 1.5L20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/>',
+  chevronLeft: '<path d="M15 18l-6-6 6-6"/>',
+  chevronRight: '<path d="M9 18l6-6-6-6"/>',
+};
+function icon(name, extraClass) {
+  return `<svg class="icon${extraClass ? " " + extraClass : ""}" viewBox="0 0 24 24">${ICON_PATHS[name] || ""}</svg>`;
+}
+
 /* ---------- theme toggle: auto (system) -> light -> dark -> auto.
    Explicit choices persist in localStorage; a tiny inline script in
    index.html's <head> applies the stored choice before style.css even
@@ -42,9 +73,9 @@ function applyTheme(theme) {
 }
 function renderThemeToggle() {
   const t = currentTheme();
-  const icon = t === "light" ? "☀" : t === "dark" ? "☾" : "◐";
+  const iconName = t === "light" ? "sun" : t === "dark" ? "moon" : "auto";
   const label = t === "light" ? "Light" : t === "dark" ? "Dark" : "Auto";
-  $("#theme-toggle").innerHTML = `<span class="theme-icon">${icon}</span>${label}`;
+  $("#theme-toggle").innerHTML = `${icon(iconName, "theme-icon")}${label}`;
   $("#theme-toggle").title = `Color theme: ${label} (click to change)`;
 }
 $("#theme-toggle").addEventListener("click", () => {
@@ -70,13 +101,54 @@ function statusLine(text) {
   return `<span class="status-line"><span class="spinner"></span>${text}</span>`;
 }
 function errorBanner(message) {
-  return `<div class="banner tone-err"><span class="banner-icon">✕</span><span>${message}</span></div>`;
+  return `<div class="banner tone-err">${icon("cross", "banner-icon")}<span>${message}</span></div>`;
 }
 function okBanner(message) {
-  return `<div class="banner tone-ok"><span class="banner-icon">✓</span><span>${message}</span></div>`;
+  return `<div class="banner tone-ok">${icon("check", "banner-icon")}<span>${message}</span></div>`;
+}
+function warnBanner(message) {
+  return `<div class="banner tone-warn">${icon("warn", "banner-icon")}<span>${message}</span></div>`;
 }
 function nextStep(message, tab, cta) {
   return `<div class="next-step"><span>${message}</span><button data-goto="${tab}">${cta} →</button></div>`;
+}
+// Icon + copy + optional CTA instead of one bare sentence for "nothing
+// here yet" moments (FRONTEND_TODO.md Round 3 P2).
+function emptyState(iconName, message, tab, cta) {
+  return `<div class="empty-state">${icon(iconName)}<strong>${message}</strong>` +
+    (tab ? `<button data-goto="${tab}" class="primary">${cta} →</button>` : "") +
+    `</div>`;
+}
+
+// Collapsed-by-default "All N selected" summary + Customize toggle for a
+// chip-list (FRONTEND_TODO.md Round 3 P1: the Run tab showed 22 lecture +
+// 8 stage chips always fully expanded and checked -- the overwhelmingly
+// common "just run everything" case rendered as 30 checkboxes instead of
+// one line). Attaches its `change` listener to the list container itself,
+// not the individual chip inputs, so it survives the container's
+// innerHTML being replaced wholesale (refreshState() rebuilds
+// #run-lectures on every call) -- only needs setting up once; callers
+// that replace a list's innerHTML should call the returned render()
+// again afterward to reflect the new checked count.
+function setupChipSummary(listId, summaryId, noun) {
+  const list = $("#" + listId);
+  const summary = $("#" + summaryId);
+  function render() {
+    const inputs = [...list.querySelectorAll("input")];
+    const total = inputs.length;
+    const checked = inputs.filter((i) => i.checked).length;
+    const expanded = !list.classList.contains("collapsed");
+    const countText = total === 0 ? `No ${noun}s yet`
+      : checked === total ? `All ${total} ${noun}${total === 1 ? "" : "s"} selected`
+      : `${checked} of ${total} ${noun}s selected`;
+    summary.innerHTML = `<span class="count">${countText}</span>` +
+      (total > 0 ? `<button type="button" class="chip-customize">${expanded ? "Show less" : "Customize"}</button>` : "");
+    const btn = summary.querySelector(".chip-customize");
+    if (btn) btn.addEventListener("click", () => { list.classList.toggle("collapsed"); render(); });
+  }
+  list.addEventListener("change", render);
+  render();
+  return render;
 }
 // Wrap a button's async click handler so it can't fire twice from a fast
 // double-click, and shows a spinner in place of its label while in flight
@@ -132,7 +204,13 @@ function updateNavProgress(preflightOk) {
   };
   for (const [key, done] of Object.entries(steps)) {
     const el = $("#step-" + key);
-    if (el) el.classList.toggle("step-done", done);
+    if (!el) continue;
+    el.classList.toggle("step-done", done);
+    // check icon when done, the step number otherwise -- data-step is the
+    // source of truth so the number survives toggling back and forth
+    // (moved off a CSS ::before checkmark so it's a real icon, not a
+    // unicode glyph -- FRONTEND_TODO.md Round 3 P2).
+    el.innerHTML = done ? icon("check") : el.dataset.step;
   }
   const badge = $("#review-badge");
   if (reviewCount > 0) { badge.hidden = false; badge.textContent = reviewCount; }
@@ -149,13 +227,19 @@ async function loadSetup() {
   $("#preflight").innerHTML = statusLine("Checking…");
   try {
     const pf = await api("/preflight");
+    // Compact status-grid instead of a full <table> -- 9 short pass/fail
+    // rows don't need header/border table chrome (FRONTEND_TODO.md Round
+    // 3 P1: read like a database dump for what's really a checklist).
     $("#preflight").innerHTML =
-      '<div class="table-wrap"><table>' +
+      '<div class="status-grid">' +
       Object.entries(pf.checks)
-        .map(([k, v]) => `<tr><td>${k}</td><td class="${v.ok ? "ok" : "warn"}">${v.ok ? "✓" : "✗"}</td><td>${v.detail || ""}</td></tr>`)
+        .map(([k, v]) =>
+          `<div class="status-row">${icon(v.ok ? "check" : "warn", v.ok ? "ok" : "warn")}` +
+          `<span class="name">${k}</span><span class="detail">${v.detail || ""}</span></div>`
+        )
         .join("") +
-      "</table></div>" +
-      (pf.ok ? okBanner("Ready to run.") : `<div class="banner tone-warn"><span class="banner-icon">!</span><span>Some required tools are missing — the pipeline may fail.</span></div>`);
+      "</div>" +
+      (pf.ok ? okBanner("Ready to run.") : warnBanner("Some required tools are missing — the pipeline may fail."));
     lastPreflightOk = pf.ok;
     updateNavProgress(pf.ok);
     $("#setup-next").innerHTML = pf.ok ? nextStep("Environment looks good.", "sources", "Add lectures") : "";
@@ -163,7 +247,18 @@ async function loadSetup() {
     $("#preflight").innerHTML = errorBanner("Preflight failed: " + e.message);
   }
   const s = await api("/settings");
-  $("#set-whisper").value = s.settings.WHISPER_MODEL || "medium";
+  // If the saved model doesn't match any hardcoded <option> (this course's
+  // real setting, large-v3-turbo, didn't until this fix -- and any future
+  // model name has the same problem), synthesize one instead of letting
+  // the <select> silently render blank (FRONTEND_TODO.md Round 3 P0,
+  // confirmed live: sel.value === '' and sel.options[sel.selectedIndex]
+  // === undefined).
+  const wantedModel = s.settings.WHISPER_MODEL || "medium";
+  const whisperSel = $("#set-whisper");
+  if (![...whisperSel.options].some((o) => o.value === wantedModel)) {
+    whisperSel.add(new Option(`${wantedModel} (current)`, wantedModel));
+  }
+  whisperSel.value = wantedModel;
   $("#set-ocr").value = s.settings.OCR_LANG || "";
   $("#set-key").placeholder = s.settings.has_api_key ? "saved (" + s.settings.ANTHROPIC_API_KEY + ")" : "sk-ant-…";
 }
@@ -233,14 +328,41 @@ async function confirmLectures() {
   await refreshState();
 }
 function fmtDur(s) {
-  if (!s) return "";
+  // Was `if (!s) return ""` -- 0 is falsy in JS, so a slide matched at the
+  // very start of a video (timestamp 0, the totally normal slide-1 case)
+  // rendered nothing after "@" instead of "0:00" (FRONTEND_TODO.md Round
+  // 3 P0, confirmed in a real Review-tab screenshot).
+  if (s == null || isNaN(s)) return "";
   const m = Math.floor(s / 60);
   return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 }
 
+// Drag-and-drop for the styled dropzone (FRONTEND_TODO.md Round 3 P2):
+// the real <input type=file> is nested inside the <label>, so click-to-
+// browse already works natively via implicit label association -- this
+// only adds the drag/drop path, which needs its own handlers regardless
+// of how the zone is styled.
+const dropzone = $("#dropzone");
+["dragenter", "dragover"].forEach((evt) =>
+  dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.add("drag-over"); })
+);
+["dragleave", "drop"].forEach((evt) =>
+  dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.remove("drag-over"); })
+);
+dropzone.addEventListener("drop", (e) => {
+  const dropped = e.dataTransfer && e.dataTransfer.files;
+  if (dropped && dropped.length) {
+    $("#deck-file").files = dropped;
+    $("#deck-file").dispatchEvent(new Event("change"));
+  }
+});
+
 $("#deck-file").addEventListener("change", async () => {
   const files = [...$("#deck-file").files];
   const lectures = stateCache ? stateCache.lectures : [];
+  $("#dropzone-label").textContent = files.length
+    ? `${files.length} file${files.length === 1 ? "" : "s"} selected`
+    : "Drag decks here, or click to browse";
   $("#btn-upload").hidden = !files.length;
   $("#btn-upload-pool").hidden = !files.length;
   $("#deck-filter-row").hidden = !files.length || lectures.length < 8;
@@ -326,6 +448,7 @@ onClickBusy($("#btn-upload-pool"), async () => {
       `Combined ${r.pool_decks.length} deck(s) into one ${r.merged_pages}-page deck${dedupeNote}, shared by ${r.lectures.length} lecture(s)`
     );
     $("#deck-file").value = "";
+    $("#dropzone-label").textContent = "Drag decks here, or click to browse";
     $("#deck-mapping").innerHTML = "";
     $("#btn-upload").hidden = $("#btn-upload-pool").hidden = $("#deck-filter-row").hidden = true;
     $("#sources-next").innerHTML = nextStep("Decks are in.", "run", "Go to Run");
@@ -364,6 +487,7 @@ onClickBusy($("#btn-upload"), async () => {
     (errors.length ? errorBanner(errors.join("; ")) : "");
   if (done) {
     $("#deck-file").value = "";
+    $("#dropzone-label").textContent = "Drag decks here, or click to browse";
     $("#deck-mapping").innerHTML = "";
     $("#btn-upload").hidden = true;
     $("#sources-next").innerHTML = nextStep("Decks are in.", "run", "Go to Run");
@@ -372,6 +496,13 @@ onClickBusy($("#btn-upload"), async () => {
 });
 
 let stateCache = null;
+// Set up once: run-stages is static HTML (never re-rendered), so its
+// summary needs no further attention. run-lectures is rebuilt every
+// refreshState() call -- its render() is re-invoked below after the
+// rebuild instead of re-attaching a new listener.
+setupChipSummary("run-stages", "run-stages-summary", "stage");
+const renderLecturesSummary = setupChipSummary("run-lectures", "run-lectures-summary", "lecture");
+
 async function refreshState() {
   stateCache = await api("/state");
   const { lectures } = stateCache;
@@ -387,7 +518,7 @@ async function refreshState() {
         )
         .join("") +
       "</table></div>"
-    : "No lectures yet.";
+    : emptyState("inbox", "No lectures yet.", "sources", "Add lectures");
   // lecture chips (preserve un-ticks across refreshes)
   const prevUnchecked = new Set(
     [...document.querySelectorAll("#run-lectures input:not(:checked)")].map((c) => c.value)
@@ -395,6 +526,7 @@ async function refreshState() {
   $("#run-lectures").innerHTML = lectures
     .map((l) => chip("run-lecture", l.id, `${l.id.replace("lecture", "L")} · ${l.title}`, !prevUnchecked.has(l.id)))
     .join("");
+  renderLecturesSummary();
   // crop tool's lecture picker (only lectures with a video, stage 0 done)
   const withVideo = lectures.filter((l) => l.stages["0"]);
   $("#crop-lecture-pick").innerHTML = withVideo.length
@@ -620,65 +752,147 @@ function updateCropReadout() {
 
 /* ---------- review ---------- */
 let corrections = {};
+let reviewLow = [], reviewSlideByNum = {}, reviewIndex = 0;
+
+// A bare "score 0.21" gives a new user nothing to go on without already
+// knowing stage 4's scoring scale -- a small toned bar communicates "how
+// sure" at a glance (FRONTEND_TODO.md Round 3 P1). Thresholds are
+// relative within this list's own range: everything shown here already
+// cleared stage 4's own confidence_threshold as "low," so this is about
+// distinguishing worse from less-bad within that band, not an absolute
+// good/bad line.
+function confidenceMeter(score) {
+  const pct = Math.round(Math.max(0, Math.min(1, score)) * 100);
+  const tone = score < 0.1 ? "err" : score < 0.2 ? "warn" : "ok";
+  return `<span class="confidence"><span class="confidence-bar"><span class="tone-${tone}" style="width:${pct}%"></span></span>${score.toFixed(2)}</span>`;
+}
+
+// Compact tag list instead of a comma-joined paragraph (FRONTEND_TODO.md
+// Round 3 P1: "slides never shown" runs 60-80+ items on this course's
+// real pooled-deck data). Full list kept in a Map instead of a data-
+// attribute so it never needs HTML-escaping through an attribute value.
+const tagListFullHtml = new Map();
+function renderTagList(items, limit = 24) {
+  if (!items.length) return "";
+  const tag = (t) => `<span class="tag">${t}</span>`;
+  if (items.length <= limit) return `<div class="tag-list">${items.map(tag).join("")}</div>`;
+  const id = "taglist-" + Math.random().toString(36).slice(2, 8);
+  tagListFullHtml.set(id, items.map(tag).join(""));
+  return `<div class="tag-list" id="${id}">${items.slice(0, limit).map(tag).join("")}` +
+    `<button type="button" class="tag show-more-tags" data-target="${id}">+${items.length - limit} more</button></div>`;
+}
+document.addEventListener("click", (e) => {
+  const moreTags = e.target.closest(".show-more-tags");
+  if (moreTags) {
+    const html = tagListFullHtml.get(moreTags.dataset.target);
+    if (html) $("#" + moreTags.dataset.target).innerHTML = html;
+  }
+});
+
 async function populateReviewLectures() {
   if (!stateCache) await refreshState();
-  $("#review-lecture").innerHTML = stateCache.lectures
-    .filter((l) => l.stages["4"])
+  const withMatches = stateCache.lectures.filter((l) => l.stages["4"]);
+  $("#review-lecture").innerHTML = withMatches
     .map((l) => `<option value="${l.id}">${l.id} — ${l.title}${l.needs_review_count ? ` (${l.needs_review_count} flagged)` : ""}</option>`)
     .join("");
+  // Placeholder until a lecture is actually loaded (FRONTEND_TODO.md
+  // Round 3 P2: this was a blank <div>, not a designed empty state).
+  if (!$("#review-body").innerHTML.trim()) {
+    $("#review-body").innerHTML = withMatches.length
+      ? emptyState("inbox", "Pick a lecture above and hit Load to review its matches.")
+      : emptyState("inbox", "No lecture has reached stage 4 (slide matching) yet.", "run", "Go run the pipeline");
+  }
 }
 onClickBusy($("#btn-load-review"), loadReview);
 async function loadReview() {
   const id = $("#review-lecture").value;
   if (!id) return;
   corrections = {};
+  reviewIndex = 0;
   $("#review-status").textContent = "";
   $("#review-body").innerHTML = statusLine("Loading…");
   const d = await api("/review/" + id);
-  const slideByNum = Object.fromEntries(d.slides.map((s) => [s.slide_number, s]));
-  const low = d.review.low_confidence_matches || [];
+  reviewSlideByNum = Object.fromEntries(d.slides.map((s) => [s.slide_number, s]));
+  reviewLow = d.review.low_confidence_matches || [];
   const un = d.review.unmatched_slides || [];
   const back = d.review.backward_jumps || [];
-  let html = `<h3>Uncertain matches ${pill(low.length, low.length ? "warn" : "ok")}</h3>`;
-  if (!low.length) html += okBanner("Nothing flagged.");
-  html += low
-    .map((item, i) => {
-      const slide = slideByNum[item.slide_number];
-      return `<div class="review-item" data-ts="${item.timestamp}" id="ri-${i}">
-        <div><strong>Video frame @ ${fmtDur(item.timestamp)}</strong><br><img src="${item.frame_url}" loading="lazy"></div>
-        <div><strong>Matched: slide ${item.slide_number}</strong> <span class="meta">score ${item.score.toFixed(2)}</span><br>
-          ${slide ? `<img src="${slide.image}" loading="lazy">` : ""}</div>
-        <div><div class="meta">OCR read: “${(item.ocr_excerpt || "").slice(0, 120)}”</div>
-          <div class="slide-pick">Correct slide #:
-            <input type="number" min="1" class="input-xs pick-num" data-i="${i}" placeholder="${item.slide_number}">
-            <button data-i="${i}" class="pick-ok">Set</button>
-            <button data-i="${i}" class="pick-drop">Not a slide</button>
-          </div></div></div>`;
-    })
-    .join("");
+
+  let html = `<h3>Uncertain matches ${pill(reviewLow.length, reviewLow.length ? "warn" : "ok")}</h3>`;
+  if (!reviewLow.length) {
+    html += okBanner("Nothing flagged.");
+  } else {
+    // One item at a time instead of a long scroll -- real lectures on
+    // this course have 100+ flagged items (FRONTEND_TODO.md Round 3 P3).
+    html += `<div class="review-pager">
+      <button type="button" id="review-prev">${icon("chevronLeft")} Prev</button>
+      <span class="position" id="review-position"></span>
+      <button type="button" id="review-next">Next ${icon("chevronRight")}</button>
+    </div>
+    <div class="review-dots" id="review-dots"></div>
+    <div id="review-item-slot"></div>`;
+  }
   html += `<h3>Slides never shown ${pill(un.length)}</h3>
     <p class="hint">Usually fine — the deck covers more lectures than this one video.</p>
-    <p class="meta">${un.map((s) => `#${s.slide_number} ${s.title || ""}`).join(" · ")}</p>`;
+    ${renderTagList(un.map((s) => `#${s.slide_number} ${s.title || ""}`))}`;
   html += `<h3>Backward jumps ${pill(back.length)}</h3>
     <p class="hint">The professor going back to an earlier slide — informational.</p>`;
   $("#review-body").innerHTML = html;
-  $("#review-apply-row").hidden = !low.length;
-  document.querySelectorAll(".pick-ok").forEach((b) =>
-    b.addEventListener("click", () => {
-      const i = +b.dataset.i;
-      const v = document.querySelector(`.pick-num[data-i="${i}"]`).value;
-      if (!v) return;
-      corrections[i] = { timestamp: low[i].timestamp, slide_number: +v };
-      $("#ri-" + i).classList.add("corrected");
-    })
+  $("#review-apply-row").hidden = !reviewLow.length;
+
+  if (reviewLow.length) {
+    $("#review-prev").addEventListener("click", () => { reviewIndex = Math.max(0, reviewIndex - 1); renderReviewItem(); });
+    $("#review-next").addEventListener("click", () => { reviewIndex = Math.min(reviewLow.length - 1, reviewIndex + 1); renderReviewItem(); });
+    renderReviewDots();
+    renderReviewItem();
+  }
+}
+
+function renderReviewDots() {
+  $("#review-dots").innerHTML = reviewLow.map((_, i) =>
+    `<button type="button" class="review-dot${i === reviewIndex ? " current" : ""}${corrections[i] ? " done" : ""}" data-i="${i}" title="Item ${i + 1}"></button>`
+  ).join("");
+  $("#review-dots").querySelectorAll(".review-dot").forEach((b) =>
+    b.addEventListener("click", () => { reviewIndex = +b.dataset.i; renderReviewItem(); })
   );
-  document.querySelectorAll(".pick-drop").forEach((b) =>
-    b.addEventListener("click", () => {
-      const i = +b.dataset.i;
-      corrections[i] = { timestamp: low[i].timestamp, slide_number: null };
-      $("#ri-" + i).classList.add("corrected");
-    })
-  );
+}
+
+function renderReviewItem() {
+  const i = reviewIndex;
+  const item = reviewLow[i];
+  const slide = reviewSlideByNum[item.slide_number];
+  $("#review-position").textContent = `${i + 1} of ${reviewLow.length}`;
+  $("#review-prev").disabled = i === 0;
+  $("#review-next").disabled = i === reviewLow.length - 1;
+  $("#review-item-slot").innerHTML = `<div class="review-item${corrections[i] ? " corrected" : ""}" data-ts="${item.timestamp}">
+    <div><strong>Video frame @ ${fmtDur(item.timestamp)}</strong><br><img src="${item.frame_url}" loading="lazy"></div>
+    <div><strong>Matched: slide ${item.slide_number}</strong> ${confidenceMeter(item.score)}<br>
+      ${slide ? `<img src="${slide.image}" loading="lazy">` : ""}</div>
+    <div><div class="meta">OCR read: “${(item.ocr_excerpt || "").slice(0, 120)}”</div>
+      <div class="slide-pick">Correct slide #:
+        <input type="number" min="1" class="input-xs pick-num" placeholder="${item.slide_number}">
+        <button type="button" class="pick-ok">Set</button>
+        <button type="button" class="pick-drop">Not a slide</button>
+      </div></div></div>`;
+  $("#review-item-slot .pick-ok").addEventListener("click", () => {
+    const v = $("#review-item-slot .pick-num").value;
+    if (!v) return;
+    corrections[i] = { timestamp: item.timestamp, slide_number: +v };
+    afterReviewCorrection();
+  });
+  $("#review-item-slot .pick-drop").addEventListener("click", () => {
+    corrections[i] = { timestamp: item.timestamp, slide_number: null };
+    afterReviewCorrection();
+  });
+}
+// Mark done, then auto-advance -- "decide, advance" is the whole point of
+// the one-at-a-time pager (FRONTEND_TODO.md Round 3 P3).
+function afterReviewCorrection() {
+  $("#review-item-slot .review-item").classList.add("corrected");
+  renderReviewDots();
+  if (reviewIndex < reviewLow.length - 1) {
+    reviewIndex++;
+    renderReviewItem();
+  }
 }
 onClickBusy($("#btn-apply-review"), async () => {
   const id = $("#review-lecture").value;
@@ -723,7 +937,7 @@ async function loadGuide() {
   $("#guide-pdf").hidden = !g.exists;
   const body = $("#guide-body");
   if (!g.exists) {
-    body.textContent = "Nothing assembled yet — run the pipeline first.";
+    body.innerHTML = emptyState("inbox", "Nothing assembled yet.", "run", "Go run the pipeline");
     return;
   }
   body.innerHTML = renderGuideMarkdown(g.markdown);

@@ -227,7 +227,7 @@ course data.
 
 ---
 
-# Round 3 — "more modern design, better UX" (2026-08-12, not yet started)
+# Round 3 — "more modern design, better UX" (2026-08-12/13, done)
 
 The previous two rounds fixed *broken* — inconsistent tokens, invisible
 Cancel buttons, unreachable dark mode. This round is about something
@@ -240,9 +240,16 @@ vibes. Two real *bugs* turned up in the process; those are called out
 separately from the subjective "modern" polish, since they're worth
 fixing regardless of how anyone feels about the aesthetic.
 
-## P0 — real bugs found during this pass (fix regardless of the redesign)
+Every item below was implemented and then verified with the app actually
+running (Playwright + headless Chromium, screenshots looked at, not just
+"the server returned 200") — see the closing section for what that caught
+this time, which was worse than either previous round: a bug that
+silently killed the *entire script*, before it fired a single network
+request.
 
-- [ ] **The Whisper-model dropdown silently renders blank.**
+## P0 — real bugs found during this pass (fixed)
+
+- [x] **The Whisper-model dropdown silently renders blank.**
       `loadSetup()` does `$("#set-whisper").value = s.settings.
       WHISPER_MODEL`, but `<select>`'s three hardcoded `<option>`s are
       `small`/`medium`/`large-v3` — and this course's actual (and per
@@ -254,103 +261,89 @@ fixing regardless of how anyone feels about the aesthetic.
       undefined` in a live page, not just eyeballing it. A student who's
       already followed the benchmarking advice in the docs opens Setup
       and sees an apparently-empty, possibly-broken-looking dropdown.
-      Fix: either add `large-v3-turbo` (and ideally `large-v3` variants
-      generally) as real options, or fall back to an `<option>` element
-      synthesized from the actual current value when it doesn't match
-      the static list, so the field never just renders empty.
-- [ ] **`fmtDur(0)` returns `""` instead of `"0:00"`.** `function fmtDur(s)
+      Fixed both ways: `large-v3-turbo` is now a real `<option>`, and
+      `loadSetup()` also synthesizes an `<option>` for whatever value is
+      actually saved if it still doesn't match anything (covers any
+      future model name, not just this one). Verified against the real
+      server: `/api/settings` returns `large-v3-turbo`, the select now
+      shows it selected with `optionCount: 4`, confirmed via a real
+      network-response trace, not a guess.
+- [x] **`fmtDur(0)` returns `""` instead of `"0:00"`.** `function fmtDur(s)
       { if (!s) return ""; ... }` — `0` is falsy in JS, so a slide
       matched at the very start of the video (`timestamp: 0`, a common,
       normal case — it's literally slide 1) renders "Video frame @" with
       nothing after the `@`, confirmed in a real Review-tab screenshot.
-      Fix: check `s == null` instead of `!s`.
+      Fixed: checks `s == null || isNaN(s)` instead of `!s`.
 
 ## P1 — information density reads as "admin panel," not a product
 
-- [ ] **Chip grids show every item, always fully expanded, with no
-      summary.** The Run tab's lecture selector shows all 22 lecture
-      chips and all 8 stage chips, every one checked, by default — the
-      overwhelmingly common case ("run everything") is presented as 30
-      individually-rendered checked checkboxes instead of a one-line
-      summary ("All 22 lectures, all 8 stages") with a "Customize"
-      disclosure to expand into the current grid. Same shape of problem
-      as the deck-mapping checkbox list Round 1 already fixed with a
-      filter — this is the same issue one level up, on the far more
-      common "just run it" path.
-- [ ] **The "Slides never shown" list in Review is an unbroken wall of
-      text.** `un.map(s => "#" + s.slide_number + " " + s.title).
-      join(" · ")` — on this course's real data (a pooled deck, so this
-      is the normal case, not an edge case) that's 60-80+ items
-      concatenated into one giant run-on paragraph with no visual
-      structure. Should be a compact chip/tag list (reuses the existing
-      `chip()`-adjacent visual language) or a collapsed "81 slides never
-      shown, click to expand" — not a paragraph a human has to parse
-      word by word to find anything in.
-- [ ] **Match confidence is a bare float with no visual read.** Every
-      review item shows `score 0.21` etc. as plain text — a new user has
-      no built-in sense of whether 0.21 is "fine" or "concerning" without
-      already knowing stage 4's scoring scale. A small horizontal meter
-      or a toned pill (reusing the `pill()`/`tone-*` system Round 1
-      already built for exactly this kind of "is this number good or
-      bad" signal) would communicate it in the same glance instead of
-      requiring the reader to do the interpretation themselves.
-- [ ] **The environment-check table is heavier than its content.** 9
-      short pass/fail rows (`ffmpeg ✓ /opt/homebrew/bin/ffmpeg`, etc.) sit
-      in a full bordered `<table>` with header-weight spacing — reads
-      like a database dump for what's really a short status checklist.
-      A denser status-grid or list treatment (icon + label + detail,
-      no table chrome) would look more like a modern setup wizard and
-      less like an ops dashboard.
+- [x] **Chip grids show every item, always fully expanded, with no
+      summary.** `setupChipSummary()` now renders a one-line summary
+      ("All 22 lectures selected") + a "Customize" toggle for both the
+      lecture and stage chip-lists, collapsed by default; the underlying
+      chips stay in the DOM either way so checked-state and the existing
+      `refreshState()` un-tick-preserving logic are unaffected. Verified
+      live against the real 22-lecture course: collapsed by default,
+      correct count, "Customize" expands the full grid, "Show less"
+      re-collapses.
+- [x] **The "Slides never shown" list in Review is an unbroken wall of
+      text.** Replaced with `renderTagList()` — a wrapped tag grid,
+      capped at 24 with a "+N more" expander for longer lists. Verified
+      against this course's real lecture01 data, which turned out to be a
+      much better stress test than expected: 891 unmatched slides (this
+      course's pool has grown since the original Round 3 audit), rendered
+      as 24 tags + "+867 more"; clicking it correctly expanded to all 891
+      in a live check.
+- [x] **Match confidence is a bare float with no visual read.**
+      `confidenceMeter()` — a small toned horizontal bar (err/warn/ok
+      by relative score within this already-flagged list) next to the
+      number. Verified live: a 0.08 match rendered a red bar, a 0.21
+      match rendered a green one, in the same lecture's real data.
+- [x] **The environment-check table is heavier than its content.**
+      Replaced the `<table>` with a compact `.status-grid` — icon + name
+      + detail per row, no header/border chrome.
 
 ## P2 — componentry that's still bare-native-HTML
 
-- [ ] **The deck-upload file input is the unstyled OS-native control**
-      (`<input type="file">`, renders as "Choose Files / No file chosen"
-      in whatever the browser's default is) — every other control in the
-      app went through the Round 1 design-system pass except this one,
-      the literal center of the "upload slide decks" step. A styled
-      drag-and-drop dropzone (dashed border, drop-here copy, falls back
-      to click-to-browse) would both look considerably more current and
-      make the multi-file upload flow more discoverable.
-- [ ] **Icons are unicode glyphs, not a consistent set.** ✓ ✗ ☀ ☾ ◐ ! ✕ —
-      rendering depends on the browser/OS's fallback font for those
-      codepoints, which is why they already look slightly different in
-      weight/alignment across the app (compare the preflight table's ✓
-      to the theme toggle's ☀). A small inline-SVG icon set (even a dozen
-      icons: check, cross, warning, sun, moon, auto/system, upload, play,
-      stop) sized and aligned consistently would read as noticeably more
-      "designed" for very little added complexity — still no icon
-      library dependency, just a handful of hand-picked SVG paths.
-- [ ] **Empty states are one plain sentence.** "No lectures yet.", "No
-      file chosen", an empty Review body before you pick a lecture — all
-      just text, no icon, no shape, nothing to look at. A minimal empty-
-      state treatment (a simple icon + the existing copy + the relevant
-      CTA button, reusing `nextStep()`'s pattern) turns "nothing here"
-      moments into part of the guided flow instead of a dead end.
+- [x] **The deck-upload file input is the unstyled OS-native control.**
+      Now a styled dropzone (dashed border, upload icon, drag-and-drop
+      wired via `dragenter`/`dragover`/`drop` handlers that assign the
+      dropped `FileList` to the real, still-present `<input type=file>`
+      and dispatch a synthetic `change` so the existing upload logic
+      needs zero changes) with click-to-browse working natively via
+      label/input nesting. Verified rendered correctly, live, in both
+      themes.
+- [x] **Icons are unicode glyphs, not a consistent set.** A small
+      `icon()`/`ICON_PATHS` inline-SVG set (check, cross, warn, sun,
+      moon, auto, upload, inbox, chevrons) replaces every unicode glyph
+      in the app — banners, preflight rows, the theme toggle, nav
+      step-done badges. `currentColor`-based, so no per-icon color rules
+      needed anywhere they're used.
+- [x] **Empty states are one plain sentence.** `emptyState()` (icon +
+      message + optional CTA button) now used for the empty lecture
+      table, the Review tab before a lecture is loaded, and the Study
+      Guide tab before anything's assembled.
 
 ## P3 — depth, motion, and the Review tab's scroll fatigue
 
-- [ ] **Overall visual depth is thin.** Round 1 added `--shadow-sm`/
-      `--shadow-md` tokens but they're only used on `.card`; most of the
-      interface is still flat fills + 1px borders. A more current feel
-      (2020s SaaS, not 2016 flat-design) usually means slightly more
-      shadow/elevation on interactive elements (buttons lifting subtly on
-      hover, the active nav pill having a touch of shadow instead of pure
-      flat color) and a bit more confident use of the accent color
-      (e.g. a subtle gradient on the primary button) rather than solid
-      fills everywhere.
-- [ ] **The Review tab becomes a very long scroll on a real course.**
-      On this course's real lecture01 data (9 flagged items) the Review
-      tab is already a multi-screen scroll; lectures with 100+ flagged
-      items (this course has several, per the nav badge) would be
-      brutal. A "1 of 9" paginated/queue treatment — review one item,
-      decide, advance — would keep the page short and turn review into a
-      quick rhythm instead of a scroll-and-hunt exercise. (Bulk actions
-      like "accept all above some confidence threshold" are a reasonable
-      companion to this, not a replacement for it — some items still need
-      a human's actual judgment.)
+- [x] **Overall visual depth is thin.** Buttons now lift subtly on hover
+      (`box-shadow` + `translateY`) instead of just swapping background
+      color; the active nav pill picked up `--shadow-sm`; the primary
+      button got a subtle vertical gradient instead of a flat fill.
+- [x] **The Review tab becomes a very long scroll on a real course.**
+      Rebuilt as a one-item-at-a-time pager: Prev/Next, a "3 of 9"
+      position readout, a clickable dot per item (filled when corrected),
+      auto-advance to the next item right after a correction ("decide,
+      advance" was the actual point, not just adding buttons). Verified
+      live against real lecture01 data: correct position/dot state,
+      Next actually advances, corrections persist through navigation.
+      Bulk actions (e.g. "accept above some confidence threshold") stayed
+      out of scope, per the original note — still a reasonable future
+      companion, not a replacement for the one-at-a-time flow.
 
-## P4 — cross-cutting, needs a decision, not started
+## P4 — cross-cutting, needs a decision, still not started (out of scope
+## this round — "frontend changes" was the ask, and this needs
+## 07_assemble.py)
 
 - [ ] **The Study Guide's Table of Contents shows only `lectureNN`, no
       titles** — confirmed against the real guide (`lecture01` through
@@ -390,3 +383,44 @@ in-flight request plus at most one follow-up if more pings arrived during
 that request or a short (400ms) cooldown after — `webui/static/app.js`
 only, no backend change, deliberately, since backend files were mid-edit
 from other in-flight work at the time.
+
+---
+
+# What Round 3's verification caught
+
+Structural checks (HTML validity, CSS brace balance, JS syntax) all
+passed clean on the very version that turned out to be completely broken.
+Only launching the real app and tracing what actually happened caught it:
+
+**`const ICON_PATHS = {...}` was declared *after* the code that used it at
+module load time, and that silently killed the entire script.** The new
+icon system was placed after the theme-toggle section, but the theme
+toggle calls `renderThemeToggle()` — which calls `icon()` — at the
+top level, immediately, on every page load. `icon()` itself is a hoisted
+function declaration (order-independent, as expected), but the
+`ICON_PATHS` object it reads is a `const`, which stays in the temporal
+dead zone until its own declaration line actually executes. Since that
+line came later in the file, the very first page load threw `Cannot
+access 'ICON_PATHS' before initialization` — and because nothing caught
+it, execution stopped there: not one `addEventListener` call after that
+point ever ran, not one network request fired, not even `boot()`.
+
+The symptom was deceptive in a way worth remembering: a first attempt at
+verifying this (checking `sel.value` on the Whisper-model select, and the
+preflight icon count) *looked* like it reproduced the original P0 bugs
+returning — "medium" instead of "large-v3-turbo", zero icons rendered.
+That was almost a wrong diagnosis in the other direction: those specific
+readings were actually just an unrelated timing issue in the same test
+(reading state before the async `loadSetup()` chain had resolved) —
+`page.on('pageerror', ...)` was wired up from that very first run and did
+capture the real error immediately, it just never got read: the script's
+own `page.click(...)` on a button that doesn't exist yet (because
+`loadSetup()` never ran) timed out and crashed the Node process before
+its own summary line printed. The real bug only became unambiguous after
+a dedicated request/response trace showed *zero* calls to `/api/settings`
+at all — confirming the whole script had halted, not just one field.
+Fixed by moving the whole icon block above the theme-toggle section;
+re-verified with the same live checks afterward, this time all green
+(correct value, correct icon counts, zero errors, chip summaries,
+tag-list expansion, and the Review pager all confirmed working against
+the real running app).

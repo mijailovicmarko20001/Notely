@@ -20,11 +20,11 @@
 <header>
   <div class="brand"><span class="brand-mark">N</span><h1>Notely</h1></div>
   <nav id="tabs">
-    <button data-tab="setup"><span class="tab-step" id="step-setup">1</span>Setup</button>
-    <button data-tab="sources"><span class="tab-step" id="step-sources">2</span>Lectures &amp; Slides</button>
-    <button data-tab="run"><span class="tab-step" id="step-run">3</span>Run</button>
-    <button data-tab="review"><span class="tab-step" id="step-review">4</span>Review<span class="tab-badge" id="review-badge" hidden></span></button>
-    <button data-tab="guide"><span class="tab-step" id="step-guide">5</span>Study Guide</button>
+    <button data-tab="setup"><span class="tab-step" id="step-setup" data-step="1">1</span>Setup</button>
+    <button data-tab="sources"><span class="tab-step" id="step-sources" data-step="2">2</span>Lectures &amp; Slides</button>
+    <button data-tab="run"><span class="tab-step" id="step-run" data-step="3">3</span>Run</button>
+    <button data-tab="review"><span class="tab-step" id="step-review" data-step="4">4</span>Review<span class="tab-badge" id="review-badge" hidden></span></button>
+    <button data-tab="guide"><span class="tab-step" id="step-guide" data-step="5">5</span>Study Guide</button>
   </nav>
   <button id="theme-toggle" class="theme-toggle" type="button" title="Switch color theme"></button>
 </header>
@@ -48,6 +48,7 @@
           <option value="small">small (faster, lower quality)</option>
           <option value="medium" selected>medium (recommended)</option>
           <option value="large-v3">large-v3 (slowest, best)</option>
+          <option value="large-v3-turbo">large-v3-turbo (large accuracy, near-medium speed on GPU)</option>
         </select>
         <small>First use downloads the model (~1.5 GB for medium).</small>
       </label>
@@ -83,7 +84,12 @@
       <p>Pick one or more PDF/PPTX decks. Each deck is matched to a lecture by the number in its
         filename (e.g. <code>lecture03.pdf</code>, <code>week3.pptx</code>) — adjust below if the guess
         is wrong. One deck may cover several lectures.</p>
-      <input type="file" id="deck-file" accept=".pdf,.pptx" multiple>
+      <label class="dropzone" id="dropzone">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 16V4M12 4l-5 5M12 4l5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+        <strong id="dropzone-label">Drag decks here, or click to browse</strong>
+        <span class="hint">PDF or PPTX, one or more files</span>
+        <input type="file" id="deck-file" accept=".pdf,.pptx" multiple>
+      </label>
       <div class="row gap-top" id="deck-filter-row" hidden>
         <input type="text" id="deck-filter" placeholder="Filter lectures by id or title…">
       </div>
@@ -107,10 +113,12 @@
   <section id="tab-run" class="tab">
     <h2>Run the pipeline</h2>
     <div class="card">
-      <label>Lectures <span class="hint">(click to toggle; all selected by default)</span></label>
-      <div class="chip-list" id="run-lectures"></div>
-      <label>Stages <span class="hint">(click to toggle)</span></label>
-      <div class="chip-list" id="run-stages">
+      <label>Lectures</label>
+      <div class="chip-summary" id="run-lectures-summary"></div>
+      <div class="chip-list collapsed" id="run-lectures"></div>
+      <label>Stages</label>
+      <div class="chip-summary" id="run-stages-summary"></div>
+      <div class="chip-list collapsed" id="run-stages">
         <label class="chip"><input type="checkbox" value="0" checked> 0 · Fetch video</label>
         <label class="chip"><input type="checkbox" value="1" checked> 1 · Transcribe</label>
         <label class="chip"><input type="checkbox" value="2" checked> 2 · Extract slides</label>
