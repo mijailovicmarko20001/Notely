@@ -68,3 +68,11 @@ Run the test suite (scheduler + progress-parsing + stage-4 matcher logic;
 Full technical documentation — architecture, engineering decisions, every
 hardcoded value, and the improvement roadmap — lives in `DOCUMENTATION.md`
 (`CLAUDE.md` holds the original design spec).
+
+## License
+
+MIT — see [`LICENSE`](LICENSE). This covers the pipeline/web-UI code only;
+it does not grant any rights to the lecture videos, slide decks, or
+generated notes you produce with it, which remain your course's own
+copyrighted material (see the note above — personal study use only, no
+redistribution).
