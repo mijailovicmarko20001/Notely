@@ -113,9 +113,10 @@ keep it as a concrete case study (it's good, specific evidence the tool
 works), or genericize it if you'd rather the README/docs not point at a
 specific school. Your call, not a blocker.
 
-### O10. `README.md`/`DOCUMENTATION.md` should link the license once O1 lands
-Once O1/O2 are decided, add a `## License` section to `README.md` (and a
-badge if you want one) so it's visible without opening a separate file.
+### O10. `README.md`/`DOCUMENTATION.md` should link the license once O1 lands — DONE (2026-08-17)
+Added as part of O1's commit — `README.md` now has a `## License` section.
+No badge added (CI badge/license badge are cosmetic, skipped as low-value
+relative to everything else on this list — easy to add later if wanted).
 
 ---
 
