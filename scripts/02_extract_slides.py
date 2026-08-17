@@ -59,21 +59,23 @@ def convert_pptx_to_pdf(pptx_path: Path, out_dir: Path) -> Path:
 
 def render_pdf_to_images(pdf_path: Path, image_dir: Path, dpi: int = 150) -> list[str]:
     """Render each page of a PDF to a PNG, one per slide. Returns project-root-relative paths."""
-    import fitz  # PyMuPDF
+    import pypdfium2 as pdfium
 
     image_dir.mkdir(parents=True, exist_ok=True)
-    zoom = dpi / 72
-    matrix = fitz.Matrix(zoom, zoom)
+    scale = dpi / 72  # pypdfium2: render(scale=1) == 72 DPI (1 px per PDF point)
     image_paths = []
-    doc = fitz.open(str(pdf_path))
-    try:
+    with pdfium.PdfDocument(str(pdf_path)) as doc:
         for i, page in enumerate(doc, start=1):
-            pix = page.get_pixmap(matrix=matrix)
-            image_path = image_dir / f"slide_{i:03d}.png"
-            pix.save(str(image_path))
-            image_paths.append(str(image_path.relative_to(PROJECT_ROOT)))
-    finally:
-        doc.close()
+            try:
+                bitmap = page.render(scale=scale)
+                try:
+                    image_path = image_dir / f"slide_{i:03d}.png"
+                    bitmap.to_pil().save(str(image_path))
+                    image_paths.append(str(image_path.relative_to(PROJECT_ROOT)))
+                finally:
+                    bitmap.close()
+            finally:
+                page.close()
     return image_paths
 
 
@@ -125,16 +127,23 @@ def extract_from_pptx(pptx_path: Path, image_dir: Path) -> list[dict]:
 
 
 def extract_from_pdf(pdf_path: Path, image_dir: Path) -> list[dict]:
-    """Extract text and render images directly from a PDF via PyMuPDF."""
-    import fitz  # PyMuPDF
+    """Extract text and render images directly from a PDF via pypdfium2."""
+    import pypdfium2 as pdfium
 
     image_paths = render_pdf_to_images(pdf_path, image_dir)
 
     slides = []
-    doc = fitz.open(str(pdf_path))
-    try:
+    with pdfium.PdfDocument(str(pdf_path)) as doc:
         for i, page in enumerate(doc, start=1):
-            lines = [line.strip() for line in page.get_text().splitlines() if line.strip()]
+            try:
+                textpage = page.get_textpage()
+                try:
+                    text = textpage.get_text_range()
+                finally:
+                    textpage.close()
+            finally:
+                page.close()
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
             title = lines[0] if lines else ""
             body_text = "\n".join(lines[1:]).strip() if len(lines) > 1 else ""
             image_path = image_paths[i - 1] if i - 1 < len(image_paths) else ""
@@ -147,8 +156,6 @@ def extract_from_pdf(pdf_path: Path, image_dir: Path) -> list[dict]:
                     "image_path": image_path,
                 }
             )
-    finally:
-        doc.close()
     return slides
 
 

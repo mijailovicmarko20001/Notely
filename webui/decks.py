@@ -1,9 +1,9 @@
 """Slide-deck business logic: streamed upload persistence, pool merge/dedup,
 and the lecture-matching heuristic behind /slides/suggest (A2).
 
-Kept out of the route handlers so those stay pure HTTP glue; lazy `fitz`/
-`pptx` imports live here (only paid for once a deck is actually touched),
-not in api.py/routes.
+Kept out of the route handlers so those stay pure HTTP glue; lazy
+`pypdfium2`/`pypdf`/`pptx` imports live here (only paid for once a deck is
+actually touched), not in api.py/routes.
 """
 
 import difflib
@@ -95,28 +95,32 @@ def merge_pool(pool_dir: Path | None = None) -> dict:
     (scanned/image-only slides) are never deduped against each other --
     collapsing them on an empty-string hash match would wrongly merge
     visually distinct slides, so they're always kept."""
-    import fitz
+    from pypdf import PdfReader, PdfWriter
 
     pool_dir = pool_dir or (config.SLIDES_DIR / "_pool")
     pool_files = sorted(pool_dir.glob("*.pdf"))
-    merged = fitz.open()
+    writer = PdfWriter()
     seen_hashes = set()
     scanned_pages = 0
     for p in pool_files:
-        with fitz.open(p) as src:
-            for page_index in range(src.page_count):
-                scanned_pages += 1
-                text = _norm_page_text(src[page_index].get_text())
-                if text:
-                    key = hashlib.md5(text.encode()).hexdigest()
-                    if key in seen_hashes:
-                        continue
-                    seen_hashes.add(key)
-                merged.insert_pdf(src, from_page=page_index, to_page=page_index)
-    total_pages = merged.page_count
+        reader = PdfReader(p)
+        for page in reader.pages:
+            scanned_pages += 1
+            # pypdf's extract_text() is noisier than pypdfium2's (occasional
+            # spurious spaces from kerning) -- fine here since the hash only
+            # needs to be *deterministic* per page, not high-fidelity text;
+            # pypdfium2 is used instead wherever extracted text is
+            # user-visible (scripts/02_extract_slides.py).
+            text = _norm_page_text(page.extract_text())
+            if text:
+                key = hashlib.md5(text.encode()).hexdigest()
+                if key in seen_hashes:
+                    continue
+                seen_hashes.add(key)
+            writer.add_page(page)
+    total_pages = len(writer.pages)
     merged_path = pool_dir / "_merged.pdf"
-    merged.save(str(merged_path))
-    merged.close()
+    writer.write(str(merged_path))
     return {
         "pool_files": pool_files,
         "merged_path": merged_path,
@@ -183,10 +187,19 @@ def _extract_preview_text(path: Path, ext: str) -> str:
     text = ""
     try:
         if ext == "pdf":
-            import fitz
+            import pypdfium2 as pdfium
 
-            with fitz.open(str(path)) as doc:
-                text = " ".join(doc[i].get_text() for i in range(min(2, len(doc))))
+            with pdfium.PdfDocument(str(path)) as doc:
+                parts = []
+                for i in range(min(2, len(doc))):
+                    page = doc[i]
+                    textpage = page.get_textpage()
+                    try:
+                        parts.append(textpage.get_text_range())
+                    finally:
+                        textpage.close()
+                        page.close()
+                text = " ".join(parts)
         elif ext == "pptx":
             from pptx import Presentation
 

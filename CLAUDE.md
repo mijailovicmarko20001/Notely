@@ -198,9 +198,12 @@ decent GPU and faster-whisper is too slow.
 
 - `.pptx` → `python-pptx`: pull all text frames per slide (titles, bullets,
   and speaker notes if present — speaker notes are often gold for context).
-- `.pdf` (slides exported as PDF) → `PyMuPDF` (fitz) or `pdfplumber`.
+- `.pdf` (slides exported as PDF) → `pypdfium2` (permissively licensed —
+  BSD-3/Apache-2.0; PyMuPDF/`fitz` was the original choice but is AGPL-3.0,
+  a real concern for a tool that runs as a network service, so it was
+  swapped out before open-sourcing) or `pdfplumber`.
 - Also render each slide to a PNG image at this stage (needed for stage 4) —
-  `PyMuPDF` can do this directly for PDFs; for pptx, either convert to PDF
+  `pypdfium2` can do this directly for PDFs; for pptx, either convert to PDF
   first with `libreoffice --headless --convert-to pdf`, or render via
   COM/other tooling if on Windows.
 - Save as JSON: list of `{slide_number, title, body_text, notes_text,
@@ -291,7 +294,8 @@ it actually is.
 - `yt-dlp` — fetching video from YouTube links
 - `ffprobe` (ships with ffmpeg) — verifying downloaded video integrity
 - `faster-whisper` — transcription
-- `python-pptx`, `PyMuPDF` / `pdfplumber` — slide text + rendering
+- `python-pptx`, `pypdfium2` / `pdfplumber` — slide text + rendering
+- `pypdf` — PDF page merging (webui slide-pool dedup)
 - `opencv-python`, optionally `scenedetect` — slide-change detection
 - `pytesseract` (+ tesseract binary installed via apt) — OCR
 - `sentence-transformers` or `scikit-learn` (TF-IDF) — text similarity

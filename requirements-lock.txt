@@ -1,8 +1,7 @@
-# Exact versions installed in the validated dev .venv (python3.12, macOS arm64), 2026-08-11.
+# Exact versions installed in the validated dev .venv (python3.12, macOS arm64), 2026-08-17.
 # `requirements.txt` stays the source of truth (loose >=, cross-platform);
 # use this file for a reproducible install: pip install -r requirements-lock.txt
 # Regenerate after intentionally upgrading a dependency: .venv/bin/pip freeze > requirements-lock.txt
-
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anthropic==0.120.2
@@ -21,6 +20,7 @@ faster-whisper==1.2.1
 filelock==3.32.2
 flatbuffers==25.12.19
 fsspec==2026.7.0
+groq==1.6.0
 h11==0.16.0
 hf-xet==1.6.0
 httpcore==1.0.9
@@ -57,8 +57,9 @@ protobuf==7.35.1
 pycparser==3.0
 pydantic==2.13.4
 pydantic_core==2.46.4
+pyflakes==3.4.0
 Pygments==2.20.0
-pymupdf==1.28.0
+pypdf==6.16.1
 pypdfium2==5.12.1
 pytesseract==0.3.13
 pytest==9.1.1

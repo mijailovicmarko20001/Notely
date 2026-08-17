@@ -12,7 +12,13 @@ numpy>=1.26
 scikit-learn>=1.4
 pytesseract>=0.3.10
 pillow>=10.0
-PyMuPDF>=1.24
+# PDF handling: pypdfium2 (text extraction + page rendering, scripts/02 +
+# webui's preview text) and pypdf (page-copying/merge, webui's pool merge).
+# Two libraries instead of PyMuPDF's one, but both permissively licensed
+# (BSD-3/Apache-2.0) -- PyMuPDF is AGPL-3.0, which is a real concern for a
+# tool that runs as a network service. See OPEN_SOURCE_TODO.md O2.
+pypdfium2>=4.30
+pypdf>=5.1
 python-pptx>=1.0
 python-dotenv>=1.0
 yt-dlp>=2025.1.1               # must be in the same interpreter: stage 00 runs [sys.executable, -m, yt_dlp]

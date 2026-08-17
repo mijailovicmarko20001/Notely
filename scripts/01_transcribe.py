@@ -65,11 +65,16 @@ def build_vocabulary_prompt(lecture_id: str) -> str:
         else:
             pdf = INPUT_SLIDES_DIR / f"{lecture_id}.pdf"
             if pdf.exists():
-                import fitz  # lazy: only needed on this path
+                import pypdfium2 as pdfium  # lazy: only needed on this path
 
-                with fitz.open(pdf) as doc:
+                with pdfium.PdfDocument(str(pdf)) as doc:
                     for page in doc:
-                        first_line = page.get_text().strip().split("\n", 1)[0]
+                        textpage = page.get_textpage()
+                        try:
+                            first_line = textpage.get_text_range().strip().split("\n", 1)[0]
+                        finally:
+                            textpage.close()
+                        page.close()
                         titles.append(first_line)
     except Exception:
         return ""  # vocabulary priming is best-effort, never fatal

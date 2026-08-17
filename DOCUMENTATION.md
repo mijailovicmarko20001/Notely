@@ -33,7 +33,7 @@ stage can be re-run alone and inspected.
 ```
 [0] 00_fetch_videos.py        YouTube URL ──► input/videos/<id>.mp4         (yt-dlp)
 [1] 01_transcribe.py          video ──► output/transcripts/<id>.json        (whisper: mlx GPU, faster-whisper CPU, or opt-in Groq cloud)
-[2] 02_extract_slides.py      deck ──► output/slides_extracted/<id>.json    (+ PNG per slide; PyMuPDF / python-pptx)
+[2] 02_extract_slides.py      deck ──► output/slides_extracted/<id>.json    (+ PNG per slide; pypdfium2 / python-pptx)
 [3] 03_detect_slide_changes.py video ──► output/frame_events/<id>.json      (OpenCV frame diff + crop)
 [4] 04_match_frames_to_slides.py events+slides ──► output/slide_timelines/<id>.json
                                                   + <id>_needs_review.json  (tesseract OCR + TF-IDF + sequential constraint;
