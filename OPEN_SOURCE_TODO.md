@@ -82,16 +82,14 @@ the primary audience for `docker compose up` (README's own "Quick start,
 no Python setup" pitch). Either verify the amd64 build for real, or say so
 explicitly in the README until it's done.
 
-### O7. No contribution/security process docs
-Missing `CONTRIBUTING.md`, `SECURITY.md`. `SECURITY.md` isn't boilerplate
-here — S3 (LAN-exposed-by-default Docker) is a real vulnerability class for
-this project's own users if someone widens the port mapping without setting
-`NOTELY_AUTH_TOKEN`; a documented private disclosure path
-(email/GitHub Security Advisories) matters more than usual. `CONTRIBUTING.md`
-should at minimum point at `.venv` setup, `pytest tests/ -q`, and this
-project's git-commit-message convention (Skip `CODE_OF_CONDUCT.md` unless
-you actually want outside contributors — optional for a solo-maintained
-tool, add later if the project grows).
+### O7. No contribution/security process docs — DONE (2026-08-17)
+Added `CONTRIBUTING.md` (dev setup, `pytest tests/ -q`, service-module/
+lazy-import/commit-message conventions) and `SECURITY.md` (points at
+GitHub's private vulnerability reporting rather than a public email/issue;
+explicitly calls out the LAN-exposed-Docker risk from S3/`NOTELY_AUTH_TOKEN`
+as the realistic threat model, not generic boilerplate). `CODE_OF_CONDUCT.md`
+still skipped deliberately — optional for a solo-maintained tool, add later
+if the project grows contributors.
 
 ### O8. Resolve or drop the working-tree noise before the first public commit — DONE (2026-08-17)
 `git status` is clean. The `06_generate_notes.py` prompt diff was a real,
