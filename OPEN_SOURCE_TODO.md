@@ -63,13 +63,15 @@ create the GitHub repo, and push. Do this *after* O1/O2/O5, not before —
 a license and a clean CI run should exist before the first outside visitor
 can see the repo, not get bolted on after.
 
-### O5. No CI
-No `.github/workflows/`. There's a 160-test pytest suite (verified passing:
-`.venv/bin/python -m pytest tests/ -q` → `160 passed`) that currently only
-runs when someone remembers to run it locally. Add a GitHub Actions
-workflow (`pytest` on push/PR, matrix over the Python version(s) you intend
-to support) — this is also the first thing outside contributors will
-check before trusting a PR.
+### O5. No CI — DONE (2026-08-17)
+Added `.github/workflows/tests.yml`: `pytest tests/ -q` on push to `main`
+and on every PR, matrix over Python 3.11/3.12, `ubuntu-latest`. No system
+packages installed — confirmed the suite never shells out to real
+ffmpeg/tesseract/yt-dlp binaries (stub scripts / stop-before-subprocess
+patterns throughout `tests/`), just `pip install -r requirements.txt`. Not
+taken on faith: ran both matrix legs for real in matching
+`python:3.11-slim`/`python:3.12-slim` containers before trusting the
+workflow file — 169 passed on both.
 
 ### O6. amd64 Docker build is still unverified
 Already flagged as open in `TODO.md` P0 ("amd64 Docker build is untested" —
@@ -91,13 +93,13 @@ project's git-commit-message convention (Skip `CODE_OF_CONDUCT.md` unless
 you actually want outside contributors — optional for a solo-maintained
 tool, add later if the project grows).
 
-### O8. Resolve or drop the working-tree noise before the first public commit
-`git status` currently shows a modified `scripts/06_generate_notes.py` and
-an untracked `BACKEND_TODO.md`/`.claude/`. Commit or stash the
-`06_generate_notes.py` diff (a public repo's first commit shouldn't ship
-silent WIP), and make a deliberate call on `.claude/agents/` — either
-commit it (useful context for contributors who also use Claude Code) or add
-it to `.gitignore` (keep it personal-workflow-only). Right now it's neither.
+### O8. Resolve or drop the working-tree noise before the first public commit — DONE (2026-08-17)
+`git status` is clean. The `06_generate_notes.py` prompt diff was a real,
+complete change (not WIP) — committed on its own. `.claude/agents/*.md`
+committed too (useful, non-sensitive context for contributors who also use
+Claude Code; `.claude/settings.local.json` stays gitignored, personal/
+machine-local). `BACKEND_TODO.md` committed, matching the existing
+`TODO.md`/`FRONTEND_TODO.md` convention.
 
 ---
 

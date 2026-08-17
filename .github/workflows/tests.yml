@@ -1,0 +1,32 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      # requirements.txt only (not the arm64-dev-machine requirements-lock.txt):
+      # the test suite is pure-Python logic against synthetic fixtures/stub
+      # scripts, never shells out to ffmpeg/tesseract/yt-dlp, so no system
+      # packages are needed here -- see tests/webui/conftest.py and
+      # tests/test_jobs_scheduler.py's module docstrings.
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m pytest tests/ -q
