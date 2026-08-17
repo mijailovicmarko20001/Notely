@@ -16,9 +16,8 @@ optionally exported PDF. A local web UI makes the whole thing runnable by
 non-technical students; Docker packaging makes it installable with one
 command.
 
-Built and validated against a real course: University of Belgrade
-*Hardversko softverska obrada signala* (13E044HSOS), 22 lectures in Serbian,
-Zoom-recorded screen captures of PDF slides.
+Built and validated against a real university course: 22 lectures in
+Serbian, Zoom-recorded screen captures of PDF slides.
 
 ---
 

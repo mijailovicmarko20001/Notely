@@ -103,15 +103,15 @@ machine-local). `BACKEND_TODO.md` committed, matching the existing
 
 ## P2 — content/config sanity for a stranger cloning this cold
 
-### O9. `DOCUMENTATION.md` names a real institution
-`DOCUMENTATION.md:19` and several other lines identify "University of
-Belgrade" as the validating course, and describe specifics (Serbian-language
-transcripts, hand-drawn-ink Zoom slides) tied to that real course. This
-isn't a secret and isn't personally identifying beyond a public university
-name, but it is a call worth making deliberately rather than by default:
-keep it as a concrete case study (it's good, specific evidence the tool
-works), or genericize it if you'd rather the README/docs not point at a
-specific school. Your call, not a blocker.
+### O9. `DOCUMENTATION.md` names a real institution — DONE (2026-08-17)
+Genericized: `DOCUMENTATION.md:19` no longer names "University of Belgrade"
+or the specific course title/code — now just "a real university course: 22
+lectures in Serbian, Zoom-recorded screen captures of PDF slides." Kept the
+specifics that are useful evidence the tool actually works (lecture count,
+language, recording format) and dropped only the identifying ones
+(institution, course title/code). Swept the rest of the repo (all
+`*.md` files, all commit messages across the full rewritten history) for
+the same strings — nothing else referenced the institution.
 
 ### O10. `README.md`/`DOCUMENTATION.md` should link the license once O1 lands — DONE (2026-08-17)
 Added as part of O1's commit — `README.md` now has a `## License` section.
