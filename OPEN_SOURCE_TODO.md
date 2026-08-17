@@ -1,0 +1,126 @@
+# OPEN_SOURCE_TODO.md — what's left before making this repo public
+
+Grounded audit done 2026-08-17, ahead of open-sourcing. Good news up front:
+`git log --all -p` and `git ls-files` turned up **no real secrets, no
+course PII, no committed video/slide binaries** — `.gitignore` was already
+doing its job (`.env`, `input/videos/`, `input/slides/`, `output/`,
+`input/video_urls.json`/`lectures.json` are all excluded; the repo is 1.5MB).
+`.env.example` and the `sk-ant-…` strings in `app.js`/`index.html` are
+placeholders, not leaked keys — confirmed by reading them, not just
+grepping. `README.md`, `.env.example`, and a passing 160-test suite already
+exist. The remaining work is genuinely about *going public*, not cleanup of
+things left lying around.
+
+---
+
+## P0 — legal blockers (resolve before the repo is visible to anyone)
+
+### O1. No `LICENSE` file — DONE (2026-08-17)
+Added `LICENSE` (MIT, per your choice) and a `## License` section to
+`README.md` clarifying it covers the code only, not lecture videos/slides/
+generated notes (those stay covered by the existing ToS/copyright caveat
+already in the README).
+
+### O2. `PyMuPDF` (`fitz`) is AGPL-3.0, and it's a load-bearing dependency — DONE (2026-08-17)
+Swapped to `pypdfium2` (text extraction + page rendering — `scripts/02_extract_slides.py`,
+`scripts/01_transcribe.py`'s vocab-priming, `webui/decks.py::_extract_preview_text`)
+and `pypdf` (page-copying — `webui/decks.py::merge_pool`), both permissively
+licensed (Apache-2.0/BSD-3, BSD-3 respectively). `PyMuPDF` uninstalled from
+`.venv` and removed from `requirements.txt`/`requirements-lock.txt`;
+`import fitz` no longer appears anywhere in `scripts/`/`webui/`. Added 9 new
+tests (`tests/test_extract_slides.py`, `tests/webui/test_decks_pdf.py`) via
+a hand-rolled minimal-PDF fixture (`tests/pdf_fixtures.py`) — this code path
+had zero coverage before, under either library. Also spot-checked against
+a real course PDF (`input/slides/lecture04.pdf`, gitignored, not committed):
+title/body text and rendered PNGs came out correct, and pypdfium2's text
+extraction turned out *more* accurate than pypdf's on the same file (pypdf
+inserts spurious spaces from kerning on this document — harmless where it's
+only used as a dedup hash key in `merge_pool`, but confirms pypdfium2 was
+the right pick everywhere text is user-visible).
+Full test suite: `.venv/bin/python -m pytest tests/ -q` → 169 passed.
+Note this never touched Docker's `ffmpeg`/`tesseract-ocr` (GPL/Apache,
+installed via `apt` in the `Dockerfile`) — those are invoked as external
+subprocesses, not linked into your code, so ordinary "mere aggregation"
+applies and there was nothing to resolve there.
+
+### O3. Confirm no course copyright liability in what actually gets pushed — DONE (2026-08-17)
+`git log --all --name-only` over every commit on every branch, filtered for
+`.pptx`/`.pdf`/video/audio extensions and `input/videos/`, `input/slides/`,
+`output/`, `data/` paths — zero matches. No course video, slide, or
+generated-note file has ever been committed, at any point in this repo's
+history. `.gitignore` and `CLAUDE.md`'s non-redistribution stance are doing
+their job.
+
+---
+
+## P1 — repo hygiene expected of a public OSS project
+
+### O4. No GitHub remote configured yet
+`git remote -v` is empty — this has never been pushed anywhere. Decide the
+repo's public name (worth a quick gut-check that "Notely" doesn't collide
+with an existing product/trademark you'd rather not share a name with),
+create the GitHub repo, and push. Do this *after* O1/O2/O5, not before —
+a license and a clean CI run should exist before the first outside visitor
+can see the repo, not get bolted on after.
+
+### O5. No CI
+No `.github/workflows/`. There's a 160-test pytest suite (verified passing:
+`.venv/bin/python -m pytest tests/ -q` → `160 passed`) that currently only
+runs when someone remembers to run it locally. Add a GitHub Actions
+workflow (`pytest` on push/PR, matrix over the Python version(s) you intend
+to support) — this is also the first thing outside contributors will
+check before trusting a PR.
+
+### O6. amd64 Docker build is still unverified
+Already flagged as open in `TODO.md` P0 ("amd64 Docker build is untested" —
+`buildx` isn't installed, testing means a QEMU-emulated build of a 2.47GB
+image). That was an acceptable thing to defer for a single-user personal
+project; it's not acceptable to defer once strangers on Windows/Linux are
+the primary audience for `docker compose up` (README's own "Quick start,
+no Python setup" pitch). Either verify the amd64 build for real, or say so
+explicitly in the README until it's done.
+
+### O7. No contribution/security process docs
+Missing `CONTRIBUTING.md`, `SECURITY.md`. `SECURITY.md` isn't boilerplate
+here — S3 (LAN-exposed-by-default Docker) is a real vulnerability class for
+this project's own users if someone widens the port mapping without setting
+`NOTELY_AUTH_TOKEN`; a documented private disclosure path
+(email/GitHub Security Advisories) matters more than usual. `CONTRIBUTING.md`
+should at minimum point at `.venv` setup, `pytest tests/ -q`, and this
+project's git-commit-message convention (Skip `CODE_OF_CONDUCT.md` unless
+you actually want outside contributors — optional for a solo-maintained
+tool, add later if the project grows).
+
+### O8. Resolve or drop the working-tree noise before the first public commit
+`git status` currently shows a modified `scripts/06_generate_notes.py` and
+an untracked `BACKEND_TODO.md`/`.claude/`. Commit or stash the
+`06_generate_notes.py` diff (a public repo's first commit shouldn't ship
+silent WIP), and make a deliberate call on `.claude/agents/` — either
+commit it (useful context for contributors who also use Claude Code) or add
+it to `.gitignore` (keep it personal-workflow-only). Right now it's neither.
+
+---
+
+## P2 — content/config sanity for a stranger cloning this cold
+
+### O9. `DOCUMENTATION.md` names a real institution
+`DOCUMENTATION.md:19` and several other lines identify "University of
+Belgrade" as the validating course, and describe specifics (Serbian-language
+transcripts, hand-drawn-ink Zoom slides) tied to that real course. This
+isn't a secret and isn't personally identifying beyond a public university
+name, but it is a call worth making deliberately rather than by default:
+keep it as a concrete case study (it's good, specific evidence the tool
+works), or genericize it if you'd rather the README/docs not point at a
+specific school. Your call, not a blocker.
+
+### O10. `README.md`/`DOCUMENTATION.md` should link the license once O1 lands
+Once O1/O2 are decided, add a `## License` section to `README.md` (and a
+badge if you want one) so it's visible without opening a separate file.
+
+---
+
+## Suggested order
+
+~~O2~~ (done) → **O1** (pick + add `LICENSE`) → O3 (manual double-check) →
+O8 (clean working tree) → O5 (CI) → O6 (verify amd64) → O7
+(CONTRIBUTING/SECURITY) → O4 (push) → O9/O10 (polish).
