@@ -1,0 +1,35 @@
+# Opt-in override for NVIDIA GPU acceleration of stage 1 (transcription).
+# Everyone else should ignore this file -- the default `docker compose up`
+# (docker-compose.yml alone) is unaffected by its presence.
+#
+# Requires, on the *host* (not in this container):
+#   - an NVIDIA GPU
+#   - the NVIDIA driver
+#   - nvidia-container-toolkit (https://github.com/NVIDIA/nvidia-container-toolkit)
+#     -- this is what lets Docker's `deploy.resources.reservations.devices`
+#     below actually hand a GPU to the container; without it, this file
+#     alone does nothing.
+#   - Linux, or Windows with WSL2. There is no GPU passthrough to Docker
+#     containers on macOS -- Apple Silicon or Intel+eGPU, doesn't matter,
+#     Docker Desktop/colima cannot expose any GPU to a Linux container on
+#     that platform. If you're on a Mac, this file is not for you; use the
+#     native .venv path with WHISPER_BACKEND=mlx instead (see README).
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+#
+# No code/env changes needed beyond this -- faster-whisper already defaults
+# to device="auto", which picks CUDA automatically once it's visible to the
+# process. Optionally set WHISPER_COMPUTE=float16 in environment: below if
+# "auto" doesn't pick the compute type you want for your card.
+services:
+  notely:
+    build:
+      target: gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

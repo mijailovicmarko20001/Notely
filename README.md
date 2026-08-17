@@ -36,9 +36,18 @@ All your files (videos, notes, settings) live in the `data/` folder next to
 - First transcription downloads a speech-recognition model (~1.5 GB, one time).
 - Unlisted YouTube videos work with just the link. *Private* videos (ones you
   must sign into YouTube to watch) are not supported in Docker mode.
-- Transcription is CPU-only in Docker (no GPU passthrough) — noticeably
-  slower than running natively on a machine with a usable GPU. If speed
-  matters and you're comfortable with Python, prefer developer mode below.
+- Transcription is CPU-only in Docker by default — noticeably slower than
+  running natively on a machine with a usable GPU. **If you're on Linux or
+  Windows+WSL2 with an NVIDIA GPU**, opt into GPU passthrough instead:
+  ```
+  docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+  ```
+  (needs the NVIDIA driver + [`nvidia-container-toolkit`](https://github.com/NVIDIA/nvidia-container-toolkit)
+  installed on the host first — see `docker-compose.gpu.yml`'s comments).
+  **On a Mac**, this isn't an option at all — Docker Desktop/colima can't
+  pass any GPU (NVIDIA or Apple's own) through to a Linux container,
+  regardless of chip. Use developer mode below with `WHISPER_BACKEND=mlx`
+  for GPU acceleration on Apple Silicon instead.
 - Downloading YouTube videos technically runs against YouTube's ToS; keep the
   downloads and generated notes for personal study only — don't redistribute.
 
