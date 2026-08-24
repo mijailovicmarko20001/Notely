@@ -89,4 +89,4 @@ uvloop==0.22.1
 watchfiles==1.2.0
 websockets==17.0.1
 xlsxwriter==3.2.9
-yt-dlp==2026.7.4
+yt-dlp==2026.8.19
