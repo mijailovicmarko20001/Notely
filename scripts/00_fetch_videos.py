@@ -7,7 +7,8 @@ Usage:
     python scripts/00_fetch_videos.py <lecture_id> --force  # re-download
 
 Reads input/video_urls.json ({"lecture01": "https://youtu.be/...", ...})
-and downloads each lecture to input/videos/<lecture_id>.mp4.
+and downloads each lecture to input/videos/<lecture_id>.mp4, recording the
+URL it came from in input/videos/<lecture_id>.source.json.
 """
 
 import argparse
@@ -22,6 +23,11 @@ ROOT = Path(__file__).resolve().parent.parent
 VIDEO_URLS_PATH = ROOT / "input" / "video_urls.json"
 VIDEOS_DIR = ROOT / "input" / "videos"
 FORMAT = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]"
+# Sidecar recording which URL produced <lecture_id>.mp4. Without it the
+# download cache is keyed on the output filename alone, so re-pointing a
+# lecture id at a different video is silently ignored -- the stale file
+# stays, and every downstream stage happily reprocesses the wrong lecture.
+SOURCE_SUFFIX = ".source.json"
 
 # Best-effort .env loading: only needed for YOUTUBE_COOKIES_BROWSER, which
 # itself is only needed for private (not merely unlisted) videos.
@@ -62,6 +68,35 @@ def verify_video(path: Path) -> bool:
         return float(result.stdout.strip()) > 0
     except ValueError:
         return False
+
+
+def source_path(lecture_id: str) -> Path:
+    return VIDEOS_DIR / f"{lecture_id}{SOURCE_SUFFIX}"
+
+
+def read_source_url(path: Path) -> str | None:
+    """URL recorded for an already-downloaded video, or None when there is no
+    usable record -- a file fetched before this sidecar existed, or one whose
+    sidecar is missing/corrupt. None always means "can't vouch for this
+    file", which callers treat as a cache miss."""
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    url = data.get("url") if isinstance(data, dict) else None
+    return url if isinstance(url, str) else None
+
+
+def write_source_url(path: Path, url: str) -> None:
+    """Temp file + atomic rename, matching the stage scripts' artifact writes
+    (see scripts/04, 05, 06, 07). A torn write would only ever read back as
+    "no record" and force a re-download, but there's no reason to leave that
+    to chance."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp{os.getpid()}")
+    tmp.write_text(json.dumps({"url": url}, indent=2))
+    tmp.replace(path)
 
 
 class _YtDlpResult:
@@ -112,13 +147,35 @@ def run_yt_dlp(url: str, output_path: Path, cookies_browser: str | None) -> _YtD
 
 def fetch_lecture(lecture_id: str, url: str, force: bool) -> bool:
     output_path = VIDEOS_DIR / f"{lecture_id}.mp4"
+    source_marker = source_path(lecture_id)
 
+    # The cache hits only when the file on disk is playable *and* provably
+    # came from the URL currently configured for this lecture id. Ids are
+    # reused across courses (lecture01 is always lecture01), so filename
+    # alone can't tell a fresh download from last term's leftovers.
     if not force and verify_video(output_path):
-        print(f"[{lecture_id}] cached, skipping")
-        return True
+        cached_url = read_source_url(source_marker)
+        if cached_url == url:
+            print(f"[{lecture_id}] cached, skipping")
+            return True
+        if cached_url is None:
+            print(
+                f"[{lecture_id}] cached video has no recorded source URL "
+                f"(downloaded before URL tracking) — re-downloading rather "
+                f"than assume it came from {url}"
+            )
+        else:
+            print(
+                f"[{lecture_id}] configured URL changed since download "
+                f"({cached_url} -> {url}) — re-downloading"
+            )
 
     VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
     print(f"[{lecture_id}] downloading from {url} ...")
+    # Drop the old record up front: a sidecar must never outlive the video it
+    # describes, or a failed re-download would leave the previous URL
+    # vouching for a file that is now stale, partial, or gone.
+    source_marker.unlink(missing_ok=True)
 
     result = run_yt_dlp(url, output_path, cookies_browser=None)
 
@@ -148,6 +205,7 @@ def fetch_lecture(lecture_id: str, url: str, force: bool) -> bool:
             output_path.unlink()
         return False
 
+    write_source_url(source_marker, url)
     print(f"[{lecture_id}] download OK: {output_path}")
     return True
 
