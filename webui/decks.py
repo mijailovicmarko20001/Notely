@@ -65,24 +65,58 @@ async def save_upload_stream(
 
 # --- pool mode: "I don't know which deck covers which lecture" ------------
 
+# merge_pool writes its result back into the pool dir, so the merged deck has
+# to be excluded from the merge's own inputs -- otherwise every re-merge
+# folds the previous merge into itself. Text-identical pages get deduped
+# away, but image-only pages are deliberately never deduped (see merge_pool),
+# so those would accumulate one extra copy per run.
+MERGED_DECK_NAME = "_merged.pdf"
+
+
 def _norm_page_text(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").lower()).strip()
 
 
+def pool_dir_path() -> Path:
+    return config.SLIDES_DIR / "_pool"
+
+
+async def _save_pool_upload(f: UploadFile, dest_dir: Path, max_bytes: int) -> Path:
+    name = (f.filename or "").strip()
+    if not name.lower().endswith(".pdf"):
+        raise ValidationError(f"{name}: pool mode takes PDFs only — export PPTX decks to PDF first")
+    dest = dest_dir / Path(name).name
+    await save_upload_stream(f, dest, max_bytes)
+    return dest
+
+
 async def save_pool_uploads(files: list[UploadFile], max_bytes: int = config.MAX_UPLOAD_BYTES) -> list[Path]:
-    """Stream every uploaded deck into the pool dir. Pool mode only accepts
-    PDFs (pptx decks would need a LibreOffice conversion pass first)."""
-    pool_dir = config.SLIDES_DIR / "_pool"
-    pool_dir.mkdir(parents=True, exist_ok=True)
-    saved = []
-    for f in files:
-        name = (f.filename or "").strip()
-        if not name.lower().endswith(".pdf"):
-            raise ValidationError(f"{name}: pool mode takes PDFs only — export PPTX decks to PDF first")
-        dest = pool_dir / Path(name).name
-        await save_upload_stream(f, dest, max_bytes)
-        saved.append(dest)
-    return saved
+    """Stream every uploaded deck into the pool dir, *replacing* whatever was
+    there. Pool mode only accepts PDFs (pptx decks would need a LibreOffice
+    conversion pass first).
+
+    An upload defines the whole pool rather than adding to it. The pool feeds
+    a single merged deck copied to every lecture, so decks left over from a
+    previous course would otherwise stay in that merge forever and every
+    lecture would silently get a combined deck spanning both courses.
+
+    Uploads land in a staging dir that only replaces the live pool once all
+    of them have succeeded -- same temp-then-rename shape as
+    save_upload_stream -- so a rejected pptx or an over-cap file leaves the
+    existing pool intact instead of destroying it halfway through.
+    """
+    pool_dir = pool_dir_path()
+    pool_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging = pool_dir.with_name(f"{pool_dir.name}.new{uuid.uuid4().hex[:8]}")
+    staging.mkdir(parents=True)
+    try:
+        saved = [await _save_pool_upload(f, staging, max_bytes) for f in files]
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    shutil.rmtree(pool_dir, ignore_errors=True)
+    staging.replace(pool_dir)
+    return [pool_dir / p.name for p in saved]
 
 
 def merge_pool(pool_dir: Path | None = None) -> dict:
@@ -97,8 +131,9 @@ def merge_pool(pool_dir: Path | None = None) -> dict:
     visually distinct slides, so they're always kept."""
     from pypdf import PdfReader, PdfWriter
 
-    pool_dir = pool_dir or (config.SLIDES_DIR / "_pool")
-    pool_files = sorted(pool_dir.glob("*.pdf"))
+    pool_dir = pool_dir or pool_dir_path()
+    # MERGED_DECK_NAME lives in this same dir -- never merge it into itself.
+    pool_files = sorted(p for p in pool_dir.glob("*.pdf") if p.name != MERGED_DECK_NAME)
     writer = PdfWriter()
     seen_hashes = set()
     scanned_pages = 0
@@ -119,7 +154,7 @@ def merge_pool(pool_dir: Path | None = None) -> dict:
                 seen_hashes.add(key)
             writer.add_page(page)
     total_pages = len(writer.pages)
-    merged_path = pool_dir / "_merged.pdf"
+    merged_path = pool_dir / MERGED_DECK_NAME
     writer.write(str(merged_path))
     return {
         "pool_files": pool_files,
