@@ -173,7 +173,12 @@ to slide decks by name.
   broken file into transcription.
 - Cache what's already downloaded — don't re-fetch a video that's already
   present locally, since these can be long files and re-downloading 12
-  hours of lecture repeatedly wastes time and bandwidth.
+  hours of lecture repeatedly wastes time and bandwidth. **Key that cache
+  on the source URL, not just the filename**: record the URL each file came
+  from (`input/videos/<lecture_id>.source.json`) and re-download when it no
+  longer matches `video_urls.json`. Lecture ids get reused when the course
+  changes, so a filename-only cache silently feeds the previous course's
+  videos into every downstream stage.
 
 **A note on this step, worth being deliberate about:** downloading videos
 from YouTube technically runs against YouTube's Terms of Service, regardless

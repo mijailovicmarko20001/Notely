@@ -55,7 +55,11 @@ async def upload_pool(files: list[UploadFile] = File(...)):
     pool, merge them into one combined PDF, and give every lecture that same
     combined deck. Stage 4's content matching then figures out per video which
     slides were actually shown — unshown slides are simply never matched
-    (already the normal case, since decks can span lectures)."""
+    (already the normal case, since decks can span lectures).
+
+    This upload *replaces* the pool rather than adding to it: the whole set of
+    decks for the course goes up in one request, and leftovers from a previous
+    course must not stay in the merge."""
     urls = load_json(config.VIDEO_URLS_PATH, {})
     if not urls:
         raise HTTPException(400, "add your lectures first — the combined deck is copied to each one")
