@@ -7,8 +7,15 @@ cases, merges short-dwell runs into their chronologically adjacent neighbor, and
 consolidates every run of the same slide_number (e.g. a revisited slide) into one
 output entry per unique slide.
 
+Also attaches worked-example candidates detected in stage 4
+(output/slide_timelines/<lecture_id>_examples.json, optional) to the
+consolidated slide entry they happened during, enriched with the surrounding
+transcript context and any spoken example cues found in it -- confirmation
+and captioning of these candidates happens downstream in stage 6.
+
 Input:
   - output/slide_timelines/<lecture_id>.json
+  - output/slide_timelines/<lecture_id>_examples.json (optional)
   - output/transcripts/<lecture_id>.json
   - output/slides_extracted/<lecture_id>.json
 
@@ -243,12 +250,118 @@ def build_canonical_slide_map(slides_data):
     return canonical
 
 
+# Spoken cues that suggest the professor is working through a concrete
+# example, in the transcript's language (this project's course content is
+# Serbian, hence the Serbian-latin cues alongside the English ones). Stored
+# ASCII-folded (see fold()) so a diacritic spelling in the transcript
+# ("vežbanje") still matches the stored cue ("vezb").
+EXAMPLE_CUES = (
+    "primer", "na primer", "recimo", "zadatak", "vezb", "uradimo", "izracunajmo",
+    "posmatrajmo", "example", "for example", "let's work", "worked example",
+    "exercise", "suppose",
+)
+
+
+def fold(s):
+    """Lowercase and strip diacritics (NFKD decompose + drop combining
+    marks) so cue matching is accent-insensitive -- Serbian-latin text can
+    spell the same word with or without diacritics (vežbanje / vezbanje),
+    and ASR transcripts are inconsistent about which one they emit."""
+    import unicodedata
+
+    normalized = unicodedata.normalize('NFKD', s or '')
+    return ''.join(c for c in normalized if not unicodedata.combining(c)).lower()
+
+
+def transcript_context_for(timestamp, segments, before=20.0, after=40.0):
+    """Concatenate transcript segment text overlapping the window
+    [timestamp - before, timestamp + after], in transcript order.
+
+    Wider after than before: a professor typically narrates an example
+    while or after writing it, not much beforehand, so the window is
+    asymmetric toward what's said during/just after the candidate frame.
+    """
+    window_start = timestamp - before
+    window_end = timestamp + after
+    parts = [
+        segment['text']
+        for segment in segments
+        if segment['end'] >= window_start and segment['start'] <= window_end
+    ]
+    return ' '.join(parts).strip()
+
+
+def score_example_cues(context):
+    """Return every EXAMPLE_CUES entry found (as a substring, after
+    fold()ing both sides) in `context`, in EXAMPLE_CUES order. A signal fed
+    into stage 6's confirmation prompt, not a hard filter -- a candidate
+    with zero cue hits can still be a real example (a silent derivation),
+    and one with a hit can still be a false positive."""
+    folded = fold(context)
+    return [cue for cue in EXAMPLE_CUES if cue in folded]
+
+
+def attach_example_candidates(examples_data, output, canonical, transcript_segments,
+                               context_before=20.0, context_after=40.0):
+    """
+    Attach each stage-4 example candidate to the consolidated output entry
+    it happened during, enriched with `transcript_context` and `cue_hits`.
+
+    Attachment, in order:
+      1. Canonicalize the candidate's slide_number through the same
+         duplicate-slide map (`canonical`) used for the timeline, so a
+         candidate captured on a duplicate copy of a slide lands on the
+         same output entry its transcript did.
+      2. If that slide number has a surviving output entry, attach there.
+      3. Otherwise (its run was merged away by merge_short_dwell_runs),
+         attach to the output entry whose `windows` contain the
+         candidate's timestamp.
+      4. Otherwise, attach to the output entry nearest in time (by its
+         first window's start) -- a last resort so a candidate is never
+         silently dropped just because its home run vanished.
+
+    Mutates `output` in place: every entry gets an `example_candidates` key
+    (empty list if none attached), for a consistent shape downstream.
+    """
+    for entry in output:
+        entry.setdefault('example_candidates', [])
+
+    if not examples_data or not output:
+        return
+
+    slide_to_index = {entry['slide_number']: i for i, entry in enumerate(output)}
+
+    for candidate in examples_data:
+        slide_num = canonical.get(candidate['slide_number'], candidate['slide_number'])
+        idx = slide_to_index.get(slide_num)
+
+        timestamp = candidate['timestamp']
+        if idx is None:
+            idx = next(
+                (
+                    i for i, entry in enumerate(output)
+                    if any(
+                        w[0] <= timestamp <= (w[1] if w[1] is not None else float('inf'))
+                        for w in entry['windows']
+                    )
+                ),
+                None,
+            )
+        if idx is None:
+            idx = min(range(len(output)), key=lambda i: abs(output[i]['windows'][0][0] - timestamp))
+
+        context = transcript_context_for(timestamp, transcript_segments, context_before, context_after)
+        enriched = {**candidate, 'transcript_context': context, 'cue_hits': score_example_cues(context)}
+        output[idx]['example_candidates'].append(enriched)
+
+
 def segment_transcript(lecture_id, min_dwell=5.0, force=False):
     """Main segmentation logic."""
     project_root = get_project_root()
 
     # Input paths
     timeline_path = project_root / 'output' / 'slide_timelines' / f'{lecture_id}.json'
+    examples_path = project_root / 'output' / 'slide_timelines' / f'{lecture_id}_examples.json'
     transcript_path = project_root / 'output' / 'transcripts' / f'{lecture_id}.json'
     slides_path = project_root / 'output' / 'slides_extracted' / f'{lecture_id}.json'
 
@@ -269,6 +382,13 @@ def segment_transcript(lecture_id, min_dwell=5.0, force=False):
     except FileNotFoundError as e:
         print(f"Error: missing input file: {e}", file=sys.stderr)
         return False
+
+    # Example candidates are optional: absent for timelines produced before
+    # this feature landed, or when stage 4 was run with --no-examples.
+    try:
+        examples_data = load_json(examples_path).get('candidates', [])
+    except FileNotFoundError:
+        examples_data = []
 
     # Extract timeline
     timeline = timeline_data.get('timeline', [])
@@ -321,6 +441,9 @@ def segment_transcript(lecture_id, min_dwell=5.0, force=False):
             'merged_from': entry['merged_from'],
             'frame_image_path': entry.get('frame_image_path'),
         })
+
+    # Attach stage-4 example candidates to the entry they happened during.
+    attach_example_candidates(examples_data, output, canonical, transcript_segments)
 
     # Save output
     save_json(output_path, output)

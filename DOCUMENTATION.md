@@ -264,6 +264,41 @@ image-handling rule is phrased as "if you receive an image..." rather
 than varying the prompt text per call, so it's correct whether or not a
 particular slide has a frame available.
 
+**Worked-example extraction, layered on top of the annotation-capture work
+above.** The next most valuable thing living only in the recording, not the
+deck: the professor working an actual example — whiteboard, tablet, or
+annotated over a slide. Two prerequisites the annotation feature already
+built made this cheap to add: every frame event (not just the run's last one)
+is already on disk from stage 3, and stage 4 already OCRs/scores every frame
+against the deck. So detection folds into stages 4/5 as pure local heuristics
+(no LLM call): a frame whose match score is too low to be the printed deck at
+all (`whiteboard`), a frame whose dHash has drifted far enough from its run's
+first frame to mean real ink accumulated (`annotated_slide` — reusing the
+same dHash machinery stage 4 already has for OCR dedup, just at a much larger
+distance threshold than "these are the same frame"), or a slide whose own
+title names it an example (`example_slide`). Stage 5 attaches each candidate
+to the slide it happened during and enriches it with nearby transcript text
+and spoken cues ("primer", "vežbanje" — diacritic-folded so Serbian's
+accented and unaccented spellings both match).
+
+Confirmation is where the cost lives, so it's a separate opt-in phase in
+stage 6 (`NOTES_DETECT_EXAMPLES`, off by default — same convention as
+`NOTES_SEND_FRAME_IMAGE`): one vision call per surviving candidate, asking
+specifically "is this a *worked example*, not just a displayed slide" and
+for a one-line caption. Deliberately routed to Haiku
+(`NOTES_EXAMPLES_MODEL`), not the notes model — classify-and-caption is well
+inside Haiku's range, and it keeps the added cost to roughly a fifth of what
+note generation itself costs (measured against this course's real stage-6
+usage: ~$1.40 added across all 16 lectures vs. ~$7.43 baseline, at the
+`NOTES_EXAMPLES_MAX=40` cap). Results cache to `notes/lectureNN_examples.json`
+so a `--force` re-run to tweak the *note* prompt doesn't re-pay for
+confirmation — only deleting that file (or bumping the cap) triggers new
+confirmation calls. Confirmed examples are both listed in the affected
+slide's note prompt (so the model can refer to "the first example") and
+embedded directly by the pipeline as `![Example N — MM:SS](...)` — the model
+is told never to emit that image link itself, same reasoning as the existing
+on-screen-frame image rule.
+
 **PDF export.** pandoc/LaTeX was rejected (huge toolchain, fragile with
 Serbian + images). Instead: markdown → HTML with math segments protected
 from the markdown parser → headless Chrome `--print-to-pdf` with MathJax
@@ -352,6 +387,9 @@ normal case.
 | Notes concurrency default | `06` | 4 (`NOTES_CONCURRENCY` env) |
 | Send on-screen frame to vision | `06::NOTES_SEND_FRAME_IMAGE` env | off by default — real added cost, see §3's "Live on-slide annotations" entry |
 | Frame image max dimension (vision) | `06::FRAME_IMAGE_MAX_DIM` | 1568 px (Anthropic's own recommended long-edge max) |
+| Detect/confirm worked examples | `06::NOTES_DETECT_EXAMPLES` env | off by default — real added cost per candidate frame; see §3's "Worked-example extraction" entry |
+| Example confirmation model / cap | `06::NOTES_EXAMPLES_MODEL` / `NOTES_EXAMPLES_MAX` env | `claude-haiku-4-5` / 40 candidates per lecture |
+| Example candidate detection thresholds | `04::DEFAULT_EXAMPLE_SCORE_MAX` / `DEFAULT_EXAMPLE_INK_DELTA` / `DEFAULT_EXAMPLE_INK_TEXT_OVERLAP_MIN` / `DEFAULT_EXAMPLE_INK_NOVEL_WORD_MIN` | 0.12 match score / 12 (of 64 bits) dHash drift / 0.5 OCR word-overlap floor (vs. run's first frame) / 0.35 novel-word floor (vs. deck's own text) |
 | Scheduler lane→stage mapping | `webui/jobs.py::_run` | net={0}, cpu={2..5}, api={6}, gpu={1} iff mlx |
 | SSE poll interval / event buffer | `webui/jobs.py`, `routes/jobs.py` | 250 ms / 2000 events |
 | Server port | `main.py`, compose, README | 8000, bound to `127.0.0.1` only by default in `docker-compose.yml` (widen + set `NOTELY_AUTH_TOKEN` for LAN access) |

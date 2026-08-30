@@ -51,6 +51,11 @@ _RE_MLX_SEG = re.compile(r"-->\s*(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)\]")
 _RE_EVENT = re.compile(r"\[event\s+\d+\]\s+t=\s*([\d.]+)s")
 _RE_OCR = re.compile(r"\[ocr\s+(\d+)/(\d+)\]")
 _RE_NOTES = re.compile(r"\[(\d+)/(\d+)\]\s+slide")
+# Worked-example confirmation phase (opt-in, NOTES_DETECT_EXAMPLES) runs
+# before the per-slide notes phase within stage 6 and shares its "[N/M] ..."
+# progress-line shape but a different noun -- see
+# scripts/06_generate_notes.py::confirm_example.
+_RE_EXAMPLE = re.compile(r"\[(\d+)/(\d+)\]\s+example")
 
 
 def parse_line(stage: int, line: str, ctx: dict):
@@ -77,7 +82,7 @@ def parse_line(stage: int, line: str, ctx: dict):
         if m:
             return int(m.group(1)) / int(m.group(2))
     elif stage == 6:
-        m = _RE_NOTES.search(line)
+        m = _RE_NOTES.search(line) or _RE_EXAMPLE.search(line)
         if m:
             return int(m.group(1)) / int(m.group(2))
     return None  # stages 2/5/7 are quick: indeterminate spinner

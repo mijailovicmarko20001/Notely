@@ -66,6 +66,10 @@ DEFAULT_STAGE_OPTIONS = {
     "stay_margin": 0.05,              # stage 04
     "confidence_threshold": 0.25,     # stage 04
     "min_forward_score": 0.05,        # stage 04
+    "example_score_max": 0.12,        # stage 04 — worked-example detection
+    "example_ink_delta": 12,          # stage 04 — worked-example detection
+    "example_ink_text_overlap_min": 0.5,  # stage 04 — worked-example detection
+    "example_ink_novel_word_min": 0.35,   # stage 04 — worked-example detection
     "min_dwell": 5.0,                 # stage 05
 }
 
