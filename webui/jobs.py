@@ -362,7 +362,11 @@ def build_tasks(lecture_ids, stages, options, force, has_api_key):
                 extra += (flag("--ocr-lang", "ocr_lang") + flag("--margin", "margin")
                           + flag("--stay-margin", "stay_margin")
                           + flag("--confidence-threshold", "confidence_threshold")
-                          + flag("--min-forward-score", "min_forward_score"))
+                          + flag("--min-forward-score", "min_forward_score")
+                          + flag("--example-score-max", "example_score_max")
+                          + flag("--example-ink-delta", "example_ink_delta")
+                          + flag("--example-ink-text-overlap-min", "example_ink_text_overlap_min")
+                          + flag("--example-ink-novel-word-min", "example_ink_novel_word_min"))
             elif s == 5:
                 extra += flag("--min-dwell", "min_dwell")
             if force:

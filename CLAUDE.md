@@ -257,6 +257,25 @@ it actually is.
 - Log a confidence score per match. Flag anything below a threshold (e.g.
   low text similarity, or a slide that never got matched at all) into a
   `needs_review.json` so it surfaces instead of silently producing bad notes.
+- **Also flag worked-example candidates**, always (free — local heuristics,
+  no LLM call here): a frame whose match score is too low to be the printed
+  deck at all (`whiteboard` — the screen switched to a whiteboard/tablet/
+  scratch page), a frame whose dHash has drifted far from its run's first
+  frame *and* still shares most of its OCR text with that first frame *and*
+  contains words the deck's own extracted text never prints anywhere
+  (`annotated_slide` — live ink accumulating on top of a matched slide; the
+  OCR-overlap-with-first-frame check is what tells real ink apart from the
+  sequential-order matcher silently leaving the cursor on the same slide
+  while the visual content actually changed underneath, and the
+  novel-word-vs-deck-text check is what tells it apart from a PowerPoint
+  animation build progressively revealing more of a slide's own already-
+  printed content — pixels alone can't distinguish either false-positive
+  case, and both are common enough on a pooled/merged deck to dominate the
+  naive dHash-only version of this heuristic), or a slide whose own
+  title/body names it an example (`example_slide`). Written to
+  `slide_timeline_examples.json`; confirmation and captioning of these
+  candidates by an LLM happens downstream in stage 6,
+  opt-in via `NOTES_DETECT_EXAMPLES`.
 
 ### [5] Transcript segmentation
 
@@ -267,6 +286,12 @@ it actually is.
   time (the professor flicked past it — merge its transcript into the
   neighboring slide rather than producing an empty note).
 - Output: per-slide `{slide_number, slide_text, transcript_text}`.
+- Attach each stage-4 example candidate to the slide entry it happened
+  during, enriched with the surrounding transcript context and any spoken
+  example cues detected in it (e.g. "primer", "na primer", "vežbanje" —
+  diacritic-folded so accented and unaccented spellings both match). This is
+  a signal for stage 6's confirmation prompt, not a filter — a candidate
+  with no spoken cue can still be a real (silent) example.
 
 ### [6] Note generation (LLM)
 
@@ -282,6 +307,17 @@ it actually is.
 - Batch requests per lecture; write output as `notes/lectureNN.md`.
 - Store the raw prompt/response pairing alongside the note file for easier
   debugging if a note looks wrong.
+- **Worked examples (opt-in via `NOTES_DETECT_EXAMPLES`)**: before generating
+  notes, confirm each stage 4/5 example candidate with a cheap vision model
+  (`NOTES_EXAMPLES_MODEL`, default Haiku — a classify-and-caption task, not
+  worth the notes model's cost) and get a one-line caption, capped per
+  lecture by `NOTES_EXAMPLES_MAX`. Confirmed examples are listed in the
+  affected slide's note prompt (so the model can reference them by number)
+  and embedded as `![Example N — MM:SS](...)` images with their caption
+  directly under that slide's note. Off by default: a real added cost on
+  top of note generation, same convention as `NOTES_SEND_FRAME_IMAGE`.
+  Results cache to `notes/lectureNN_examples.json` so re-running stage 6
+  with `--force` to tweak the note prompt doesn't re-pay for confirmation.
 
 ### [7] Assembly
 
