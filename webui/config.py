@@ -53,24 +53,25 @@ def validate_lecture_id(lecture_id: str, must_exist: bool = True) -> str:
         raise ValueError(f"unknown lecture id: {lecture_id!r}")
     return lecture_id
 
+
 # Settings the UI exposes, with defaults. Course-specific defaults come from
 # the validated lecture01 run (see CLAUDE.md / memory).
 SETTING_KEYS = ("ANTHROPIC_API_KEY", "WHISPER_MODEL", "NOTES_MODEL", "OCR_LANG")
 
 DEFAULT_STAGE_OPTIONS = {
-    "crop": "0.12,0.06,0.63,0.88",   # stage 03 — Zoom capture of PDF viewer
-    "threshold": 0.02,                # stage 03
-    "interval": 1.5,                  # stage 03
-    "ocr_lang": "srp_latn+eng",      # stage 04
-    "margin": 0.15,                   # stage 04
-    "stay_margin": 0.05,              # stage 04
-    "confidence_threshold": 0.25,     # stage 04
-    "min_forward_score": 0.05,        # stage 04
-    "example_score_max": 0.12,        # stage 04 — worked-example detection
-    "example_ink_delta": 12,          # stage 04 — worked-example detection
+    "crop": "0.12,0.06,0.63,0.88",  # stage 03 — Zoom capture of PDF viewer
+    "threshold": 0.02,  # stage 03
+    "interval": 1.5,  # stage 03
+    "ocr_lang": "srp_latn+eng",  # stage 04
+    "margin": 0.15,  # stage 04
+    "stay_margin": 0.05,  # stage 04
+    "confidence_threshold": 0.25,  # stage 04
+    "min_forward_score": 0.05,  # stage 04
+    "example_score_max": 0.12,  # stage 04 — worked-example detection
+    "example_ink_delta": 12,  # stage 04 — worked-example detection
     "example_ink_text_overlap_min": 0.5,  # stage 04 — worked-example detection
-    "example_ink_novel_word_min": 0.35,   # stage 04 — worked-example detection
-    "min_dwell": 5.0,                 # stage 05
+    "example_ink_novel_word_min": 0.35,  # stage 04 — worked-example detection
+    "min_dwell": 5.0,  # stage 05
 }
 
 DEFAULT_ENV = {

@@ -106,6 +106,7 @@ def preview_frame(lecture_id: str, t: float = 60.0):
     lecture_id = validated_lecture_id(lecture_id)
     tmp_path = media.grab_preview_frame(lecture_id, t)
     return FileResponse(
-        tmp_path, media_type="image/jpeg",
+        tmp_path,
+        media_type="image/jpeg",
         background=BackgroundTask(lambda: tmp_path.unlink(missing_ok=True)),
     )

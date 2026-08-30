@@ -62,9 +62,7 @@ def find_chrome() -> str:
         path = shutil.which(cand) or (cand if Path(cand).exists() else None)
         if path:
             return path
-    raise RuntimeError(
-        "no Chrome/Chromium found — install Google Chrome (mac) or chromium (linux)"
-    )
+    raise RuntimeError("no Chrome/Chromium found — install Google Chrome (mac) or chromium (linux)")
 
 
 def markdown_to_html(md_text: str, base_dir: Path) -> str:
@@ -99,12 +97,18 @@ def export_pdf(md_path: Path, pdf_path: Path) -> None:
         # --virtual-time-budget lets MathJax finish typesetting before print.
         result = subprocess.run(
             [
-                chrome, "--headless", "--disable-gpu", "--no-sandbox",
+                chrome,
+                "--headless",
+                "--disable-gpu",
+                "--no-sandbox",
                 "--virtual-time-budget=30000",
-                f"--print-to-pdf={pdf_path}", "--no-pdf-header-footer",
+                f"--print-to-pdf={pdf_path}",
+                "--no-pdf-header-footer",
                 tmp_html.as_uri(),
             ],
-            capture_output=True, text=True, timeout=180,
+            capture_output=True,
+            text=True,
+            timeout=180,
         )
         if result.returncode != 0 or not pdf_path.exists():
             raise RuntimeError(f"chrome print failed:\n{result.stderr[-1500:]}")
@@ -117,8 +121,9 @@ def main():
     parser = argparse.ArgumentParser(description="Export study guide or lecture notes to PDF.")
     parser.add_argument("lecture_id", nargs="?", help="export one lecture's notes instead of the full guide")
     parser.add_argument(
-        "--output", help="write the PDF here instead of the default path "
-        "(callers doing their own temp-file + atomic-rename dance, e.g. the web UI, pass this)"
+        "--output",
+        help="write the PDF here instead of the default path "
+        "(callers doing their own temp-file + atomic-rename dance, e.g. the web UI, pass this)",
     )
     args = parser.parse_args()
 

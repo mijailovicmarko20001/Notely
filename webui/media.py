@@ -42,7 +42,9 @@ def render_guide_pdf() -> Path:
             try:
                 r = subprocess.run(
                     [sys.executable, str(script), "--output", str(tmp_path)],
-                    capture_output=True, text=True, timeout=300,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
                 )
                 if r.returncode != 0 or not tmp_path.exists() or tmp_path.stat().st_size == 0:
                     log.error("PDF export failed (rc=%s): %s", r.returncode, (r.stderr or r.stdout)[-2000:])
@@ -74,9 +76,21 @@ def grab_preview_frame(lecture_id: str, t: float = 60.0) -> Path:
 
     def _grab(seek: float) -> bool:
         r = subprocess.run(
-            ["ffmpeg", "-y", "-ss", str(seek), "-i", str(video_path),
-             "-frames:v", "1", "-q:v", "3", str(tmp_path)],
-            capture_output=True, timeout=30,
+            [
+                "ffmpeg",
+                "-y",
+                "-ss",
+                str(seek),
+                "-i",
+                str(video_path),
+                "-frames:v",
+                "1",
+                "-q:v",
+                "3",
+                str(tmp_path),
+            ],
+            capture_output=True,
+            timeout=30,
         )
         return r.returncode == 0 and tmp_path.exists() and tmp_path.stat().st_size > 0
 

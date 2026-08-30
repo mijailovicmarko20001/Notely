@@ -21,25 +21,29 @@ def get_state():
     meta = load_json(config.LECTURES_META_PATH, {})
     lectures = []
     for lecture_id in sorted(urls):
-        stages = {
-            s: progress.artifact_ok(s, lecture_id) for s in range(7)
-        }
+        stages = {s: progress.artifact_ok(s, lecture_id) for s in range(7)}
         deck = next(
-            (p.name for ext in ("pptx", "pdf")
-             for p in [config.SLIDES_DIR / f"{lecture_id}.{ext}"] if p.exists()),
+            (
+                p.name
+                for ext in ("pptx", "pdf")
+                for p in [config.SLIDES_DIR / f"{lecture_id}.{ext}"]
+                if p.exists()
+            ),
             None,
         )
-        lectures.append({
-            "id": lecture_id,
-            "url": urls[lecture_id],
-            "title": meta.get(lecture_id, {}).get("title", lecture_id),
-            "deck": deck,
-            "stages": stages,
-            # cheap (small-file-read only) so it's safe to include on every
-            # state refresh -- lets the UI show a review-needed badge
-            # without a per-lecture fetch loop
-            "needs_review_count": review.count_low_confidence(lecture_id) if stages.get(4) else 0,
-        })
+        lectures.append(
+            {
+                "id": lecture_id,
+                "url": urls[lecture_id],
+                "title": meta.get(lecture_id, {}).get("title", lecture_id),
+                "deck": deck,
+                "stages": stages,
+                # cheap (small-file-read only) so it's safe to include on every
+                # state refresh -- lets the UI show a review-needed badge
+                # without a per-lecture fetch loop
+                "needs_review_count": review.count_low_confidence(lecture_id) if stages.get(4) else 0,
+            }
+        )
     return {
         "lectures": lectures,
         "study_guide": progress.artifact_ok(7),
@@ -56,9 +60,7 @@ def start_job(body: JobRequest):
     if not stages or (not lecture_ids and stages != [7]):
         raise HTTPException(400, "lecture_ids and stages required")
     options = {**config.DEFAULT_STAGE_OPTIONS, **body.options}
-    tasks = jobs.build_tasks(
-        lecture_ids, stages, options, body.force, bool(config.get_api_key())
-    )
+    tasks = jobs.build_tasks(lecture_ids, stages, options, body.force, bool(config.get_api_key()))
     if not tasks:
         raise HTTPException(400, "nothing to run (is stage 6 locked without an API key?)")
     # No busy pre-check here: two concurrent POSTs would both pass a
@@ -111,8 +113,7 @@ async def job_events(request: Request):
                     idle = 0.0
             await asyncio.sleep(0.25)
 
-    return StreamingResponse(gen(seq), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache"})
+    return StreamingResponse(gen(seq), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
 
 @router.get("/guide")

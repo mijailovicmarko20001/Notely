@@ -14,6 +14,7 @@ from webui.errors import TooLargeError, ValidationError
 
 # --- A3: save_upload_stream itself (pure, no HTTP) --------------------------
 
+
 @pytest.mark.anyio
 async def test_save_upload_stream_rejects_over_cap_upload(tmp_path):
     from starlette.datastructures import UploadFile
@@ -50,6 +51,7 @@ async def test_save_upload_stream_rejects_empty_file_by_default(tmp_path):
 
 
 # --- A3 end-to-end through the API: /api/slides/upload -> 413 --------------
+
 
 def test_upload_slides_413_when_over_configured_cap(client, monkeypatch):
     # save_deck_for_lectures binds its own `max_bytes` default from
@@ -98,6 +100,7 @@ def test_upload_pool_400_when_no_lectures_configured_yet(client, project_root):
 
 # --- A4: NotFoundError from media.grab_preview_frame -> 404 -----------------
 
+
 def test_preview_frame_404_when_no_video_yet(client):
     resp = client.get("/api/lectures/lecture01/preview-frame")
     assert resp.status_code == 404
@@ -107,6 +110,7 @@ def test_preview_frame_404_when_no_video_yet(client):
 
 
 # --- A1: LectureEntries / malformed bodies ----------------------------------
+
 
 def test_set_lectures_rejects_empty_entries_list(client):
     resp = client.post("/api/lectures", json={"entries": []})
@@ -132,6 +136,7 @@ def test_upload_slides_requires_lecture_ids_form_field(client):
 
 
 # --- A4: consistent error shape across both handler paths -------------------
+
 
 def test_starlette_http_exception_and_notely_error_share_response_shape(client, project_root):
     (project_root / "input" / "video_urls.json").write_text("{}")

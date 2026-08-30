@@ -9,6 +9,7 @@ from webui import progress
 
 # --- parse_line ------------------------------------------------------------
 
+
 def test_parse_line_ytdlp_download_percent():
     pct = progress.parse_line(0, "[download]  42.5% of 120.00MiB at 3.2MiB/s", {})
     assert pct == 0.425
@@ -75,6 +76,7 @@ def test_parse_line_indeterminate_stages_return_none():
 
 
 # --- artifact_ok / stage_artifact ------------------------------------------
+
 
 def test_artifact_ok_false_when_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(progress, "INPUT_DIR", tmp_path / "input")

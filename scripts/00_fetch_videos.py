@@ -33,6 +33,7 @@ SOURCE_SUFFIX = ".source.json"
 # itself is only needed for private (not merely unlisted) videos.
 try:
     from dotenv import load_dotenv
+
     load_dotenv(ROOT / ".env")
 except ImportError:
     pass
@@ -54,9 +55,13 @@ def verify_video(path: Path) -> bool:
         return False
     result = subprocess.run(
         [
-            "ffprobe", "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
             str(path),
         ],
         capture_output=True,
@@ -113,13 +118,19 @@ def run_yt_dlp(url: str, output_path: Path, cookies_browser: str | None) -> _YtD
     cmd = [
         # -m yt_dlp with the running interpreter, so the venv's yt-dlp is
         # found even when .venv/bin isn't on PATH.
-        sys.executable, "-m", "yt_dlp",
-        "-f", FORMAT,
-        "--merge-output-format", "mp4",
+        sys.executable,
+        "-m",
+        "yt_dlp",
+        "-f",
+        FORMAT,
+        "--merge-output-format",
+        "mp4",
         # one "[download]  NN.N%" line per progress tick, so callers (and the
         # web UI) can watch download progress instead of a silent blob.
-        "--newline", "--progress",
-        "-o", str(output_path),
+        "--newline",
+        "--progress",
+        "-o",
+        str(output_path),
     ]
     # yt-dlp needs a JS runtime to run YouTube's player code; without one it
     # falls back to legacy clients whose stream URLs YouTube now 500s on.
@@ -133,9 +144,7 @@ def run_yt_dlp(url: str, output_path: Path, cookies_browser: str | None) -> _YtD
     # case a malformed/malicious value ever lands in video_urls.json outside
     # the web UI's own validation (webui/config.py's URL check).
     cmd += ["--", url]
-    proc = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-    )
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     lines = []
     for line in proc.stdout:
         line = line.rstrip("\n")

@@ -175,6 +175,7 @@ def distribute_pool_deck(merged_path: Path, lecture_ids) -> None:
 
 # --- per-lecture upload -----------------------------------------------------
 
+
 def _record_deck_meta(lecture_id: str, original_name: str | None) -> None:
     meta = _load_json(config.LECTURES_META_PATH, {})
     meta.setdefault(lecture_id, {})["deck_original_name"] = original_name
@@ -209,6 +210,7 @@ async def save_deck_for_lectures(
 
 
 # --- lecture-matching suggestion -------------------------------------------
+
 
 def _norm_words(s: str) -> list[str]:
     return re.sub(r"[^\w\s]", " ", (s or "").lower()).split()
@@ -279,7 +281,8 @@ async def suggest_lectures_for_upload(
         # fraction of title words appearing in the deck's opening slides,
         # with fuzzy tolerance for OCR/diacritic drift
         hits = sum(
-            1 for w in title_words
+            1
+            for w in title_words
             if w in deck_words or difflib.get_close_matches(w, deck_words, n=1, cutoff=0.85)
         )
         scores.append({"lecture_id": lecture_id, "score": round(hits / len(title_words), 3)})

@@ -36,6 +36,7 @@ def load_dotenv_if_available() -> None:
     --topic-index, but harmless to always attempt."""
     try:
         from dotenv import load_dotenv
+
         load_dotenv(get_project_root() / ".env")
     except ImportError:
         pass
@@ -49,12 +50,12 @@ def load_json(path):
 
 def find_lecture_notes(project_root):
     """Find all lecture note files in output/notes/ and return sorted."""
-    notes_dir = project_root / 'output' / 'notes'
+    notes_dir = project_root / "output" / "notes"
     if not notes_dir.exists():
         return []
 
     # Find all .md files matching lecture pattern
-    note_files = sorted(notes_dir.glob('*.md'))
+    note_files = sorted(notes_dir.glob("*.md"))
     return note_files
 
 
@@ -91,11 +92,11 @@ def _write_json_atomic(path, data) -> None:
 
 def build_table_of_contents(lectures):
     """Build a markdown table of contents from lecture list."""
-    lines = ['# Table of Contents\n']
+    lines = ["# Table of Contents\n"]
     for lecture_id in lectures:
-        lines.append(f'- [{lecture_id}](#{lecture_id})')
-    lines.append('')
-    return '\n'.join(lines)
+        lines.append(f"- [{lecture_id}](#{lecture_id})")
+    lines.append("")
+    return "\n".join(lines)
 
 
 TOPIC_INDEX_SYSTEM_PROMPT = r"""You are building a cross-lecture topic index for an assembled university-course study guide made of per-lecture notes concatenated together.
@@ -155,15 +156,15 @@ def generate_topic_index(full_guide_text: str, model: str, raw_debug_path: Path)
         )
         return None
 
-    text = "\n".join(
-        b.text for b in response.content if getattr(b, "type", None) == "text"
-    ).strip()
+    text = "\n".join(b.text for b in response.content if getattr(b, "type", None) == "text").strip()
     usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
     _write_json_atomic(
         raw_debug_path,
         {"prompt": request_payload, "response": text, "model": model, "usage": usage},
     )
-    print(f"cross-lecture topic index generated (input={usage['input_tokens']} output={usage['output_tokens']} tokens)")
+    print(
+        f"cross-lecture topic index generated (input={usage['input_tokens']} output={usage['output_tokens']} tokens)"
+    )
     return text or None
 
 
@@ -171,7 +172,7 @@ def assemble_guide(force=False, topic_index=False):
     """Main assembly logic."""
     project_root = get_project_root()
 
-    output_path = project_root / 'output' / 'study_guide.md'
+    output_path = project_root / "output" / "study_guide.md"
 
     # Check if output exists and --force not set
     if output_path.exists() and not force:
@@ -198,35 +199,37 @@ def assemble_guide(force=False, topic_index=False):
             # header if one is missing (a duplicate H1 makes PDF export emit
             # a near-blank page per lecture via page-break-before).
             if not note_content.lstrip().startswith(f"# {lecture_id}"):
-                content_parts.append(f'# {lecture_id}\n')
+                content_parts.append(f"# {lecture_id}\n")
             content_parts.append(note_content)
-            content_parts.append('')  # Blank line between lectures
+            content_parts.append("")  # Blank line between lectures
         except Exception as e:
             print(f"Error reading {note_file}: {e}", file=sys.stderr)
             return False
 
     # Build final guide with TOC
     toc = build_table_of_contents(lectures)
-    full_guide = toc + '\n'.join(content_parts)
+    full_guide = toc + "\n".join(content_parts)
 
     if topic_index:
         load_dotenv_if_available()
         if not os.environ.get("ANTHROPIC_API_KEY"):
-            print("WARNING: --topic-index requested but ANTHROPIC_API_KEY is not set; skipping", file=sys.stderr)
+            print(
+                "WARNING: --topic-index requested but ANTHROPIC_API_KEY is not set; skipping", file=sys.stderr
+            )
         else:
             model = os.environ.get("NOTES_MODEL", "claude-sonnet-5")
             index_md = generate_topic_index(
                 full_guide, model, project_root / "output" / "topic_index_raw.json"
             )
             if index_md:
-                full_guide = toc + index_md + "\n\n---\n\n" + '\n'.join(content_parts)
+                full_guide = toc + index_md + "\n\n---\n\n" + "\n".join(content_parts)
 
     # Write output. Temp file + atomic rename: a killed process can never
     # leave a truncated-but-non-empty study_guide.md that a later run's
     # exists()-and-nonempty skip check would wrongly trust as done.
     output_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_output = output_path.with_name(f"{output_path.name}.tmp{os.getpid()}")
-    with open(tmp_output, 'w') as f:
+    with open(tmp_output, "w") as f:
         f.write(full_guide)
     tmp_output.replace(output_path)
 
@@ -237,13 +240,14 @@ def assemble_guide(force=False, topic_index=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Stage [7] Assembly - Build final study guide')
-    parser.add_argument('--force', action='store_true', help='Overwrite existing output')
+    parser = argparse.ArgumentParser(description="Stage [7] Assembly - Build final study guide")
+    parser.add_argument("--force", action="store_true", help="Overwrite existing output")
     parser.add_argument(
-        '--topic-index', action='store_true',
-        help='also generate a cross-lecture topic index via one extra Claude API call '
-             'over the whole assembled guide (off by default -- real cost, potentially '
-             'hundreds of thousands of tokens for a full course; needs ANTHROPIC_API_KEY)',
+        "--topic-index",
+        action="store_true",
+        help="also generate a cross-lecture topic index via one extra Claude API call "
+        "over the whole assembled guide (off by default -- real cost, potentially "
+        "hundreds of thousands of tokens for a full course; needs ANTHROPIC_API_KEY)",
     )
 
     args = parser.parse_args()
@@ -253,5 +257,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

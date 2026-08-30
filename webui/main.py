@@ -41,6 +41,7 @@ async def _notely_error_handler(request: Request, exc: NotelyError):
     message = str(exc)
     return JSONResponse({"error": message, "detail": message}, status_code=exc.status_code)
 
+
 # Host header check: blocks DNS-rebinding (a page on evil.com whose DNS
 # answer flips to 127.0.0.1, so the browser's same-origin check passes but
 # the Host header still says evil.com). NOTELY_ALLOWED_HOSTS lets the Docker
@@ -99,6 +100,7 @@ async def no_cache_static(request: Request, call_next):
     if request.url.path == "/" or request.url.path.startswith("/static"):
         response.headers["Cache-Control"] = "no-store"
     return response
+
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/files", StaticFiles(directory=str(OUTPUT_DIR)), name="files")

@@ -76,6 +76,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # set in .env actually reaches the --ocr-lang default below.
 try:
     from dotenv import load_dotenv
+
     load_dotenv(PROJECT_ROOT / ".env")
 except ImportError:
     pass
@@ -95,8 +96,8 @@ OCR_EXCERPT_LEN = 150
 
 # --- Tuning knobs for worked-example frame detection (see
 # detect_example_candidates for how they're used) ---
-DEFAULT_EXAMPLE_SCORE_MAX = 0.12   # below this, a frame doesn't resemble the deck at all
-DEFAULT_EXAMPLE_INK_DELTA = 12     # dHash Hamming distance (of 64 bits) from a run's first frame
+DEFAULT_EXAMPLE_SCORE_MAX = 0.12  # below this, a frame doesn't resemble the deck at all
+DEFAULT_EXAMPLE_INK_DELTA = 12  # dHash Hamming distance (of 64 bits) from a run's first frame
 # Minimum fraction of the run's first frame's OCR words that must still be
 # present in a candidate frame's OCR text before dHash drift is trusted as
 # "ink added on top of the same slide" (annotated_slide) rather than "this
@@ -368,13 +369,10 @@ def match_events_to_slides(
 
         backward_best_slide, backward_best_score = (None, None)
         if backward_candidates:
-            backward_best_slide, backward_best_score = max(
-                backward_candidates.items(), key=lambda kv: kv[1]
-            )
+            backward_best_slide, backward_best_score = max(backward_candidates.items(), key=lambda kv: kv[1])
 
         jumped_backward = (
-            backward_best_slide is not None
-            and backward_best_score > in_order_best_score + margin
+            backward_best_slide is not None and backward_best_score > in_order_best_score + margin
         )
 
         if jumped_backward:
@@ -414,10 +412,18 @@ def get_video_duration(lecture_id: str) -> float | None:
     try:
         result = subprocess.run(
             [
-                "ffprobe", "-v", "error", "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1", str(video_path),
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(video_path),
             ],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,
         )
         if result.returncode != 0:
             return None
@@ -705,8 +711,7 @@ def detect_example_candidates(
         return []
 
     slide_texts = {
-        s["slide_number"]: f"{s.get('title', '') or ''}\n{s.get('body_text', '') or ''}"
-        for s in slides
+        s["slide_number"]: f"{s.get('title', '') or ''}\n{s.get('body_text', '') or ''}" for s in slides
     }
 
     candidates = []
@@ -719,9 +724,7 @@ def detect_example_candidates(
             idx = m["event_index"]
             h = hashes.get(idx)
             ink_delta_value = (
-                hamming_distance(h, run_first_hash)
-                if h is not None and run_first_hash is not None
-                else None
+                hamming_distance(h, run_first_hash) if h is not None and run_first_hash is not None else None
             )
             deck_text = slide_texts.get(m["slide_number"], "")
             frame_ocr = m.get("ocr_excerpt", "")
@@ -822,7 +825,10 @@ def process_lecture(
                 # content.
                 event["ocr_text"] = prev_ocr_text
                 n_deduped += 1
-                print(f"  [ocr {i + 1}/{len(events)}] {frame_path.name} (near-duplicate, OCR skipped)", flush=True)
+                print(
+                    f"  [ocr {i + 1}/{len(events)}] {frame_path.name} (near-duplicate, OCR skipped)",
+                    flush=True,
+                )
             else:
                 print(f"  [ocr {i + 1}/{len(events)}] {frame_path.name}", flush=True)
                 event["ocr_text"] = ocr_frame(frame_path, lang=ocr_lang)
@@ -835,7 +841,9 @@ def process_lecture(
         event_texts = [e["ocr_text"] for e in events]
         slide_texts = [slide_refs[n] for n in slide_numbers]
 
-        print(f"[{lecture_id}] computing TF-IDF cosine similarity ({len(events)} events x {len(slide_numbers)} slides)...")
+        print(
+            f"[{lecture_id}] computing TF-IDF cosine similarity ({len(events)} events x {len(slide_numbers)} slides)..."
+        )
         sim_matrix = compute_similarity_matrix(event_texts, slide_texts)
 
         print(
@@ -860,8 +868,13 @@ def process_lecture(
 
     if detect_examples:
         example_candidates = detect_example_candidates(
-            matches, slides, hashes, example_score_max, example_ink_delta,
-            example_ink_text_overlap_min, example_ink_novel_word_min,
+            matches,
+            slides,
+            hashes,
+            example_score_max,
+            example_ink_delta,
+            example_ink_text_overlap_min,
+            example_ink_novel_word_min,
         )
     else:
         example_candidates = []
@@ -893,7 +906,9 @@ def main() -> None:
         default=None,
         help="Lecture id, e.g. lecture01 (matches output/frame_events/<lecture_id>.json)",
     )
-    parser.add_argument("--all", action="store_true", help="process every lecture found in output/frame_events/")
+    parser.add_argument(
+        "--all", action="store_true", help="process every lecture found in output/frame_events/"
+    )
     parser.add_argument(
         "--force", action="store_true", help="re-run even if output/slide_timelines/<lecture_id>.json exists"
     )

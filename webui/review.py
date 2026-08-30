@@ -43,9 +43,11 @@ def get_review_data(lecture_id: str) -> dict:
         raise FileNotFoundError(f"no timeline for {lecture_id} — run stage 4 first")
 
     timeline = _load(timeline_path)
-    review = _load(review_path) if review_path.exists() else {
-        "low_confidence_matches": [], "unmatched_slides": [], "backward_jumps": []
-    }
+    review = (
+        _load(review_path)
+        if review_path.exists()
+        else {"low_confidence_matches": [], "unmatched_slides": [], "backward_jumps": []}
+    )
     slides = _load(slides_path) if slides_path.exists() else []
     slide_meta = [
         {

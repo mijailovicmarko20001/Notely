@@ -84,6 +84,7 @@ def test_merge_pool_ignores_a_previously_merged_deck(tmp_path):
 
 # --- pool uploads replace the pool rather than accumulating into it --------
 
+
 def _upload(name: str, pages: list[str]):
     from starlette.datastructures import UploadFile
 
@@ -122,10 +123,12 @@ async def test_save_pool_uploads_leaves_pool_intact_when_an_upload_is_rejected(s
     (pool_dir / "existing.pdf").write_bytes(make_pdf_bytes(["Keep me"]))
 
     with pytest.raises(ValidationError):
-        await decks.save_pool_uploads([
-            _upload("good.pdf", ["Fine"]),
-            _upload("deck.pptx", ["Not a PDF"]),
-        ])
+        await decks.save_pool_uploads(
+            [
+                _upload("good.pdf", ["Fine"]),
+                _upload("deck.pptx", ["Not a PDF"]),
+            ]
+        )
 
     # Replacement is all-or-nothing: a rejected file in the batch must not
     # leave the user with a half-written pool (or none at all).

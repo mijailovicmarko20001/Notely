@@ -47,7 +47,7 @@ def save_json(path, data):
     exists()-and-nonempty skip check would wrongly trust as done."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.tmp{os.getpid()}")
-    with open(tmp, 'w') as f:
+    with open(tmp, "w") as f:
         json.dump(data, f, indent=2)
     tmp.replace(path)
 
@@ -72,20 +72,20 @@ def assign_transcript_to_runs(timeline, transcript_segments):
     run_transcripts = {}
 
     for segment in transcript_segments:
-        seg_start = segment['start']
-        seg_end = segment['end']
-        seg_text = segment['text']
+        seg_start = segment["start"]
+        seg_end = segment["end"]
+        seg_text = segment["text"]
 
         best_run = None
         best_overlap = 0
 
         for idx, slide_entry in enumerate(timeline):
-            slide_start = slide_entry['start']
-            slide_end = slide_entry['end']
+            slide_start = slide_entry["start"]
+            slide_end = slide_entry["end"]
 
             # Handle end=null (extends to infinity)
             if slide_end is None:
-                slide_end = float('inf')
+                slide_end = float("inf")
 
             # Calculate overlap
             overlap_start = max(seg_start, slide_start)
@@ -106,11 +106,11 @@ def assign_transcript_to_runs(timeline, transcript_segments):
 def build_slide_text(slide):
     """Combine title and body_text into a single slide_text string."""
     parts = []
-    if slide.get('title'):
-        parts.append(slide['title'])
-    if slide.get('body_text'):
-        parts.append(slide['body_text'])
-    return '\n'.join(parts)
+    if slide.get("title"):
+        parts.append(slide["title"])
+    if slide.get("body_text"):
+        parts.append(slide["body_text"])
+    return "\n".join(parts)
 
 
 def merge_short_dwell_runs(timeline, run_transcripts, min_dwell=5.0):
@@ -135,11 +135,11 @@ def merge_short_dwell_runs(timeline, run_transcripts, min_dwell=5.0):
     removed = set()
 
     for idx, slide_entry in enumerate(timeline):
-        slide_end = slide_entry['end']
+        slide_end = slide_entry["end"]
         if slide_end is None:
             continue  # open-ended run, never a short-dwell candidate
 
-        dwell_time = slide_end - slide_entry['start']
+        dwell_time = slide_end - slide_entry["start"]
         if dwell_time >= min_dwell:
             continue
 
@@ -152,12 +152,10 @@ def merge_short_dwell_runs(timeline, run_transcripts, min_dwell=5.0):
         this_run_text = run_transcripts.pop(idx, [])
         existing = run_transcripts.get(target, [])
         # Keep chronological order regardless of which side the target is on.
-        run_transcripts[target] = (
-            this_run_text + existing if idx < target else existing + this_run_text
-        )
+        run_transcripts[target] = this_run_text + existing if idx < target else existing + this_run_text
 
         removed.add(idx)
-        merges.setdefault(target, []).append(slide_entry['slide_number'])
+        merges.setdefault(target, []).append(slide_entry["slide_number"])
 
     return run_transcripts, merges, removed
 
@@ -194,7 +192,7 @@ def consolidate_by_slide_number(timeline, run_transcripts, removed, merges):
     for idx, slide_entry in enumerate(timeline):
         if idx in removed:
             continue
-        slide_num = slide_entry['slide_number']
+        slide_num = slide_entry["slide_number"]
         if slide_num not in by_slide:
             by_slide[slide_num] = {
                 "windows": [],
@@ -205,27 +203,29 @@ def consolidate_by_slide_number(timeline, run_transcripts, removed, merges):
             order.append(slide_num)
 
         entry = by_slide[slide_num]
-        entry["windows"].append([slide_entry['start'], slide_entry['end']])
-        chunk = '\n'.join(run_transcripts.get(idx, []))
+        entry["windows"].append([slide_entry["start"], slide_entry["end"]])
+        chunk = "\n".join(run_transcripts.get(idx, []))
         if chunk:
             entry["chunks"].append(chunk)
         entry["merged_from"].extend(merges.get(idx, []))
-        frame_path = slide_entry.get('last_frame_image_path')
+        frame_path = slide_entry.get("last_frame_image_path")
         if frame_path:
             entry["frame_image_path"] = frame_path  # chronologically last wins
 
     consolidated = []
     for slide_num in order:
         entry = by_slide[slide_num]
-        consolidated.append({
-            "slide_number": slide_num,
-            "transcript_text": '\n\n'.join(entry["chunks"]),
-            "start": entry["windows"][0][0],
-            "end": entry["windows"][-1][1],
-            "windows": entry["windows"],
-            "merged_from": entry["merged_from"],
-            "frame_image_path": entry["frame_image_path"],
-        })
+        consolidated.append(
+            {
+                "slide_number": slide_num,
+                "transcript_text": "\n\n".join(entry["chunks"]),
+                "start": entry["windows"][0][0],
+                "end": entry["windows"][-1][1],
+                "windows": entry["windows"],
+                "merged_from": entry["merged_from"],
+                "frame_image_path": entry["frame_image_path"],
+            }
+        )
 
     return consolidated
 
@@ -236,17 +236,17 @@ def build_canonical_slide_map(slides_data):
     import re
 
     def norm(s):
-        return re.sub(r'\s+', ' ', (s or '').lower()).strip()
+        return re.sub(r"\s+", " ", (s or "").lower()).strip()
 
     canonical = {}
     first_by_hash = {}
     for slide in slides_data:
         key = hashlib.md5(
-            (norm(slide.get('title', '')) + '|' + norm(slide.get('body_text', ''))).encode()
+            (norm(slide.get("title", "")) + "|" + norm(slide.get("body_text", ""))).encode()
         ).hexdigest()
         if key not in first_by_hash:
-            first_by_hash[key] = slide['slide_number']
-        canonical[slide['slide_number']] = first_by_hash[key]
+            first_by_hash[key] = slide["slide_number"]
+        canonical[slide["slide_number"]] = first_by_hash[key]
     return canonical
 
 
@@ -256,9 +256,20 @@ def build_canonical_slide_map(slides_data):
 # ASCII-folded (see fold()) so a diacritic spelling in the transcript
 # ("vežbanje") still matches the stored cue ("vezb").
 EXAMPLE_CUES = (
-    "primer", "na primer", "recimo", "zadatak", "vezb", "uradimo", "izracunajmo",
-    "posmatrajmo", "example", "for example", "let's work", "worked example",
-    "exercise", "suppose",
+    "primer",
+    "na primer",
+    "recimo",
+    "zadatak",
+    "vezb",
+    "uradimo",
+    "izracunajmo",
+    "posmatrajmo",
+    "example",
+    "for example",
+    "let's work",
+    "worked example",
+    "exercise",
+    "suppose",
 )
 
 
@@ -269,8 +280,8 @@ def fold(s):
     and ASR transcripts are inconsistent about which one they emit."""
     import unicodedata
 
-    normalized = unicodedata.normalize('NFKD', s or '')
-    return ''.join(c for c in normalized if not unicodedata.combining(c)).lower()
+    normalized = unicodedata.normalize("NFKD", s or "")
+    return "".join(c for c in normalized if not unicodedata.combining(c)).lower()
 
 
 def transcript_context_for(timestamp, segments, before=20.0, after=40.0):
@@ -284,11 +295,11 @@ def transcript_context_for(timestamp, segments, before=20.0, after=40.0):
     window_start = timestamp - before
     window_end = timestamp + after
     parts = [
-        segment['text']
+        segment["text"]
         for segment in segments
-        if segment['end'] >= window_start and segment['start'] <= window_end
+        if segment["end"] >= window_start and segment["start"] <= window_end
     ]
-    return ' '.join(parts).strip()
+    return " ".join(parts).strip()
 
 
 def score_example_cues(context):
@@ -301,8 +312,9 @@ def score_example_cues(context):
     return [cue for cue in EXAMPLE_CUES if cue in folded]
 
 
-def attach_example_candidates(examples_data, output, canonical, transcript_segments,
-                               context_before=20.0, context_after=40.0):
+def attach_example_candidates(
+    examples_data, output, canonical, transcript_segments, context_before=20.0, context_after=40.0
+):
     """
     Attach each stage-4 example candidate to the consolidated output entry
     it happened during, enriched with `transcript_context` and `cue_hits`.
@@ -324,35 +336,36 @@ def attach_example_candidates(examples_data, output, canonical, transcript_segme
     (empty list if none attached), for a consistent shape downstream.
     """
     for entry in output:
-        entry.setdefault('example_candidates', [])
+        entry.setdefault("example_candidates", [])
 
     if not examples_data or not output:
         return
 
-    slide_to_index = {entry['slide_number']: i for i, entry in enumerate(output)}
+    slide_to_index = {entry["slide_number"]: i for i, entry in enumerate(output)}
 
     for candidate in examples_data:
-        slide_num = canonical.get(candidate['slide_number'], candidate['slide_number'])
+        slide_num = canonical.get(candidate["slide_number"], candidate["slide_number"])
         idx = slide_to_index.get(slide_num)
 
-        timestamp = candidate['timestamp']
+        timestamp = candidate["timestamp"]
         if idx is None:
             idx = next(
                 (
-                    i for i, entry in enumerate(output)
+                    i
+                    for i, entry in enumerate(output)
                     if any(
-                        w[0] <= timestamp <= (w[1] if w[1] is not None else float('inf'))
-                        for w in entry['windows']
+                        w[0] <= timestamp <= (w[1] if w[1] is not None else float("inf"))
+                        for w in entry["windows"]
                     )
                 ),
                 None,
             )
         if idx is None:
-            idx = min(range(len(output)), key=lambda i: abs(output[i]['windows'][0][0] - timestamp))
+            idx = min(range(len(output)), key=lambda i: abs(output[i]["windows"][0][0] - timestamp))
 
         context = transcript_context_for(timestamp, transcript_segments, context_before, context_after)
-        enriched = {**candidate, 'transcript_context': context, 'cue_hits': score_example_cues(context)}
-        output[idx]['example_candidates'].append(enriched)
+        enriched = {**candidate, "transcript_context": context, "cue_hits": score_example_cues(context)}
+        output[idx]["example_candidates"].append(enriched)
 
 
 def segment_transcript(lecture_id, min_dwell=5.0, force=False):
@@ -360,13 +373,13 @@ def segment_transcript(lecture_id, min_dwell=5.0, force=False):
     project_root = get_project_root()
 
     # Input paths
-    timeline_path = project_root / 'output' / 'slide_timelines' / f'{lecture_id}.json'
-    examples_path = project_root / 'output' / 'slide_timelines' / f'{lecture_id}_examples.json'
-    transcript_path = project_root / 'output' / 'transcripts' / f'{lecture_id}.json'
-    slides_path = project_root / 'output' / 'slides_extracted' / f'{lecture_id}.json'
+    timeline_path = project_root / "output" / "slide_timelines" / f"{lecture_id}.json"
+    examples_path = project_root / "output" / "slide_timelines" / f"{lecture_id}_examples.json"
+    transcript_path = project_root / "output" / "transcripts" / f"{lecture_id}.json"
+    slides_path = project_root / "output" / "slides_extracted" / f"{lecture_id}.json"
 
     # Output path
-    output_path = project_root / 'output' / 'segmented_transcripts' / f'{lecture_id}.json'
+    output_path = project_root / "output" / "segmented_transcripts" / f"{lecture_id}.json"
 
     # Cached output is a successful no-op, not a failure — the orchestrator
     # must be able to re-run the pipeline without --force aborting here.
@@ -386,13 +399,13 @@ def segment_transcript(lecture_id, min_dwell=5.0, force=False):
     # Example candidates are optional: absent for timelines produced before
     # this feature landed, or when stage 4 was run with --no-examples.
     try:
-        examples_data = load_json(examples_path).get('candidates', [])
+        examples_data = load_json(examples_path).get("candidates", [])
     except FileNotFoundError:
         examples_data = []
 
     # Extract timeline
-    timeline = timeline_data.get('timeline', [])
-    transcript_segments = transcript_data.get('segments', [])
+    timeline = timeline_data.get("timeline", [])
+    transcript_segments = transcript_data.get("segments", [])
 
     # Canonicalize duplicate slides. Pooled/merged decks can contain many
     # near-identical copies of the same slide (observed: 66% duplicates in a
@@ -402,23 +415,21 @@ def segment_transcript(lecture_id, min_dwell=5.0, force=False):
     canonical = build_canonical_slide_map(slides_data)
     remapped = 0
     for entry in timeline:
-        canon = canonical.get(entry['slide_number'], entry['slide_number'])
-        if canon != entry['slide_number']:
-            entry['slide_number'] = canon
+        canon = canonical.get(entry["slide_number"], entry["slide_number"])
+        if canon != entry["slide_number"]:
+            entry["slide_number"] = canon
             remapped += 1
     if remapped:
         print(f"[{lecture_id}] canonicalized {remapped} timeline entr(ies) pointing at duplicate slides")
 
     # Build slide data map for quick lookup
-    slide_data_map = {slide['slide_number']: slide for slide in slides_data}
+    slide_data_map = {slide["slide_number"]: slide for slide in slides_data}
 
     # Assign transcript segments to the specific timeline run they overlap
     run_transcripts = assign_transcript_to_runs(timeline, transcript_segments)
 
     # Merge short-dwell runs into their chronologically adjacent neighbor
-    run_transcripts, merges, removed = merge_short_dwell_runs(
-        timeline, run_transcripts, min_dwell=min_dwell
-    )
+    run_transcripts, merges, removed = merge_short_dwell_runs(timeline, run_transcripts, min_dwell=min_dwell)
 
     # Consolidate all surviving runs of the same slide_number (e.g. a
     # revisited slide) into one output entry per unique slide
@@ -427,20 +438,22 @@ def segment_transcript(lecture_id, min_dwell=5.0, force=False):
     # Build output
     output = []
     for entry in consolidated:
-        slide_num = entry['slide_number']
+        slide_num = entry["slide_number"]
         slide_data = slide_data_map.get(slide_num, {})
 
-        output.append({
-            'slide_number': slide_num,
-            'slide_text': build_slide_text(slide_data),
-            'notes_text': slide_data.get('notes_text', ''),
-            'transcript_text': entry['transcript_text'],
-            'start': entry['start'],
-            'end': entry['end'],
-            'windows': entry['windows'],
-            'merged_from': entry['merged_from'],
-            'frame_image_path': entry.get('frame_image_path'),
-        })
+        output.append(
+            {
+                "slide_number": slide_num,
+                "slide_text": build_slide_text(slide_data),
+                "notes_text": slide_data.get("notes_text", ""),
+                "transcript_text": entry["transcript_text"],
+                "start": entry["start"],
+                "end": entry["end"],
+                "windows": entry["windows"],
+                "merged_from": entry["merged_from"],
+                "frame_image_path": entry.get("frame_image_path"),
+            }
+        )
 
     # Attach stage-4 example candidates to the entry they happened during.
     attach_example_candidates(examples_data, output, canonical, transcript_segments)
@@ -452,12 +465,16 @@ def segment_transcript(lecture_id, min_dwell=5.0, force=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Stage [5] Transcript Segmentation')
-    parser.add_argument('lecture_id', nargs='?', help='Lecture ID (e.g., lecture01)')
-    parser.add_argument('--all', action='store_true', help='Process all lectures from input/video_urls.json')
-    parser.add_argument('--min-dwell', type=float, default=5.0,
-                        help='Minimum dwell time in seconds; shorter slides are merged (default: 5.0)')
-    parser.add_argument('--force', action='store_true', help='Overwrite existing output')
+    parser = argparse.ArgumentParser(description="Stage [5] Transcript Segmentation")
+    parser.add_argument("lecture_id", nargs="?", help="Lecture ID (e.g., lecture01)")
+    parser.add_argument("--all", action="store_true", help="Process all lectures from input/video_urls.json")
+    parser.add_argument(
+        "--min-dwell",
+        type=float,
+        default=5.0,
+        help="Minimum dwell time in seconds; shorter slides are merged (default: 5.0)",
+    )
+    parser.add_argument("--force", action="store_true", help="Overwrite existing output")
 
     args = parser.parse_args()
 
@@ -465,7 +482,7 @@ def main():
 
     if args.all:
         # Load lecture list from video_urls.json
-        urls_path = project_root / 'input' / 'video_urls.json'
+        urls_path = project_root / "input" / "video_urls.json"
         try:
             urls_data = load_json(urls_path)
             lecture_ids = sorted(urls_data.keys())
@@ -489,5 +506,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

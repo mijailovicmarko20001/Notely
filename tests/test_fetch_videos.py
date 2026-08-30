@@ -21,9 +21,7 @@ def _stub_yt_dlp(monkeypatch, videos_dir, *, succeeds=True):
     a stub that just writes a file. Returns the list of URLs it was asked to
     download, so tests can assert on cache hits/misses."""
     monkeypatch.setattr(fetch_videos, "VIDEOS_DIR", videos_dir)
-    monkeypatch.setattr(
-        fetch_videos, "verify_video", lambda p: p.exists() and p.stat().st_size > 0
-    )
+    monkeypatch.setattr(fetch_videos, "verify_video", lambda p: p.exists() and p.stat().st_size > 0)
     downloaded = []
 
     def fake_run_yt_dlp(url, output_path, cookies_browser):

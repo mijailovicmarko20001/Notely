@@ -131,6 +131,7 @@ def load_dotenv_if_available() -> None:
     """Best-effort .env loading; never fatal if python-dotenv isn't installed."""
     try:
         from dotenv import load_dotenv
+
         load_dotenv(PROJECT_ROOT / ".env")
     except ImportError:
         pass
@@ -273,7 +274,9 @@ def build_user_prompt(slide: dict, confirmed_examples: list[dict] | None = None)
             "(already embedded as images in the note, in this order):"
         ]
         for i, ex in enumerate(confirmed_examples, start=1):
-            lines.append(f"{i}. [{ex['kind']} @ {fmt_ts(ex['timestamp'])}] {ex.get('caption') or '(no caption)'}")
+            lines.append(
+                f"{i}. [{ex['kind']} @ {fmt_ts(ex['timestamp'])}] {ex.get('caption') or '(no caption)'}"
+            )
         prompt += "\n".join(lines)
 
     return prompt
@@ -313,10 +316,12 @@ def generate_slide_note(
         if frame_path:
             b64 = load_frame_image_b64(frame_path)
             if b64:
-                content.append({
-                    "type": "image",
-                    "source": {"type": "base64", "media_type": "image/png", "data": b64},
-                })
+                content.append(
+                    {
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": "image/png", "data": b64},
+                    }
+                )
                 frame_attached = True
     content.append({"type": "text", "text": user_prompt})
 
@@ -343,8 +348,12 @@ def generate_slide_note(
     # however large the (downscaled) frame PNG is -- record that one was
     # attached and which frame, not the bytes themselves.
     debug_content = [
-        {**block, "source": {**block["source"], "data": f"<omitted, {len(block['source']['data'])} base64 chars>"}}
-        if block.get("type") == "image" else block
+        {
+            **block,
+            "source": {**block["source"], "data": f"<omitted, {len(block['source']['data'])} base64 chars>"},
+        }
+        if block.get("type") == "image"
+        else block
         for block in content
     ]
     debug_prompt = {**request_payload, "messages": [{"role": "user", "content": debug_content}]}
@@ -394,8 +403,11 @@ def generate_slide_note(
     )
 
     cache_note = (
-        f" cache_read={usage['cache_read_input_tokens']}" if usage["cache_read_input_tokens"] else
-        f" cache_write={usage['cache_creation_input_tokens']}" if usage["cache_creation_input_tokens"] else ""
+        f" cache_read={usage['cache_read_input_tokens']}"
+        if usage["cache_read_input_tokens"]
+        else f" cache_write={usage['cache_creation_input_tokens']}"
+        if usage["cache_creation_input_tokens"]
+        else ""
     )
     frame_note = " +frame_image" if frame_attached else ""
     print(
@@ -490,8 +502,10 @@ def sum_usage(usages) -> dict:
     before a response arrived has no usage to add. Same four fields both
     call sites already track, so one summer works for either."""
     totals = {
-        "input_tokens": 0, "output_tokens": 0,
-        "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
     }
     for usage in usages:
         if not usage:
@@ -509,6 +523,7 @@ def rank_example_candidates(pairs: list[tuple[dict, dict]]) -> list[tuple[dict, 
     stronger evidence than ink drift on a slide, which is stronger than a
     deck's own "example"-titled slide with nothing added live), then
     chronologically."""
+
     def key(pair):
         _, candidate = pair
         return (
@@ -539,10 +554,12 @@ def confirm_example(
 
     content = []
     if b64:
-        content.append({
-            "type": "image",
-            "source": {"type": "base64", "media_type": "image/png", "data": b64},
-        })
+        content.append(
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/png", "data": b64},
+            }
+        )
     content.append({"type": "text", "text": build_example_prompt(candidate, slide)})
 
     request_payload = {
@@ -566,8 +583,12 @@ def confirm_example(
     raw_path = raw_dir / f"example_{candidate['event_index']:03d}.json"
 
     debug_content = [
-        {**block, "source": {**block["source"], "data": f"<omitted, {len(block['source']['data'])} base64 chars>"}}
-        if block.get("type") == "image" else block
+        {
+            **block,
+            "source": {**block["source"], "data": f"<omitted, {len(block['source']['data'])} base64 chars>"},
+        }
+        if block.get("type") == "image"
+        else block
         for block in content
     ]
     debug_prompt = {**request_payload, "messages": [{"role": "user", "content": debug_content}]}
@@ -606,7 +627,9 @@ def confirm_example(
     )
 
     if verdict is None:
-        print(f"  [{index}/{total}] example @{fmt_ts(candidate['timestamp'])}: unparseable verdict, treated as rejected")
+        print(
+            f"  [{index}/{total}] example @{fmt_ts(candidate['timestamp'])}: unparseable verdict, treated as rejected"
+        )
         return {**base, "error": False, "is_example": False, "usage": usage}
 
     status = "confirmed" if verdict["is_example"] else "rejected"
@@ -629,11 +652,7 @@ def run_example_confirmation(
     confirmed/rejected entries carry enough to attach back to a slide
     (slide_number, timestamp, frame_image_path, kind, caption) and to
     debug a bad classification (detected_kind vs the confirmed kind)."""
-    pairs = [
-        (slide, candidate)
-        for slide in slides
-        for candidate in slide.get("example_candidates", [])
-    ]
+    pairs = [(slide, candidate) for slide in slides for candidate in slide.get("example_candidates", [])]
     candidates_seen = len(pairs)
     if not pairs:
         return [], [], 0
@@ -734,7 +753,12 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
         else:
             print(f"[{lecture_id}] confirming worked-example candidates with model={examples_model}...")
             confirmed_list, rejected_list, candidates_seen = run_example_confirmation(
-                client, anthropic_mod, examples_model, slides, raw_dir, examples_max,
+                client,
+                anthropic_mod,
+                examples_model,
+                slides,
+                raw_dir,
+                examples_max,
                 concurrency=max(1, int(os.environ.get("NOTES_CONCURRENCY", "4"))),
             )
             examples_usage = sum_usage(r.get("usage") for r in confirmed_list + rejected_list)
@@ -750,7 +774,8 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
             )
             cache_note = (
                 f" cache_read={examples_usage['cache_read_input_tokens']}"
-                if examples_usage["cache_read_input_tokens"] else ""
+                if examples_usage["cache_read_input_tokens"]
+                else ""
             )
             print(
                 f"[{lecture_id}] example confirmation: {len(confirmed_list)}/{candidates_seen} confirmed -> "
@@ -785,7 +810,14 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         futures = [
             pool.submit(
-                generate_slide_note, client, anthropic_mod, model, slide, i, total, raw_dir,
+                generate_slide_note,
+                client,
+                anthropic_mod,
+                model,
+                slide,
+                i,
+                total,
+                raw_dir,
                 send_frame_image=send_frame_image,
                 confirmed_examples=confirmed_by_slide_number.get(slide.get("slide_number")),
             )
@@ -823,8 +855,7 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
             frame_rel = slide.get("frame_image_path")
             if frame_rel and (PROJECT_ROOT / frame_rel).exists():
                 image_line += (
-                    f"\n![slide {position} as shown during the lecture]"
-                    f"({frame_md_path(frame_rel)})\n"
+                    f"\n![slide {position} as shown during the lecture]({frame_md_path(frame_rel)})\n"
                 )
 
         examples_md = build_examples_markdown(confirmed_by_slide_number.get(deck_number, []))
@@ -887,9 +918,7 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
 
     if failed_slides:
         md_parts.append(
-            "\n---\n\n**Slides that failed to generate:** "
-            + ", ".join(str(n) for n in failed_slides)
-            + "\n"
+            "\n---\n\n**Slides that failed to generate:** " + ", ".join(str(n) for n in failed_slides) + "\n"
         )
 
     _write_text_atomic(output_path, "\n".join(md_parts))
@@ -897,14 +926,16 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
     status = f" ({len(failed_slides)} slide(s) failed)" if failed_slides else ""
     cache_summary = (
         f" cache_write={total_cache_write_tokens} cache_read={total_cache_read_tokens}"
-        if (total_cache_write_tokens or total_cache_read_tokens) else ""
+        if (total_cache_write_tokens or total_cache_read_tokens)
+        else ""
     )
     frames_summary = f" frame_images={frames_attached}/{total}" if send_frame_image else ""
     examples_summary = (
         f" examples={sum(len(exs) for exs in confirmed_by_slide_number.values())} "
         f"(example-confirm tokens: input={examples_usage['input_tokens']} "
         f"output={examples_usage['output_tokens']} cache_read={examples_usage['cache_read_input_tokens']})"
-        if detect_examples else ""
+        if detect_examples
+        else ""
     )
     print(
         f"[done] {lecture_id}: wrote notes -> {output_path}{status} "

@@ -25,6 +25,7 @@ def test_groq_field_reads_object_style_response():
 
 def test_groq_field_dict_missing_key_raises_keyerror():
     import pytest
+
     with pytest.raises(KeyError):
         m1._groq_field({"start": 1.0}, "text")
 

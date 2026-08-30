@@ -45,9 +45,19 @@ def get_video_duration(lecture_id: str):
         return None
     try:
         r = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "default=noprint_wrappers=1:nokey=1", str(video)],
-            capture_output=True, text=True, timeout=30,
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(video),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         return float(r.stdout.strip()) if r.returncode == 0 else None
     except Exception:
@@ -64,11 +74,11 @@ class JobManager:
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)  # scheduler wake-ups
         self._thread = None
-        self._procs = {}         # lane name -> running Popen
+        self._procs = {}  # lane name -> running Popen
         self._cancelled = False
-        self._busy = False       # guarded by _lock; claim-and-start atomicity (C2)
-        self.job = None          # snapshot dict
-        self.events = []         # [{seq, type, ...}]
+        self._busy = False  # guarded by _lock; claim-and-start atomicity (C2)
+        self.job = None  # snapshot dict
+        self.events = []  # [{seq, type, ...}]
         self._seq = 0
 
     # -- events -----------------------------------------------------------
@@ -148,7 +158,7 @@ class JobManager:
             self._cond.notify_all()
 
     # -- scheduler ---------------------------------------------------------
-    IO_STAGES = {0, 6}   # network-bound: download, note generation (API)
+    IO_STAGES = {0, 6}  # network-bound: download, note generation (API)
 
     def _deps_done(self, tasks, idx):
         """A task is ready when every earlier task of the same lecture is done."""
@@ -213,13 +223,19 @@ class JobManager:
         argv += extra
 
         with self._lock:
-            log.write(f"\n===== task {i} [{lane}]: stage {stage} {lecture_id or ''} =====\n$ {' '.join(argv)}\n")
+            log.write(
+                f"\n===== task {i} [{lane}]: stage {stage} {lecture_id or ''} =====\n$ {' '.join(argv)}\n"
+            )
             log.flush()
         skip_line = ""
         try:
             proc = subprocess.Popen(
-                argv, cwd=str(PROJECT_ROOT), env=stage_env(),
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                argv,
+                cwd=str(PROJECT_ROOT),
+                env=stage_env(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
             )
             # Register in _procs (keyed by lane, including "final" for stage
             # 7 -- see _run()) before doing anything else, and re-check
@@ -304,8 +320,8 @@ class JobManager:
         with open(log_path, "a") as log:
             workers = [
                 threading.Thread(
-                    target=self._worker,
-                    args=(name, stages, tasks, log, failed_lectures), daemon=True)
+                    target=self._worker, args=(name, stages, tasks, log, failed_lectures), daemon=True
+                )
                 for name, stages in lanes
             ]
             for w in workers:
@@ -329,9 +345,7 @@ class JobManager:
                 self._run_task("final", i, lecture_id, stage, extra, log)
 
         with self._lock:
-            self.job["status"] = (
-                "cancelled" if self._cancelled else ("failed" if failed_lectures else "done")
-            )
+            self.job["status"] = "cancelled" if self._cancelled else ("failed" if failed_lectures else "done")
             self.job["finished"] = time.time()
             status = self.job["status"]
             self._busy = False
@@ -357,16 +371,21 @@ def build_tasks(lecture_ids, stages, options, force, has_api_key):
                 continue  # note generation locked without a key
             extra = []
             if s == 3:
-                extra += flag("--crop", "crop") + flag("--threshold", "threshold") + flag("--interval", "interval")
+                extra += (
+                    flag("--crop", "crop") + flag("--threshold", "threshold") + flag("--interval", "interval")
+                )
             elif s == 4:
-                extra += (flag("--ocr-lang", "ocr_lang") + flag("--margin", "margin")
-                          + flag("--stay-margin", "stay_margin")
-                          + flag("--confidence-threshold", "confidence_threshold")
-                          + flag("--min-forward-score", "min_forward_score")
-                          + flag("--example-score-max", "example_score_max")
-                          + flag("--example-ink-delta", "example_ink_delta")
-                          + flag("--example-ink-text-overlap-min", "example_ink_text_overlap_min")
-                          + flag("--example-ink-novel-word-min", "example_ink_novel_word_min"))
+                extra += (
+                    flag("--ocr-lang", "ocr_lang")
+                    + flag("--margin", "margin")
+                    + flag("--stay-margin", "stay_margin")
+                    + flag("--confidence-threshold", "confidence_threshold")
+                    + flag("--min-forward-score", "min_forward_score")
+                    + flag("--example-score-max", "example_score_max")
+                    + flag("--example-ink-delta", "example_ink_delta")
+                    + flag("--example-ink-text-overlap-min", "example_ink_text_overlap_min")
+                    + flag("--example-ink-novel-word-min", "example_ink_novel_word_min")
+                )
             elif s == 5:
                 extra += flag("--min-dwell", "min_dwell")
             if force:

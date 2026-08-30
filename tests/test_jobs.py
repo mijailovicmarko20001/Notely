@@ -8,6 +8,7 @@ from webui.jobs import JobManager, build_tasks
 
 # --- build_tasks -------------------------------------------------------
 
+
 def test_build_tasks_basic_stage_list():
     tasks = build_tasks(["lecture01"], [0, 1], options={}, force=False, has_api_key=True)
     assert tasks == [("lecture01", 0, []), ("lecture01", 1, [])]
@@ -47,15 +48,19 @@ def test_build_tasks_stage3_options_become_flags():
 
 def test_build_tasks_stage4_options_become_flags_including_min_forward_score():
     options = {
-        "ocr_lang": "srp_latn+eng", "margin": 0.15,
-        "stay_margin": 0.05, "confidence_threshold": 0.25,
+        "ocr_lang": "srp_latn+eng",
+        "margin": 0.15,
+        "stay_margin": 0.05,
+        "confidence_threshold": 0.25,
         "min_forward_score": 0.05,
     }
     tasks = build_tasks(["lecture01"], [4], options=options, force=False, has_api_key=True)
     _, _, extra = tasks[0]
     for flag, value in [
-        ("--ocr-lang", "srp_latn+eng"), ("--margin", "0.15"),
-        ("--stay-margin", "0.05"), ("--confidence-threshold", "0.25"),
+        ("--ocr-lang", "srp_latn+eng"),
+        ("--margin", "0.15"),
+        ("--stay-margin", "0.05"),
+        ("--confidence-threshold", "0.25"),
         ("--min-forward-score", "0.05"),
     ]:
         assert flag in extra
@@ -77,6 +82,7 @@ def test_build_tasks_multiple_lectures_preserve_order():
 
 
 # --- JobManager pure scheduling helpers ------------------------------------
+
 
 def _job_with_statuses(statuses):
     jm = JobManager()

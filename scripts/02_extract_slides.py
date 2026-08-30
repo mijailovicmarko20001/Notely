@@ -198,9 +198,7 @@ def main() -> None:
         parser.error("provide a lecture_id, or use --all")
 
     if args.all:
-        lecture_ids = sorted(
-            {p.stem for p in SLIDES_DIR.glob("*") if p.suffix.lower() in (".pptx", ".pdf")}
-        )
+        lecture_ids = sorted({p.stem for p in SLIDES_DIR.glob("*") if p.suffix.lower() in (".pptx", ".pdf")})
         if not lecture_ids:
             print(f"No slide decks found in {SLIDES_DIR}")
             return

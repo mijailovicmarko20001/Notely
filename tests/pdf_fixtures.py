@@ -21,8 +21,10 @@ def make_pdf_bytes(pages: list[str]) -> bytes:
     font_obj = content_obj_start + n_pages
     for i in range(n_pages):
         objs.append(
-            (f"<</Type/Page/Parent 2 0 R/Resources<</Font<</F1 {font_obj} 0 R>>>>"
-             f"/MediaBox[0 0 200 100]/Contents {content_obj_start + i} 0 R>>").encode()
+            (
+                f"<</Type/Page/Parent 2 0 R/Resources<</Font<</F1 {font_obj} 0 R>>>>"
+                f"/MediaBox[0 0 200 100]/Contents {content_obj_start + i} 0 R>>"
+            ).encode()
         )
     for text in pages:
         content = f"BT /F1 12 Tf 10 50 Td ({text}) Tj ET".encode()

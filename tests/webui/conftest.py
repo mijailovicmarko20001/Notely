@@ -53,10 +53,14 @@ def _mkdirs(root: Path) -> None:
 
 
 def _write_default_lectures(root: Path) -> None:
-    (root / "input" / "video_urls.json").write_text(json.dumps({
-        "lecture01": "https://youtu.be/aaaaaaaaaaa",
-        "lecture02": "https://youtu.be/bbbbbbbbbbb",
-    }))
+    (root / "input" / "video_urls.json").write_text(
+        json.dumps(
+            {
+                "lecture01": "https://youtu.be/aaaaaaaaaaa",
+                "lecture02": "https://youtu.be/bbbbbbbbbbb",
+            }
+        )
+    )
 
 
 @pytest.fixture(scope="session")

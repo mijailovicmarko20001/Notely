@@ -94,11 +94,15 @@ def extract_audio(video_path: Path, wav_path: Path) -> None:
     cmd = [
         "ffmpeg",
         "-y",
-        "-i", str(video_path),
+        "-i",
+        str(video_path),
         "-vn",
-        "-acodec", "pcm_s16le",
-        "-ar", "16000",
-        "-ac", "1",
+        "-acodec",
+        "pcm_s16le",
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
         str(wav_path),
     ]
     print(f"[audio] extracting audio: {video_path.name} -> {wav_path.name}")
@@ -116,9 +120,19 @@ def extract_audio_compressed(video_path: Path, out_path: Path, bitrate: str = "2
     16MB, comfortably under Groq's ~25MB free-tier limit, vs. ~170MB for
     the uncompressed WAV every other backend uses."""
     cmd = [
-        "ffmpeg", "-y", "-i", str(video_path),
-        "-vn", "-ac", "1", "-ar", "16000",
-        "-c:a", "libopus", "-b:a", bitrate,
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(video_path),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-c:a",
+        "libopus",
+        "-b:a",
+        bitrate,
         str(out_path),
     ]
     print(f"[audio] extracting compressed audio: {video_path.name} -> {out_path.name} ({bitrate})")
@@ -165,9 +179,7 @@ def transcribe_lecture(lecture_id: str, model_size: str, force: bool = False) ->
             # Groq does its own (compressed) audio extraction, since it needs
             # a small upload rather than the uncompressed WAV the local
             # backends use -- no need to also extract_audio() here.
-            transcript = transcribe_with_groq(
-                lecture_id, video_path, forced_language, vocab_prompt
-            )
+            transcript = transcribe_with_groq(lecture_id, video_path, forced_language, vocab_prompt)
         else:
             extract_audio(video_path, tmp_wav_path)
             if backend == "mlx":
@@ -203,8 +215,10 @@ def transcribe_with_mlx(lecture_id, wav_path, model_size, forced_language, vocab
     import mlx_whisper  # lazy import, Apple Silicon only
 
     repo = os.environ.get("WHISPER_MLX_REPO") or f"mlx-community/whisper-{model_size}"
-    print(f"[whisper] {lecture_id}: transcribing on GPU via mlx ('{repo}', "
-          f"language={'pinned ' + forced_language if forced_language else 'auto'})...")
+    print(
+        f"[whisper] {lecture_id}: transcribing on GPU via mlx ('{repo}', "
+        f"language={'pinned ' + forced_language if forced_language else 'auto'})..."
+    )
     result = mlx_whisper.transcribe(
         str(wav_path),
         path_or_hf_repo=repo,
@@ -269,8 +283,7 @@ def transcribe_with_groq(lecture_id, video_path, forced_language, vocab_prompt) 
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         raise RuntimeError(
-            "WHISPER_BACKEND=groq requires GROQ_API_KEY "
-            "(get one at https://console.groq.com/keys)"
+            "WHISPER_BACKEND=groq requires GROQ_API_KEY (get one at https://console.groq.com/keys)"
         )
 
     # Groq's API has a request size cap (25MB on the free tier, per its
@@ -327,7 +340,9 @@ def transcribe_with_groq(lecture_id, video_path, forced_language, vocab_prompt) 
     except (KeyError, AttributeError):
         detected_language = None
     detected_language = detected_language or forced_language or ""
-    print(f"[whisper] {lecture_id}: Groq transcription complete, {len(segments)} segment(s), language={detected_language}")
+    print(
+        f"[whisper] {lecture_id}: Groq transcription complete, {len(segments)} segment(s), language={detected_language}"
+    )
     return {"language": detected_language, "segments": segments}
 
 
@@ -386,6 +401,7 @@ def load_dotenv_if_available() -> None:
     """Best-effort .env loading; never fatal if python-dotenv isn't installed."""
     try:
         from dotenv import load_dotenv
+
         load_dotenv(PROJECT_ROOT / ".env")
     except ImportError:
         pass

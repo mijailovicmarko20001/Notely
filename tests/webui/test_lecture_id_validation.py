@@ -44,6 +44,7 @@ def test_validated_lecture_id_rejects_single_digit_suffix():
 
 # --- through routes that build filesystem paths from the id ----------------
 
+
 def test_get_review_rejects_traversal_lecture_id(client):
     resp = client.get("/api/review/lecture99")
     assert resp.status_code == 422
