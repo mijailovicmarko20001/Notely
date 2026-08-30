@@ -45,7 +45,11 @@ the same whether or not those binaries are installed. CI
   `ruff format --check .`, both run in CI and available as a pre-commit hook
   (`pre-commit install` once, or run `ruff check --fix . && ruff format .`
   by hand before committing). See `pyproject.toml` for the exact rule set —
-  it's deliberately narrow, not a full style enforcer.
+  it's deliberately narrow, not a full style enforcer. Whole-codebase
+  reformats are listed in `.git-blame-ignore-revs`; run
+  `git config blame.ignoreRevsFile .git-blame-ignore-revs` once per checkout
+  (or pass `--ignore-revs-file` per invocation) so `git blame` skips past
+  them to real authorship.
 - Beyond what ruff checks, match the surrounding code — comment density,
   naming, and structure vary a bit stage to stage; keep new code consistent
   with whatever file you're editing.
