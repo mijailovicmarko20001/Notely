@@ -42,7 +42,7 @@ def test_stay_margin_suppresses_oscillation_between_near_duplicates():
     slides = [m["slide_number"] for m in matches]
     # should settle rather than bounce back and forth every event
     assert slides.count(1) + slides.count(2) == 4
-    transitions = sum(1 for a, b in zip(slides, slides[1:]) if a != b)
+    transitions = sum(1 for a, b in zip(slides, slides[1:], strict=False) if a != b)
     assert transitions <= 1, f"expected at most one committed transition, got {slides}"
 
 
@@ -54,7 +54,7 @@ def test_stay_margin_zero_falls_back_to_always_take_max():
     matches = m4.match_events_to_slides(_events(2), [1, 2], sim, margin=0.15, stay_margin=0.0)
     # with no stickiness, event 1's raw max (slide 2, 0.52 > 0.49) wins outright
     assert matches[1]["slide_number"] == 2
-    assert matches[1]["stayed_over_raw_best"] == False
+    assert not matches[1]["stayed_over_raw_best"]
 
 
 def test_backward_jump_requires_beating_margin():
@@ -67,7 +67,7 @@ def test_backward_jump_requires_beating_margin():
     ])
     # make the margin large enough that 0.20 doesn't clear it
     matches = m4.match_events_to_slides(_events(3), [1, 2, 3], sim, margin=0.25, stay_margin=0.0)
-    assert matches[2]["jumped_backward"] == False
+    assert not matches[2]["jumped_backward"]
     assert matches[2]["slide_number"] == 2  # stays in order (best in-order candidate is slide 2 or 3)
 
 
@@ -78,7 +78,7 @@ def test_backward_jump_taken_when_it_clears_margin():
         [0.9, 0.05, 0.05],  # event 2: slide1=0.9 vs in-order best ~0.1 -> clears any reasonable margin
     ])
     matches = m4.match_events_to_slides(_events(3), [1, 2, 3], sim, margin=0.25, stay_margin=0.05)
-    assert matches[2]["jumped_backward"] == True
+    assert matches[2]["jumped_backward"]
     assert matches[2]["slide_number"] == 1
 
 

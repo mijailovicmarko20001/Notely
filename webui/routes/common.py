@@ -22,5 +22,5 @@ def validated_lecture_id(lecture_id: str) -> str:
     Centralizes S1's fix so no router reimplements the check."""
     try:
         return config.validate_lecture_id(lecture_id)
-    except ValueError:
-        raise HTTPException(422, f"invalid lecture id: {str(lecture_id)[:60]!r}")
+    except ValueError as exc:
+        raise HTTPException(422, f"invalid lecture id: {str(lecture_id)[:60]!r}") from exc

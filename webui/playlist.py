@@ -30,8 +30,8 @@ def expand_playlist(url: str, timeout: int = 60) -> list:
     cmd = [sys.executable, "-m", "yt_dlp", "--flat-playlist", "-J", "--no-warnings", "--", url]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        raise PlaylistError(f"yt-dlp timed out after {timeout}s")
+    except subprocess.TimeoutExpired as exc:
+        raise PlaylistError(f"yt-dlp timed out after {timeout}s") from exc
     if result.returncode != 0:
         # yt-dlp's stderr can include local paths/environment details -- log
         # it server-side only, return a generic message to the client (S6).
@@ -39,8 +39,8 @@ def expand_playlist(url: str, timeout: int = 60) -> list:
         raise PlaylistError("could not fetch that URL — check it's a valid, accessible video/playlist link")
     try:
         data = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        raise PlaylistError("yt-dlp returned unparseable output")
+    except json.JSONDecodeError as exc:
+        raise PlaylistError("yt-dlp returned unparseable output") from exc
 
     if data.get("_type") == "playlist" and "entries" in data:
         entries = [e for e in data["entries"] if e]  # unavailable videos come back as null

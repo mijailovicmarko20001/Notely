@@ -8,7 +8,7 @@ import io
 
 import pytest
 
-from webui import config, decks
+from webui import decks
 from webui.errors import TooLargeError, ValidationError
 
 

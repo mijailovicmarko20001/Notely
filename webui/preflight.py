@@ -33,7 +33,7 @@ def check_tesseract_lang(lang_spec: str) -> dict:
     if not ok:
         return {"ok": False, "detail": "tesseract not runnable"}
     installed = {line.strip() for line in out.splitlines()}
-    missing = [l for l in lang_spec.split("+") if l and l not in installed]
+    missing = [lang for lang in lang_spec.split("+") if lang and lang not in installed]
     return {
         "ok": not missing,
         "detail": "all languages installed" if not missing else f"missing traineddata: {', '.join(missing)}",

@@ -800,7 +800,7 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
     embed_images = os.environ.get("NOTES_EMBED_IMAGES", "1") != "0"
     images_dir = OUTPUT_NOTES_DIR.parent / "slides_extracted" / f"{lecture_id}_images"
 
-    for position, (slide, result) in enumerate(zip(slides, results), start=1):
+    for position, (slide, result) in enumerate(zip(slides, results, strict=True), start=1):
         deck_number = slide.get("slide_number", position)
 
         image_line = ""

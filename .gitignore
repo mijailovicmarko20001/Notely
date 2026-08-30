@@ -3,10 +3,11 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.ruff_cache/
+*.egg-info/
 
 # Secrets — never commit real API keys
 .env
-data/.env
 
 # Course materials & generated pipeline artifacts.
 # These are large binaries (videos, rendered slide PNGs, whisper caches,

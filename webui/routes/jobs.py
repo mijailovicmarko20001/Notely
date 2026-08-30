@@ -67,7 +67,7 @@ def start_job(body: JobRequest):
     try:
         job_id = jobs.MANAGER.start_job(tasks)
     except jobs.Busy as e:
-        raise HTTPException(409, str(e))
+        raise HTTPException(409, str(e)) from e
     return {"ok": True, "job_id": job_id}
 
 

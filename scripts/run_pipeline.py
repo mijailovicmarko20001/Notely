@@ -43,7 +43,6 @@ def run_stage(stage_num, lecture_id=None, extra_args=None):
         True if successful, False otherwise
     """
     project_root = get_project_root()
-    stage_script = project_root / 'scripts' / f'{stage_num:02d}_*.py'
 
     # Find the actual script (glob to get the right one)
     scripts = list(project_root.glob(f'scripts/{stage_num:02d}_*.py'))
@@ -148,11 +147,11 @@ Examples:
     # Run assembly if requested
     if args.assemble and not failed_lectures:
         print(f"\n{'#'*60}")
-        print(f"# Running assembly (stage 7)")
+        print("# Running assembly (stage 7)")
         print(f"{'#'*60}")
         success = run_stage(7, extra_args=extra_args)
         if not success:
-            print(f"Error: assembly (stage 7) failed", file=sys.stderr)
+            print("Error: assembly (stage 7) failed", file=sys.stderr)
             sys.exit(1)
 
     # Summary
@@ -165,7 +164,7 @@ Examples:
         sys.exit(1)
     else:
         print(f"\n{'='*60}")
-        print(f"SUCCESS: All stages completed")
+        print("SUCCESS: All stages completed")
         print(f"{'='*60}")
 
 

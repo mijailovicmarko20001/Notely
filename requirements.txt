@@ -29,6 +29,13 @@ markdown>=3.5                  # md -> HTML for PDF export (stage 08)
 fastapi>=0.115
 uvicorn[standard]>=0.30
 python-multipart>=0.0.9        # FastAPI file uploads
+# fastapi/starlette pull these in transitively, but webui/ imports them
+# directly (webui/models.py, webui/main.py, webui/routes/slides.py) -- declare
+# them so a fastapi minor bump can't silently drop a version we depend on.
+pydantic>=2.0
+starlette>=0.38
 
-# Dev/test only (not needed to run the pipeline or web UI)
-pytest>=8.0
+# webui/preflight.py imports this directly (scan_cache_dir, for the
+# "which Whisper models are already downloaded" check) -- faster-whisper
+# pulls it in transitively today, but that's not guaranteed to stay true.
+huggingface_hub>=0.20

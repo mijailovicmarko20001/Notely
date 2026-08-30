@@ -1,0 +1,11 @@
+# Mirrors what CI enforces (.github/workflows/tests.yml's `lint` job) --
+# correctness-only lint plus formatting, nothing more. Run `pre-commit install`
+# once per checkout to wire this into `git commit`; `ruff check --fix . &&
+# ruff format .` by hand does the same thing without the hook.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.5
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format

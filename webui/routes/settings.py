@@ -31,7 +31,7 @@ def put_settings(body: SettingsUpdate):
     try:
         config.write_settings(body.to_updates())
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
     return {"ok": True, "settings": config.read_settings()}
 
 

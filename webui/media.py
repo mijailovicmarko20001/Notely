@@ -84,12 +84,12 @@ def grab_preview_frame(lecture_id: str, t: float = 60.0) -> Path:
         # t may be past a short video's end -- fall back to the first frame
         if not _grab(t) and not _grab(0):
             raise ServerError("ffmpeg could not extract a preview frame from this video")
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         tmp_path.unlink(missing_ok=True)
-        raise ServerError("timed out extracting a preview frame", status_code=504)
-    except FileNotFoundError:
+        raise ServerError("timed out extracting a preview frame", status_code=504) from exc
+    except FileNotFoundError as exc:
         tmp_path.unlink(missing_ok=True)
-        raise ServerError("ffmpeg not found")
+        raise ServerError("ffmpeg not found") from exc
     except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise

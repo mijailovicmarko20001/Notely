@@ -10,10 +10,13 @@ easier to review than large ones.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -e ".[dev]"   # pytest, ruff, and the test-only httpx/anyio
 ```
 
-For an exact reproducible install (matches the maintainer's validated dev
-environment) use `requirements-lock.txt` instead — see its header comment.
+For an exact reproducible install of the *runtime* dependencies (matches the
+maintainer's validated dev environment) use `requirements-lock.txt` in place
+of `requirements.txt` above — see its header comment. Still install `.[dev]`
+separately; it isn't part of the lock file.
 
 System binaries the pipeline needs at runtime (not required just to run the
 test suite — see below): `ffmpeg`, `tesseract` (+ your lecture language's
@@ -36,9 +39,16 @@ the same whether or not those binaries are installed. CI
 
 ## Code style / conventions
 
-- Match the surrounding code, not a style guide — comment density, naming,
-  and structure vary a bit stage to stage; keep new code consistent with
-  whatever file you're editing.
+- Formatting and a correctness-only lint pass (unused imports/variables,
+  undefined names, a handful of real-bug-shaped checks) are enforced by
+  [ruff](https://docs.astral.sh/ruff/) — `ruff check .` and
+  `ruff format --check .`, both run in CI and available as a pre-commit hook
+  (`pre-commit install` once, or run `ruff check --fix . && ruff format .`
+  by hand before committing). See `pyproject.toml` for the exact rule set —
+  it's deliberately narrow, not a full style enforcer.
+- Beyond what ruff checks, match the surrounding code — comment density,
+  naming, and structure vary a bit stage to stage; keep new code consistent
+  with whatever file you're editing.
 - Service logic belongs in `webui/*.py` modules (`decks.py`, `media.py`,
   `jobs.py`, `review.py`), not in `webui/routes/*.py` — routes should stay
   thin HTTP glue. See `webui/errors.py` for the typed-exception pattern

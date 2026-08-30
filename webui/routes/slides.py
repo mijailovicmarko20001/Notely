@@ -24,7 +24,7 @@ def expand(body: PlaylistExpandRequest):
     try:
         return {"entries": playlist.expand_playlist(url)}
     except playlist.PlaylistError as e:
-        raise HTTPException(422, str(e))
+        raise HTTPException(422, str(e)) from e
 
 
 @router.post("/lectures")
@@ -36,7 +36,7 @@ def set_lectures(body: LectureEntries):
         try:
             urls[lecture_id] = playlist.validate_video_url(e.url)
         except playlist.PlaylistError as err:
-            raise HTTPException(422, f"entry {i}: {err}")
+            raise HTTPException(422, f"entry {i}: {err}") from err
         meta[lecture_id] = {"title": e.title or lecture_id}
     config.INPUT_DIR.mkdir(parents=True, exist_ok=True)
     with open(config.VIDEO_URLS_PATH, "w") as f:
