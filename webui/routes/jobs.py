@@ -8,6 +8,7 @@ import json
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
+from notely.stages import PER_LECTURE_STAGES
 from .. import config, jobs, media, progress, review
 from ..models import JobRequest
 from .common import load_json, validated_lecture_id
@@ -21,7 +22,7 @@ def get_state():
     meta = load_json(config.LECTURES_META_PATH, {})
     lectures = []
     for lecture_id in sorted(urls):
-        stages = {s: progress.artifact_ok(s, lecture_id) for s in range(7)}
+        stages = {s: progress.artifact_ok(s, lecture_id) for s in PER_LECTURE_STAGES}
         deck = next(
             (
                 p.name

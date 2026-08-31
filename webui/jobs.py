@@ -45,6 +45,11 @@ class Busy(RuntimeError):
 
 
 def stage_script(stage: int) -> str:
+    # Glob rather than a fixed filename from the stage registry (see
+    # notely.stages) on purpose: tests/test_jobs_scheduler.py points
+    # SCRIPTS_DIR at a tmp dir of differently-named stub scripts (still
+    # "{stage:02d}_*.py") to drive the real scheduler without the real
+    # pipeline -- a fixed-name lookup would break that test seam.
     matches = sorted(glob.glob(str(SCRIPTS_DIR / f"{stage:02d}_*.py")))
     if not matches:
         raise FileNotFoundError(f"no script for stage {stage}")

@@ -11,6 +11,7 @@ import tempfile
 import threading
 from pathlib import Path
 
+from notely.stages import STAGES_BY_NUMBER
 from . import config
 from .errors import NotFoundError, ServerError
 
@@ -35,7 +36,7 @@ def render_guide_pdf() -> Path:
         # another one that just regenerated the PDF should see it as fresh
         # now and skip a redundant second render.
         if not pdf.exists() or pdf.stat().st_mtime < md.stat().st_mtime:
-            script = config.SCRIPTS_DIR / "08_export_pdf.py"
+            script = config.SCRIPTS_DIR / STAGES_BY_NUMBER[8].script
             fd, tmp_name = tempfile.mkstemp(dir=str(config.OUTPUT_DIR), suffix=".pdf.tmp")
             os.close(fd)
             tmp_path = Path(tmp_name)

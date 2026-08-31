@@ -32,6 +32,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
 from notely.cli import require_lecture_id_or_all  # noqa: E402
 from notely.io import load_json  # noqa: E402
 from notely.paths import PROJECT_ROOT  # noqa: E402
+from notely.stages import MAX_PIPELINE_STAGE  # noqa: E402
 
 
 def get_project_root():
@@ -125,7 +126,7 @@ Examples:
         lecture_ids = [args.lecture_id]
 
     # Validate stage range
-    if not (0 <= args.from_stage <= args.to_stage <= 7):
+    if not (0 <= args.from_stage <= args.to_stage <= MAX_PIPELINE_STAGE):
         print(f"Error: invalid stage range --from {args.from_stage} --to {args.to_stage}", file=sys.stderr)
         sys.exit(1)
 
