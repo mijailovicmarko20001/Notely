@@ -1,0 +1,26 @@
+{
+  "timeline": [
+    {
+      "slide_number": 1,
+      "start": 0.0,
+      "end": 15.0,
+      "confidence": 1.0,
+      "last_frame_image_path": "frame_002.png"
+    },
+    {
+      "slide_number": 2,
+      "start": 15.0,
+      "end": 25.0,
+      "confidence": 1.0,
+      "last_frame_image_path": "frame_004.png"
+    },
+    {
+      "slide_number": 3,
+      "start": 25.0,
+      "end": 30.0,
+      "confidence": 1.0,
+      "last_frame_image_path": "frame_005.png"
+    }
+  ],
+  "notes": []
+}

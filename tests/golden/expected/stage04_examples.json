@@ -1,0 +1,32 @@
+[
+  {
+    "event_index": 2,
+    "timestamp": 10.0,
+    "frame_image_path": "frame_002.png",
+    "slide_number": 1,
+    "kind": "whiteboard",
+    "score": 0.0,
+    "ink_delta": 0,
+    "ocr_excerpt": ""
+  },
+  {
+    "event_index": 3,
+    "timestamp": 15.0,
+    "frame_image_path": "frame_003.png",
+    "slide_number": 2,
+    "kind": "example_slide",
+    "score": 1.0,
+    "ink_delta": 0,
+    "ocr_excerpt": "Worked Example Example solve 2 + 2 = 4 step by step"
+  },
+  {
+    "event_index": 4,
+    "timestamp": 20.0,
+    "frame_image_path": "frame_004.png",
+    "slide_number": 2,
+    "kind": "annotated_slide",
+    "score": 0.7091,
+    "ink_delta": 64,
+    "ocr_excerpt": "Worked Example Example solve 2 + 2 = 4 step by step plus scribbled extra notes here"
+  }
+]
