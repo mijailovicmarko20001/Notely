@@ -912,25 +912,13 @@ onClickBusy($("#btn-apply-review"), async () => {
 /* ---------- guide ---------- */
 $("#btn-refresh-guide").addEventListener("click", loadGuide);
 
-// Mirrors scripts/08_export_pdf.py::markdown_to_html: stash $...$/$$...$$
-// before handing text to the markdown parser (otherwise LaTeX underscores
-// like x_a get read as emphasis markers), restore after, then MathJax
-// typesets the restored math in place.
-function renderGuideMarkdown(mdText) {
-  const stash = [];
-  const guarded = mdText.replace(/\$\$[\s\S]*?\$\$|\$[^$\n]+\$/g, (m) => {
-    stash.push(m);
-    return ` MATH${stash.length - 1} `;
-  });
-  let html = marked.parse(guarded);
-  html = html.replace(/ MATH(\d+) /g, (_, i) => stash[Number(i)]);
-  // study_guide.md's image paths are relative to output/, which is what
-  // /files/ is mounted at (webui/main.py) — same root stage 08 resolves
-  // relative paths against for the PDF.
-  html = html.replace(/(src|href)="(?!https?:|\/|data:)([^"]*)"/g, (_, attr, p) => `${attr}="/files/${p}"`);
-  return html;
-}
-
+// Rendering (markdown -> HTML, math-stashing, image-path rewriting) is
+// server-side now (notely.pipeline.export.render_guide_html, Phase 7 of
+// the cleanup plan) -- this used to duplicate that logic client-side with
+// marked.js and its own regex, so the on-screen preview and the exported
+// PDF (markdown_to_html) could silently drift apart. MathJax still runs
+// here, typesetting the $...$/$$...$$ the server left untouched in the
+// HTML it sent.
 async function loadGuide() {
   const g = await api("/guide");
   $("#guide-download").hidden = !g.exists;
@@ -940,7 +928,7 @@ async function loadGuide() {
     body.innerHTML = emptyState("inbox", "Nothing assembled yet.", "run", "Go run the pipeline");
     return;
   }
-  body.innerHTML = renderGuideMarkdown(g.markdown);
+  body.innerHTML = g.html;
   try {
     await window.MathJax?.typesetPromise?.([body]);
   } catch (e) {
