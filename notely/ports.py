@@ -1,0 +1,51 @@
+"""Ports: typing.Protocol seams between stage logic and the outside world.
+
+Per the cleanup plan's Phase 3 -- a stage that calls an adapter through one
+of these Protocols can be driven in a test by a fake, in-process, with no
+network, no binaries, and deterministic output. Stage code depends on a
+port; adapters (notely/adapters/) are injected at the entry point
+(scripts/webui), never imported by stage logic directly.
+
+One port lands per commit, each with its adapter and the stage(s) it
+unblocks wired up in the same commit -- see CONTRIBUTING.md / the cleanup
+plan for the full table. This file grows incrementally; don't pre-declare
+ports whose stage hasn't been wired yet.
+"""
+
+from dataclasses import dataclass
+from typing import Any, Protocol, runtime_checkable
+
+
+class LlmApiError(Exception):
+    """Raised by an LlmClient implementation when the underlying API call
+    fails, wrapping whatever the real SDK raised. Callers catch this
+    instead of importing the anthropic SDK just for its exception type."""
+
+
+@dataclass
+class LlmUsage:
+    input_tokens: int
+    output_tokens: int
+    # Only meaningful when prompt caching is active on the request -- 0
+    # otherwise, never None, so callers can sum/print unconditionally.
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+
+
+@dataclass
+class LlmResponse:
+    # Every text content block's text, concatenated and stripped -- callers
+    # never see the raw content-block list (which may also carry non-text
+    # blocks depending on the request).
+    text: str
+    usage: LlmUsage
+
+
+@runtime_checkable
+class LlmClient(Protocol):
+    def create_message(self, **request_payload: Any) -> LlmResponse:
+        """Send a Messages-API-shaped request (model, max_tokens, system,
+        messages, temperature, ...) and return its concatenated text plus
+        normalized usage. Raises LlmApiError on failure -- never returns
+        None or a partial response."""
+        ...

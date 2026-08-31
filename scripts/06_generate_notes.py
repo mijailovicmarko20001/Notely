@@ -67,6 +67,17 @@ from pathlib import Path
 
 # Project root = parent of scripts/
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
+# project root, not on sys.path by default when this file is run directly
+# (python scripts/06_generate_notes.py) -- same fix tests/conftest.py
+# applies for test discovery. Must happen before the `from notely...`
+# import below.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from notely.ports import LlmApiError  # noqa: E402
+
 INPUT_SEGMENTED_DIR = PROJECT_ROOT / "output" / "segmented_transcripts"
 OUTPUT_NOTES_DIR = PROJECT_ROOT / "output" / "notes"
 
@@ -284,7 +295,6 @@ def build_user_prompt(slide: dict, confirmed_examples: list[dict] | None = None)
 
 def generate_slide_note(
     client,
-    anthropic_mod,
     model: str,
     slide: dict,
     index: int,
@@ -359,8 +369,8 @@ def generate_slide_note(
     debug_prompt = {**request_payload, "messages": [{"role": "user", "content": debug_content}]}
 
     try:
-        response = client.messages.create(**request_payload)
-    except anthropic_mod.APIError as e:
+        response = client.create_message(**request_payload)
+    except LlmApiError as e:
         print(f"  [{index}/{total}] slide {slide_number}: ERROR: {e}", file=sys.stderr)
         _write_json_atomic(
             raw_path,
@@ -380,15 +390,13 @@ def generate_slide_note(
             "message": str(e),
         }
 
-    text_parts = [block.text for block in response.content if getattr(block, "type", None) == "text"]
-    note_text = "\n".join(text_parts).strip()
+    note_text = response.text
 
     usage = {
         "input_tokens": response.usage.input_tokens,
         "output_tokens": response.usage.output_tokens,
-        # present only when prompt caching is active on this response
-        "cache_creation_input_tokens": getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
-        "cache_read_input_tokens": getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+        "cache_creation_input_tokens": response.usage.cache_creation_input_tokens,
+        "cache_read_input_tokens": response.usage.cache_read_input_tokens,
     }
 
     _write_json_atomic(
@@ -537,7 +545,6 @@ def rank_example_candidates(pairs: list[tuple[dict, dict]]) -> list[tuple[dict, 
 
 def confirm_example(
     client,
-    anthropic_mod,
     model: str,
     slide: dict,
     candidate: dict,
@@ -602,8 +609,8 @@ def confirm_example(
     }
 
     try:
-        response = client.messages.create(**request_payload)
-    except anthropic_mod.APIError as e:
+        response = client.create_message(**request_payload)
+    except LlmApiError as e:
         print(f"  [{index}/{total}] example @{fmt_ts(candidate['timestamp'])}: ERROR: {e}", file=sys.stderr)
         _write_json_atomic(
             raw_path,
@@ -611,14 +618,14 @@ def confirm_example(
         )
         return {**base, "error": False, "is_example": False}
 
-    text = "\n".join(b.text for b in response.content if getattr(b, "type", None) == "text").strip()
+    text = response.text
     verdict = parse_example_verdict(text)
 
     usage = {
         "input_tokens": response.usage.input_tokens,
         "output_tokens": response.usage.output_tokens,
-        "cache_creation_input_tokens": getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
-        "cache_read_input_tokens": getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+        "cache_creation_input_tokens": response.usage.cache_creation_input_tokens,
+        "cache_read_input_tokens": response.usage.cache_read_input_tokens,
     }
 
     _write_json_atomic(
@@ -640,7 +647,6 @@ def confirm_example(
 
 def run_example_confirmation(
     client,
-    anthropic_mod,
     model: str,
     slides: list[dict],
     raw_dir: Path,
@@ -664,7 +670,7 @@ def run_example_confirmation(
 
     with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
         futures = [
-            pool.submit(confirm_example, client, anthropic_mod, model, slide, candidate, i, total, raw_dir)
+            pool.submit(confirm_example, client, model, slide, candidate, i, total, raw_dir)
             for i, (slide, candidate) in enumerate(ranked, start=1)
         ]
         results = [f.result() for f in futures]
@@ -698,7 +704,7 @@ def build_examples_markdown(confirmed_examples: list[dict]) -> str:
     return "\n\n**Examples:**\n\n" + "\n\n".join(blocks) + "\n"
 
 
-def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool:
+def process_lecture(llm_client, lecture_id: str, force: bool = False) -> bool:
     """Generate notes for every slide of a lecture and write the notes markdown."""
     input_path = INPUT_SEGMENTED_DIR / f"{lecture_id}.json"
     output_path = OUTPUT_NOTES_DIR / f"{lecture_id}.md"
@@ -720,7 +726,7 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
         return False
 
     model = os.environ.get("NOTES_MODEL", DEFAULT_MODEL)
-    client = anthropic_mod.Anthropic(max_retries=5)
+    client = llm_client
 
     # Opt-in, off by default -- a real added cost (vision tokens on every
     # slide call), not a free win, so this doesn't happen silently. See
@@ -754,7 +760,6 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
             print(f"[{lecture_id}] confirming worked-example candidates with model={examples_model}...")
             confirmed_list, rejected_list, candidates_seen = run_example_confirmation(
                 client,
-                anthropic_mod,
                 examples_model,
                 slides,
                 raw_dir,
@@ -812,7 +817,6 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
             pool.submit(
                 generate_slide_note,
                 client,
-                anthropic_mod,
                 model,
                 slide,
                 i,
@@ -902,18 +906,16 @@ def process_lecture(anthropic_mod, lecture_id: str, force: bool = False) -> bool
             "Be brief — this is an orientation map, not a second copy of the notes.\n\n"
             + "\n".join(md_parts)[:60000]
         )
-        response = client.messages.create(
+        response = client.create_message(
             model=model,
             max_tokens=8192,  # safety ceiling only — 1024 truncated overviews mid-sentence
             messages=[{"role": "user", "content": summary_prompt}],
         )
-        summary_text = "\n".join(
-            b.text for b in response.content if getattr(b, "type", None) == "text"
-        ).strip()
+        summary_text = response.text
         if summary_text:
             md_parts.insert(1, summary_text + "\n\n---\n")
             print(f"[{lecture_id}] lecture overview generated")
-    except anthropic_mod.APIError as e:
+    except LlmApiError as e:
         print(f"[{lecture_id}] WARNING: lecture overview failed: {e}", file=sys.stderr)
 
     if failed_slides:
@@ -976,7 +978,11 @@ def main():
         print("ERROR: ANTHROPIC_API_KEY not set (check .env)", file=sys.stderr)
         sys.exit(1)
 
-    import anthropic  # lazy import — keeps py_compile / --help working without the package installed
+    # lazy import (via the adapter) — keeps py_compile / --help working
+    # without the anthropic package installed
+    from notely.adapters.anthropic_llm import AnthropicLlmClient
+
+    llm_client = AnthropicLlmClient(max_retries=5)
 
     if args.all:
         input_files = sorted(INPUT_SEGMENTED_DIR.glob("*.json"))
@@ -989,7 +995,7 @@ def main():
 
     failed = []
     for lecture_id in lecture_ids:
-        ok = process_lecture(anthropic, lecture_id, force=args.force)
+        ok = process_lecture(llm_client, lecture_id, force=args.force)
         if not ok:
             failed.append(lecture_id)
 

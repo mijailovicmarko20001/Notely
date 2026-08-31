@@ -2,14 +2,18 @@
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
-# No importable package exists yet (notely/ lands in Phase 4 of the cleanup
-# plan) -- this file's only job today is to give `pip install -e ".[dev]"`
-# something to resolve the dev dependency group against. Without an explicit
-# empty package list, setuptools' auto-discovery picks up every top-level
-# directory in a checkout (webui/, and even a developer's local input/
-# output/ data/ dirs) and refuses to build.
+# notely/ is the one importable package (ports/adapters, landing
+# incrementally starting Phase 3 of the cleanup plan). Explicitly listed
+# rather than left to auto-discovery: without an explicit package list,
+# setuptools picks up every top-level directory in a checkout (webui/, and
+# even a developer's local input/output/data/ dirs) and refuses to build.
+# Every script that needs notely/ also inserts the project root onto
+# sys.path itself (see e.g. scripts/06_generate_notes.py), so this editable
+# install isn't load-bearing for running the pipeline -- it's for `pip
+# install -e ".[dev]"` to have something to resolve the dev group against,
+# and for `import notely...` to work the same way from any cwd.
 [tool.setuptools]
-packages = []
+packages = ["notely", "notely.adapters"]
 
 [project]
 name = "notely"

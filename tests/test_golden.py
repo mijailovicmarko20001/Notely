@@ -1,13 +1,13 @@
-"""Golden-master tests (Phase 1 of the architectural cleanup plan): pin each
-stage's exact output artifact given fixed, synthetic inputs.
+"""Golden-master tests (Phase 1, extended in Phase 3, of the architectural
+cleanup plan): pin each stage's exact output artifact given fixed,
+synthetic inputs.
 
-Only stages 2, 4, 5 and 7 are reachable this way today -- their external
-calls are either absent (5, and 7's default no-`--topic-index` path) or
-already separated from the pure combination logic that does the real work
-(2's `extract_from_pdf`/`extract_from_pptx` split; 4's OCR/ffprobe calls sit
-in `process_lecture`, one level above the pure matching pipeline exercised
-here). Stages 0, 1, 3, 6 and 8 need their port (Phase 3) before they can be
-driven hermetically -- see the plan.
+Stages 2, 4, 5 were reachable from Phase 1 (no external calls, or already
+separated from the pure combination logic that does the real work). Stage
+6 and stage 7's --topic-index path were unreachable until the LlmClient
+port (Phase 3) gave them a fake to inject -- see tests/fakes.py and
+tests/test_llm_client_port.py. Stages 0, 1, 3 and 8 still need their own
+port before they can be driven hermetically.
 
 Expected artifacts live in tests/golden/expected/ and are committed. If a
 golden test goes red, that means real behaviour changed: read the diff,
@@ -19,6 +19,7 @@ import json
 from pathlib import Path
 
 from conftest import load_stage
+from fakes import FakeLlmClient, llm_response
 from pdf_fixtures import make_pdf_bytes
 
 EXPECTED_DIR = Path(__file__).parent / "golden" / "expected"
@@ -290,3 +291,106 @@ def test_stage07_assemble_guide_golden(tmp_path, monkeypatch):
 
     guide = (tmp_path / "output" / "study_guide.md").read_text()
     assert guide == _expected_text("stage07_study_guide.md")
+
+
+def test_stage07_assemble_guide_with_topic_index_golden(tmp_path, monkeypatch):
+    # Promoted from unreachable to golden-masterable by the LlmClient port
+    # (Phase 3): generate_topic_index's real anthropic.Anthropic() client is
+    # never constructed when a fake is injected via assemble_guide's
+    # llm_client parameter, so this needs no ANTHROPIC_API_KEY and makes no
+    # network call.
+    monkeypatch.setattr(s7, "get_project_root", lambda: tmp_path)
+    notes_dir = tmp_path / "output" / "notes"
+    notes_dir.mkdir(parents=True)
+    (notes_dir / "lecture01.md").write_text("# lecture01\n\n## Introduction\n\n- point one\n")
+    (notes_dir / "lecture02.md").write_text("## Worked Example\n\n- point two\n")
+
+    fake = FakeLlmClient(
+        responses=[
+            llm_response(
+                "# Topic Index\n\n- Introduction, covered in [lecture01](#lecture01), "
+                "is revisited in [lecture02](#lecture02).",
+                input_tokens=500,
+                output_tokens=40,
+            ),
+        ]
+    )
+
+    assert s7.assemble_guide(force=True, topic_index=True, llm_client=fake) is True
+    assert len(fake.calls) == 1
+
+    guide = (tmp_path / "output" / "study_guide.md").read_text()
+    assert guide == _expected_text("stage07_study_guide_with_topic_index.md")
+
+
+# --- Stage 6: note generation ------------------------------------------------
+
+s6 = load_stage("06_generate_notes.py")
+
+
+def test_stage06_process_lecture_golden(tmp_path, monkeypatch):
+    # Promoted from unreachable to golden-masterable by the LlmClient port
+    # (Phase 3). NOTES_CONCURRENCY=1 makes the per-slide ThreadPoolExecutor
+    # calls run in submission order, so FakeLlmClient's simple
+    # responses.pop(0) queue lines up deterministically with the slides
+    # list -- with concurrency > 1 the response each slide receives would
+    # race. Worked-example detection stays off (its own confirmation calls
+    # are a separate, not-yet-pinned concern).
+    for var in ("NOTES_DETECT_EXAMPLES", "NOTES_SEND_FRAME_IMAGE", "NOTES_MODEL"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("NOTES_CONCURRENCY", "1")
+    monkeypatch.setattr(s6, "INPUT_SEGMENTED_DIR", tmp_path / "output" / "segmented_transcripts")
+    monkeypatch.setattr(s6, "OUTPUT_NOTES_DIR", tmp_path / "output" / "notes")
+    s6.INPUT_SEGMENTED_DIR.mkdir(parents=True)
+
+    slides = [
+        {
+            "slide_number": 1,
+            "slide_text": "Introduction\nOverview of the topic today",
+            "notes_text": "",
+            "transcript_text": "Welcome to the lecture.",
+            "start": 0.0,
+            "end": 10.0,
+            "merged_from": [],
+            "frame_image_path": None,
+            "example_candidates": [],
+        },
+        {
+            "slide_number": 2,
+            "slide_text": "Summary\nKey takeaways",
+            "notes_text": "",
+            "transcript_text": "That's all for today.",
+            "start": 10.0,
+            "end": 20.0,
+            "merged_from": [],
+            "frame_image_path": None,
+            "example_candidates": [],
+        },
+    ]
+    (s6.INPUT_SEGMENTED_DIR / "lecture01.json").write_text(json.dumps(slides))
+
+    fake = FakeLlmClient(
+        responses=[
+            llm_response(
+                "## Slide 1\n- Overview of the topic today\n\n**Professor's notes:** Welcomed the class.",
+                input_tokens=120,
+                output_tokens=40,
+            ),
+            llm_response(
+                "## Slide 2\n- Key takeaways\n\n**Professor's notes:** Wrapped up the lecture.",
+                input_tokens=110,
+                output_tokens=35,
+            ),
+            llm_response(
+                "## Pregled predavanja\n- Covered the introduction and summary.",
+                input_tokens=200,
+                output_tokens=20,
+            ),
+        ]
+    )
+
+    assert s6.process_lecture(fake, "lecture01", force=True) is True
+    assert len(fake.calls) == 3
+
+    notes = (s6.OUTPUT_NOTES_DIR / "lecture01.md").read_text()
+    assert notes == _expected_text("stage06_notes.md")

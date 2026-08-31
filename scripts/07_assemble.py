@@ -24,6 +24,16 @@ import os
 import argparse
 from pathlib import Path
 
+# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
+# project root, not on sys.path by default when this file is run directly
+# (python scripts/07_assemble.py) -- same fix tests/conftest.py applies for
+# test discovery. Must happen before the `from notely...` import below.
+_PROJECT_ROOT_FOR_IMPORT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
+
+from notely.ports import LlmApiError  # noqa: E402
+
 
 def get_project_root():
     """Return the project root directory (parent of scripts/)."""
@@ -116,7 +126,7 @@ Rules:
 - Be concise -- this is a map of connections, not a second study guide."""
 
 
-def generate_topic_index(full_guide_text: str, model: str, raw_debug_path: Path) -> str | None:
+def generate_topic_index(llm_client, full_guide_text: str, model: str, raw_debug_path: Path) -> str | None:
     """Optional second LLM pass (per CLAUDE.md's [7] Assembly section): a
     cross-lecture topic index surfacing connections/exam-relevant material
     that spans multiple lectures, which per-lecture notes structurally
@@ -129,8 +139,6 @@ def generate_topic_index(full_guide_text: str, model: str, raw_debug_path: Path)
     thousands of tokens for a full course), so it stays an explicit
     `--topic-index` CLI opt-in rather than a silent cost added to every
     run, matching this project's stance on cloud calls elsewhere."""
-    import anthropic as anthropic_mod
-
     # Claude's context window comfortably fits a full course guide (this
     # project's own 22-lecture guide is ~440K chars / ~110K tokens), but
     # cap defensively so a much larger course doesn't blow past it
@@ -138,7 +146,6 @@ def generate_topic_index(full_guide_text: str, model: str, raw_debug_path: Path)
     MAX_GUIDE_CHARS = 350_000
     guide_excerpt = full_guide_text[:MAX_GUIDE_CHARS]
 
-    client = anthropic_mod.Anthropic(max_retries=5)
     request_payload = {
         "model": model,
         "max_tokens": 8192,
@@ -147,8 +154,8 @@ def generate_topic_index(full_guide_text: str, model: str, raw_debug_path: Path)
     }
 
     try:
-        response = client.messages.create(**request_payload)
-    except anthropic_mod.APIError as e:
+        response = llm_client.create_message(**request_payload)
+    except LlmApiError as e:
         print(f"WARNING: cross-lecture topic index failed: {e}", file=sys.stderr)
         _write_json_atomic(
             raw_debug_path,
@@ -156,7 +163,7 @@ def generate_topic_index(full_guide_text: str, model: str, raw_debug_path: Path)
         )
         return None
 
-    text = "\n".join(b.text for b in response.content if getattr(b, "type", None) == "text").strip()
+    text = response.text
     usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
     _write_json_atomic(
         raw_debug_path,
@@ -168,12 +175,16 @@ def generate_topic_index(full_guide_text: str, model: str, raw_debug_path: Path)
     return text or None
 
 
-def assemble_guide(force=False, topic_index=False):
+def assemble_guide(force=False, topic_index=False, llm_client=None):
     """Main assembly logic. Returns False only on a real failure (no notes
     found, or a note file that couldn't be read) -- an already-assembled
     guide (not forced) is a successful no-op, matching stages 5 and 6's
     convention for the same situation, so `run_pipeline.py --all --assemble`
-    stays idempotent on an unchanged course."""
+    stays idempotent on an unchanged course.
+
+    llm_client: an LlmClient (see notely.ports), only used when
+    topic_index=True. Defaults to the real Anthropic-backed adapter;
+    tests inject a fake instead of needing a real API key."""
     project_root = get_project_root()
 
     output_path = project_root / "output" / "study_guide.md"
@@ -215,15 +226,28 @@ def assemble_guide(force=False, topic_index=False):
     full_guide = toc + "\n".join(content_parts)
 
     if topic_index:
-        load_dotenv_if_available()
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            print(
-                "WARNING: --topic-index requested but ANTHROPIC_API_KEY is not set; skipping", file=sys.stderr
-            )
+        if llm_client is not None:
+            # caller (a test, typically) already supplied one -- skip the
+            # API-key check entirely, it's only a guard against constructing
+            # a real client with no credentials.
+            client_for_index = llm_client
         else:
+            load_dotenv_if_available()
+            if not os.environ.get("ANTHROPIC_API_KEY"):
+                print(
+                    "WARNING: --topic-index requested but ANTHROPIC_API_KEY is not set; skipping",
+                    file=sys.stderr,
+                )
+                client_for_index = None
+            else:
+                from notely.adapters.anthropic_llm import AnthropicLlmClient
+
+                client_for_index = AnthropicLlmClient(max_retries=5)
+
+        if client_for_index is not None:
             model = os.environ.get("NOTES_MODEL", "claude-sonnet-5")
             index_md = generate_topic_index(
-                full_guide, model, project_root / "output" / "topic_index_raw.json"
+                client_for_index, full_guide, model, project_root / "output" / "topic_index_raw.json"
             )
             if index_md:
                 full_guide = toc + index_md + "\n\n---\n\n" + "\n".join(content_parts)
