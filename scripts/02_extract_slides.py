@@ -180,8 +180,8 @@ def main() -> None:
     parser.add_argument("--force", action="store_true", help="re-run even if output already exists")
     args = parser.parse_args()
 
-    if not args.all and not args.lecture_id:
-        parser.error("provide a lecture_id, or use --all")
+    if bool(args.all) == bool(args.lecture_id):
+        parser.error("provide exactly one of <lecture_id> or --all")
 
     if args.all:
         lecture_ids = sorted({p.stem for p in SLIDES_DIR.glob("*") if p.suffix.lower() in (".pptx", ".pdf")})

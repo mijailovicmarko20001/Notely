@@ -472,6 +472,9 @@ def main():
 
     args = parser.parse_args()
 
+    if bool(args.all) == bool(args.lecture_id):
+        parser.error("provide exactly one of <lecture_id> or --all")
+
     project_root = get_project_root()
 
     if args.all:
@@ -484,9 +487,6 @@ def main():
             print(f"Error: {urls_path} not found", file=sys.stderr)
             sys.exit(1)
     else:
-        if not args.lecture_id:
-            parser.print_help()
-            sys.exit(1)
         lecture_ids = [args.lecture_id]
 
     failed = []
