@@ -12,22 +12,22 @@ Usage:
 
 import argparse
 import re
-import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-OUTPUT_DIR = PROJECT_ROOT / "output"
 
-CHROME_CANDIDATES = [
-    "chromium",
-    "chromium-browser",
-    "google-chrome",
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-]
+# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
+# project root, not on sys.path by default when this file is run directly
+# (python scripts/08_export_pdf.py) -- same fix tests/conftest.py applies
+# for test discovery. Must happen before the `from notely...` import below.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from notely.adapters.chrome_html_to_pdf import ChromeHtmlToPdf  # noqa: E402
+
+OUTPUT_DIR = PROJECT_ROOT / "output"
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html>
@@ -57,14 +57,6 @@ MathJax = {{ tex: {{ inlineMath: [['$', '$']], displayMath: [['$$', '$$']] }} }}
 """
 
 
-def find_chrome() -> str:
-    for cand in CHROME_CANDIDATES:
-        path = shutil.which(cand) or (cand if Path(cand).exists() else None)
-        if path:
-            return path
-    raise RuntimeError("no Chrome/Chromium found — install Google Chrome (mac) or chromium (linux)")
-
-
 def markdown_to_html(md_text: str, base_dir: Path) -> str:
     """Markdown -> HTML with $...$/$$...$$ passed through untouched for MathJax."""
     import markdown
@@ -85,33 +77,20 @@ def markdown_to_html(md_text: str, base_dir: Path) -> str:
     return html
 
 
-def export_pdf(md_path: Path, pdf_path: Path) -> None:
+def export_pdf(md_path: Path, pdf_path: Path, html_to_pdf=None) -> None:
+    """html_to_pdf: an HtmlToPdf (see notely.ports), defaults to the real
+    Chrome-backed adapter; tests inject a fake instead of needing
+    Chrome/Chromium installed."""
+    if html_to_pdf is None:
+        html_to_pdf = ChromeHtmlToPdf()
     html = HTML_TEMPLATE.format(body=markdown_to_html(md_path.read_text(), md_path.parent))
-    chrome = find_chrome()
 
     with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, dir=str(md_path.parent)) as f:
         f.write(html)
         tmp_html = Path(f.name)
     try:
-        print(f"[pdf] rendering {md_path.name} with {Path(chrome).name} (MathJax typesetting)...")
-        # --virtual-time-budget lets MathJax finish typesetting before print.
-        result = subprocess.run(
-            [
-                chrome,
-                "--headless",
-                "--disable-gpu",
-                "--no-sandbox",
-                "--virtual-time-budget=30000",
-                f"--print-to-pdf={pdf_path}",
-                "--no-pdf-header-footer",
-                tmp_html.as_uri(),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
-        if result.returncode != 0 or not pdf_path.exists():
-            raise RuntimeError(f"chrome print failed:\n{result.stderr[-1500:]}")
+        print(f"[pdf] rendering {md_path.name} (headless Chrome, MathJax typesetting)...")
+        html_to_pdf.render(tmp_html.as_uri(), pdf_path)
     finally:
         tmp_html.unlink(missing_ok=True)
     print(f"[done] wrote {pdf_path} ({pdf_path.stat().st_size // 1024} KB)")

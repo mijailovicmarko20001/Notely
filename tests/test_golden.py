@@ -19,7 +19,7 @@ import json
 from pathlib import Path
 
 from conftest import load_stage
-from fakes import FakeDocConverter, FakeLlmClient, FakeOcr, llm_response
+from fakes import FakeDocConverter, FakeHtmlToPdf, FakeLlmClient, FakeOcr, llm_response
 from pdf_fixtures import make_pdf_bytes
 
 EXPECTED_DIR = Path(__file__).parent / "golden" / "expected"
@@ -518,3 +518,45 @@ def test_stage06_process_lecture_golden(tmp_path, monkeypatch):
 
     notes = (s6.OUTPUT_NOTES_DIR / "lecture01.md").read_text()
     assert notes == _expected_text("stage06_notes.md")
+
+
+# --- Stage 8: PDF export -----------------------------------------------------
+
+s8 = load_stage("08_export_pdf.py")
+
+
+def test_stage08_export_pdf_golden(tmp_path):
+    # Promoted from zero coverage (not just "unreachable without a port")
+    # to golden-mastered by the HtmlToPdf port (Phase 3). Asserts on
+    # structural substrings of the rendered HTML rather than an exact
+    # committed fixture: the image-path rewrite embeds an absolute tmp_path,
+    # which isn't stable across test runs.
+    md_path = tmp_path / "study_guide.md"
+    md_path.write_text(
+        "# lecture01\n\n"
+        "## Introduction\n\n"
+        "- The formula is $E = mc^2$\n"
+        "- A display equation:\n\n"
+        "$$\\int_0^1 x^2 dx = \\frac{1}{3}$$\n\n"
+        '<img src="../slides_extracted/lecture01_images/slide_001.png">\n'
+    )
+    pdf_path = tmp_path / "study_guide.pdf"
+
+    fake = FakeHtmlToPdf(pdf_bytes=b"%PDF-1.4 fake\n%%EOF")
+    s8.export_pdf(md_path, pdf_path, html_to_pdf=fake)
+
+    assert len(fake.calls) == 1
+    html_uri, rendered_pdf_path = fake.calls[0]
+    assert rendered_pdf_path == str(pdf_path)
+
+    html = fake.rendered_html[0]
+    assert "<h1>lecture01</h1>" in html
+    # math passed through untouched for MathJax, not mangled by the
+    # markdown parser (e.g. the underscore in \frac{1}{3} surviving)
+    assert "$E = mc^2$" in html
+    assert "$$\\int_0^1 x^2 dx = \\frac{1}{3}$$" in html
+    # relative image path rewritten to an absolute one Chrome can resolve
+    assert 'src="../slides_extracted/' not in html
+    assert html.count(f'src="{tmp_path.parent}/slides_extracted/lecture01_images/slide_001.png"') == 1
+
+    assert pdf_path.read_bytes() == b"%PDF-1.4 fake\n%%EOF"

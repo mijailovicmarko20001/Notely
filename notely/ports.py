@@ -90,3 +90,18 @@ class DocConverter(Protocol):
         DocConverterError on any failure -- never returns a path that
         doesn't exist."""
         ...
+
+
+class HtmlToPdfError(Exception):
+    """Raised by an HtmlToPdf implementation when rendering fails: no
+    Chrome/Chromium binary found, the print subprocess itself failed, or it
+    silently didn't produce the expected PDF file."""
+
+
+@runtime_checkable
+class HtmlToPdf(Protocol):
+    def render(self, html_uri: str, pdf_path: Path) -> None:
+        """Render the page at html_uri (a file:// URI) to PDF at pdf_path
+        via headless Chrome's --print-to-pdf. Raises HtmlToPdfError on any
+        failure -- never leaves pdf_path missing without raising."""
+        ...

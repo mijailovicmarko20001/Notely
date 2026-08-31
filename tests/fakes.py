@@ -3,8 +3,10 @@ master tests (tests/golden/, tests/test_golden.py) inject. No network, no
 binaries, no SDK objects; deterministic given fixed inputs."""
 
 from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
-from notely.ports import DocConverterError, LlmApiError, LlmResponse, LlmUsage
+from notely.ports import DocConverterError, HtmlToPdfError, LlmApiError, LlmResponse, LlmUsage
 
 
 class FakeLlmClient:
@@ -95,3 +97,31 @@ class FakeDocConverter:
         pdf_path = out_dir / f"{Path(input_path).stem}.pdf"
         pdf_path.write_bytes(self._pdf_bytes)
         return pdf_path
+
+
+class FakeHtmlToPdf:
+    """Writes `pdf_bytes` (a real, minimal PDF) to pdf_path -- same
+    real-file-on-disk reasoning as FakeDocConverter, since callers (stage
+    08's own main(), webui's render_guide_pdf) check the file actually
+    exists and is non-empty afterward. Raises `error` instead, if
+    configured. Records every (html_uri, pdf_path) it was asked to render,
+    plus the HTML content actually on disk at html_uri at call time --
+    stage 08's caller deletes that temp file immediately after render()
+    returns, so a test asserting on the generated markup (math stashing,
+    image path rewriting) has to capture it here, not read it back later."""
+
+    def __init__(self, pdf_bytes: bytes | None = None, error: HtmlToPdfError | None = None):
+        self._pdf_bytes = pdf_bytes or b"%PDF-1.4\n%%EOF"
+        self._error = error
+        self.calls: list[tuple[str, str]] = []
+        self.rendered_html: list[str] = []
+
+    def render(self, html_uri: str, pdf_path) -> None:
+        self.calls.append((html_uri, str(pdf_path)))
+        if html_uri.startswith("file://"):
+            html_path = Path(url2pathname(urlparse(html_uri).path))
+            if html_path.exists():
+                self.rendered_html.append(html_path.read_text())
+        if self._error is not None:
+            raise self._error
+        Path(pdf_path).write_bytes(self._pdf_bytes)
