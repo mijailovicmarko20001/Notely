@@ -1,16 +1,23 @@
-"""Single-job pipeline runner with two-lane parallelism.
+"""Single-job pipeline runner with per-resource lane parallelism.
 
 One job at a time (single-user local tool), but within a job, tasks run on
-two lanes that use different resources and so overlap safely:
+3-4 lanes that use different resources and so overlap safely (see _run's
+own lane construction for the exact set, which depends on WHISPER_BACKEND):
 
-  IO lane  — stage 0 (video download) and stage 6 (note generation via API):
-             network-bound, near-zero CPU. Downloads run ahead of the whole
-             queue; notes generate as soon as each lecture's stage 5 lands.
-  CPU lane — stages 1-5 (transcribe/extract/detect/OCR/segment): these
-             saturate cores, so only one runs at a time.
+  net lane — stage 0 (video download): bandwidth-bound, runs ahead of
+             everything else.
+  cpu lane — stages 1-5 (transcribe/extract/detect/OCR/segment): these
+             saturate cores, so only one runs at a time. Stage 1
+             (transcribe) moves to its own gpu lane instead when
+             WHISPER_BACKEND=mlx, since it no longer contends with the CPU
+             lane's other stages for the same resource.
+  api lane — stage 6 (note generation via the Anthropic API):
+             network-bound, near-zero CPU; trails behind as each lecture's
+             stage 5 lands.
+  gpu lane — stage 1 (transcribe) only when WHISPER_BACKEND=mlx.
 
 Within a lecture, stages remain strictly sequential (stage k needs k-1's
-artifact). Stage 7 (assembly) runs last, after both lanes drain.
+artifact). Stage 7 (assembly) runs last, after every lane drains.
 """
 
 import glob
@@ -70,6 +77,12 @@ class JobManager:
         # "mutated under _cond, serialized under _lock" torn reads.
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)  # scheduler wake-ups
+        # A separate mutex just for the job's log file: log.write()/flush()
+        # (once per subprocess stdout line, potentially thousands of times
+        # per job) has nothing to do with job-state consistency, and used
+        # to borrow self._lock -- serializing disk I/O against every SSE
+        # poll/snapshot/busy check reading job state on the same mutex.
+        self._log_lock = threading.Lock()
         self._thread = None
         self._procs = {}  # lane name -> running Popen
         self._cancelled = False
@@ -219,7 +232,7 @@ class JobManager:
             argv.append(lecture_id)
         argv += extra
 
-        with self._lock:
+        with self._log_lock:
             log.write(
                 f"\n===== task {i} [{lane}]: stage {stage} {lecture_id or ''} =====\n$ {' '.join(argv)}\n"
             )
@@ -246,7 +259,7 @@ class JobManager:
                 proc.terminate()
             for line in proc.stdout:
                 line = line.rstrip("\n")
-                with self._lock:
+                with self._log_lock:
                     log.write(f"[{lecture_id or 'all'}:{stage}] {line}\n")
                 if "[skip]" in line:
                     skip_line = line
@@ -272,6 +285,7 @@ class JobManager:
         finally:
             with self._lock:
                 self._procs.pop(lane, None)
+            with self._log_lock:
                 log.flush()
 
         with self._lock:
