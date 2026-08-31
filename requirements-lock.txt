@@ -46,7 +46,7 @@ networkx==3.6.1
 numba==0.66.0
 numpy==2.4.6
 onnxruntime==1.28.0
-opencv-python==5.0.0.93
+opencv-python-headless==5.0.0.93
 packaging==26.3
 pdfminer.six==20260107
 pdfplumber==0.11.10
