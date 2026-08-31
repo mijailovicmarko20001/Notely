@@ -496,11 +496,11 @@ onClickBusy($("#btn-upload"), async () => {
 });
 
 let stateCache = null;
-// Set up once: run-stages is static HTML (never re-rendered), so its
-// summary needs no further attention. run-lectures is rebuilt every
-// refreshState() call -- its render() is re-invoked below after the
-// rebuild instead of re-attaching a new listener.
-setupChipSummary("run-stages", "run-stages-summary", "stage");
+// Set up once, both rebuilt later (run-stages by loadDefaults() at boot
+// from GET /settings's stage registry data, run-lectures by every
+// refreshState() call) -- each render() is re-invoked after its rebuild
+// instead of re-attaching a new listener.
+const renderStagesSummary = setupChipSummary("run-stages", "run-stages-summary", "stage");
 const renderLecturesSummary = setupChipSummary("run-lectures", "run-lectures-summary", "lecture");
 
 async function refreshState() {
@@ -544,6 +544,13 @@ async function loadDefaults() {
   $("#opt-interval").value = d.interval;
   $("#opt-ocr_lang").value = d.ocr_lang;
   $("#opt-min_dwell").value = d.min_dwell;
+  // Stage chips, from the backend's stage registry (Phase 7 of the
+  // cleanup plan) instead of a hardcoded list in index.html that had
+  // drifted from it (e.g. "Match frames" vs "Match frames to slides").
+  $("#run-stages").innerHTML = s.stages
+    .map((st) => chip("run-stage", st.number, `${st.number} · ${st.name}`, true))
+    .join("");
+  renderStagesSummary();
 }
 onClickBusy($("#btn-start"), async () => {
   const lecture_ids = [...document.querySelectorAll("#run-lectures input:checked")].map((c) => c.value);

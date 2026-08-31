@@ -5,6 +5,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
+from notely.stages import MAX_PIPELINE_STAGE, STAGES
 from .. import config, preflight
 from ..models import SettingsUpdate
 
@@ -23,7 +24,16 @@ def get_preflight():
 
 @router.get("/settings")
 def get_settings():
-    return {"settings": config.read_settings(), "stage_defaults": config.DEFAULT_STAGE_OPTIONS}
+    return {
+        "settings": config.read_settings(),
+        "stage_defaults": config.DEFAULT_STAGE_OPTIONS,
+        # The Run tab's stage checkboxes render from this (Phase 7 of the
+        # cleanup plan) instead of hardcoding names/numbers in index.html,
+        # which had drifted from the registry's own names (e.g. "Match
+        # frames" vs "Match frames to slides"). Stops at MAX_PIPELINE_STAGE
+        # (7): stage 8 (PDF export) isn't part of a pipeline run.
+        "stages": [{"number": s.number, "name": s.name} for s in STAGES if s.number <= MAX_PIPELINE_STAGE],
+    }
 
 
 @router.put("/settings")
