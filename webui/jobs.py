@@ -33,6 +33,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from notely.adapters.ffprobe_media_probe import FfprobeMediaProbe  # noqa: E402
+from notely.runner import build_tasks  # noqa: E402, F401 (re-exported: webui.jobs.build_tasks is public API)
 
 MAX_EVENTS_IN_MEMORY = 2000
 
@@ -349,44 +350,3 @@ class JobManager:
 
 
 MANAGER = JobManager()
-
-
-def build_tasks(lecture_ids, stages, options, force, has_api_key):
-    """Translate a UI job request into per-stage argv lists."""
-    opts = options or {}
-
-    def flag(name, key):
-        v = opts.get(key)
-        return [name, str(v)] if v not in (None, "") else []
-
-    tasks = []
-    per_lecture_stages = [s for s in stages if s != 7]
-    for lec in lecture_ids:
-        for s in per_lecture_stages:
-            if s == 6 and not has_api_key:
-                continue  # note generation locked without a key
-            extra = []
-            if s == 3:
-                extra += (
-                    flag("--crop", "crop") + flag("--threshold", "threshold") + flag("--interval", "interval")
-                )
-            elif s == 4:
-                extra += (
-                    flag("--ocr-lang", "ocr_lang")
-                    + flag("--margin", "margin")
-                    + flag("--stay-margin", "stay_margin")
-                    + flag("--confidence-threshold", "confidence_threshold")
-                    + flag("--min-forward-score", "min_forward_score")
-                    + flag("--example-score-max", "example_score_max")
-                    + flag("--example-ink-delta", "example_ink_delta")
-                    + flag("--example-ink-text-overlap-min", "example_ink_text_overlap_min")
-                    + flag("--example-ink-novel-word-min", "example_ink_novel_word_min")
-                )
-            elif s == 5:
-                extra += flag("--min-dwell", "min_dwell")
-            if force:
-                extra.append("--force")
-            tasks.append((lec, s, extra))
-    if 7 in stages:
-        tasks.append((None, 7, ["--force"]))  # stage 07 fails without --force when output exists
-    return tasks
