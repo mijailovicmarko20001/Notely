@@ -6,6 +6,9 @@ Reads a slide deck (pptx or pdf) from input/slides/<lecture_id>.{pptx,pdf},
 extracts per-slide text (title, body, speaker notes), renders each slide to
 a PNG, and writes output/slides_extracted/<lecture_id>.json.
 
+The actual extraction logic lives in notely.pipeline.slides (Phase 5) --
+this script is just the CLI wrapper around it.
+
 Usage:
     python scripts/02_extract_slides.py lecture01
     python scripts/02_extract_slides.py --all
@@ -29,149 +32,27 @@ _PROJECT_ROOT_FOR_IMPORT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
-from notely.adapters.libreoffice_doc_converter import LibreOfficeDocConverter  # noqa: E402
 from notely.cli import require_lecture_id_or_all  # noqa: E402
-from notely.io import save_json  # noqa: E402
-from notely.paths import PROJECT_ROOT, SLIDES_DIR  # noqa: E402
+from notely.pipeline.slides import (  # noqa: E402
+    OUTPUT_DIR,
+    PROJECT_ROOT,
+    extract_from_pdf,
+    extract_from_pptx,
+    process_lecture,
+    render_pdf_to_images,
+)
+from notely.paths import SLIDES_DIR  # noqa: E402
 
-OUTPUT_DIR = PROJECT_ROOT / "output" / "slides_extracted"
-
-
-def render_pdf_to_images(pdf_path: Path, image_dir: Path, dpi: int = 150) -> list[str]:
-    """Render each page of a PDF to a PNG, one per slide. Returns project-root-relative paths."""
-    import pypdfium2 as pdfium
-
-    image_dir.mkdir(parents=True, exist_ok=True)
-    scale = dpi / 72  # pypdfium2: render(scale=1) == 72 DPI (1 px per PDF point)
-    image_paths = []
-    with pdfium.PdfDocument(str(pdf_path)) as doc:
-        for i, page in enumerate(doc, start=1):
-            try:
-                bitmap = page.render(scale=scale)
-                try:
-                    image_path = image_dir / f"slide_{i:03d}.png"
-                    bitmap.to_pil().save(str(image_path))
-                    image_paths.append(str(image_path.relative_to(PROJECT_ROOT)))
-                finally:
-                    bitmap.close()
-            finally:
-                page.close()
-    return image_paths
-
-
-def extract_from_pptx(pptx_path: Path, image_dir: Path, doc_converter=None) -> list[dict]:
-    """Extract text via python-pptx; render images by converting to PDF first.
-
-    doc_converter: a DocConverter (see notely.ports), defaults to the real
-    LibreOffice-backed adapter; tests inject a fake instead of needing
-    LibreOffice installed."""
-    if doc_converter is None:
-        doc_converter = LibreOfficeDocConverter()
-    from pptx import Presentation
-
-    prs = Presentation(str(pptx_path))
-    text_by_slide = []
-    for slide in prs.slides:
-        title = ""
-        title_shape = slide.shapes.title
-        body_parts = []
-        for shape in slide.shapes:
-            if not shape.has_text_frame:
-                continue
-            text = shape.text_frame.text.strip()
-            if not text:
-                continue
-            if title_shape is not None and shape.shape_id == title_shape.shape_id:
-                title = text
-            else:
-                body_parts.append(text)
-        if not title and body_parts:
-            title = body_parts[0].splitlines()[0].strip()
-
-        notes_text = ""
-        if slide.has_notes_slide and slide.notes_slide.notes_text_frame is not None:
-            notes_text = slide.notes_slide.notes_text_frame.text.strip()
-
-        text_by_slide.append(
-            {"title": title, "body_text": "\n".join(body_parts).strip(), "notes_text": notes_text}
-        )
-
-    pdf_path = doc_converter.convert_to_pdf(pptx_path, image_dir)
-    image_paths = render_pdf_to_images(pdf_path, image_dir)
-
-    if len(image_paths) != len(text_by_slide):
-        print(
-            f"  warning: pptx slide count ({len(text_by_slide)}) != rendered page "
-            f"count ({len(image_paths)}) for {pptx_path.name}"
-        )
-
-    slides = []
-    for i, info in enumerate(text_by_slide, start=1):
-        image_path = image_paths[i - 1] if i - 1 < len(image_paths) else ""
-        slides.append({"slide_number": i, "image_path": image_path, **info})
-    return slides
-
-
-def extract_from_pdf(pdf_path: Path, image_dir: Path) -> list[dict]:
-    """Extract text and render images directly from a PDF via pypdfium2."""
-    import pypdfium2 as pdfium
-
-    image_paths = render_pdf_to_images(pdf_path, image_dir)
-
-    slides = []
-    with pdfium.PdfDocument(str(pdf_path)) as doc:
-        for i, page in enumerate(doc, start=1):
-            try:
-                textpage = page.get_textpage()
-                try:
-                    text = textpage.get_text_range()
-                finally:
-                    textpage.close()
-            finally:
-                page.close()
-            lines = [line.strip() for line in text.splitlines() if line.strip()]
-            title = lines[0] if lines else ""
-            body_text = "\n".join(lines[1:]).strip() if len(lines) > 1 else ""
-            image_path = image_paths[i - 1] if i - 1 < len(image_paths) else ""
-            slides.append(
-                {
-                    "slide_number": i,
-                    "title": title,
-                    "body_text": body_text,
-                    "notes_text": "",
-                    "image_path": image_path,
-                }
-            )
-    return slides
-
-
-def process_lecture(lecture_id: str, force: bool) -> bool:
-    """Returns False only when no slide deck was found (the caller should
-    treat that as a failure); an already-done skip and a real successful
-    run both return True."""
-    out_json = OUTPUT_DIR / f"{lecture_id}.json"
-    if out_json.exists() and not force:
-        print(f"[{lecture_id}] {out_json} already exists, skipping (use --force to re-run)")
-        return True
-
-    pptx_path = SLIDES_DIR / f"{lecture_id}.pptx"
-    pdf_path = SLIDES_DIR / f"{lecture_id}.pdf"
-    image_dir = OUTPUT_DIR / f"{lecture_id}_images"
-
-    if pptx_path.exists():
-        slides = extract_from_pptx(pptx_path, image_dir)
-    elif pdf_path.exists():
-        slides = extract_from_pdf(pdf_path, image_dir)
-    else:
-        print(f"[{lecture_id}] no deck found (looked for {pptx_path.name} / {pdf_path.name}) in {SLIDES_DIR}")
-        return False
-
-    # Atomic write (see notely.io): a killed process can never leave a
-    # truncated-but-non-empty artifact that a later run's exists()-and-
-    # nonempty skip check would wrongly trust as done.
-    save_json(out_json, slides)
-    print(f"[{lecture_id}] wrote {len(slides)} slides -> {out_json}")
-    return True
+__all__ = [
+    "OUTPUT_DIR",
+    "PROJECT_ROOT",
+    "SLIDES_DIR",
+    "extract_from_pdf",
+    "extract_from_pptx",
+    "process_lecture",
+    "render_pdf_to_images",
+    "main",
+]
 
 
 def main() -> None:

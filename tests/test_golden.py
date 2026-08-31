@@ -20,6 +20,7 @@ from pathlib import Path
 
 from conftest import load_stage
 from fakes import FakeDocConverter, FakeFrameReader, FakeHtmlToPdf, FakeLlmClient, FakeOcr, llm_response
+from notely.pipeline import slides as s2
 from notely.ports import SampledFrame
 from pdf_fixtures import make_pdf_bytes
 
@@ -35,8 +36,6 @@ def _expected_text(name):
 
 
 # --- Stage 2: slide text extraction (PDF path) ------------------------------
-
-s2 = load_stage("02_extract_slides.py")
 
 
 def test_stage02_extract_from_pdf_golden(tmp_path):

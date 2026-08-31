@@ -13,9 +13,7 @@ Unicode text reliably), which would make a real diacritic round-trip
 through it a test of the fixture's limitations, not of process_lecture's
 JSON write."""
 
-from conftest import load_stage
-
-s2 = load_stage("02_extract_slides.py")
+from notely.pipeline import slides as s2
 
 
 def test_process_lecture_writes_non_ascii_slide_text_as_utf8_not_escaped(tmp_path, monkeypatch):
