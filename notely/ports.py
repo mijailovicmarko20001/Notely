@@ -123,3 +123,26 @@ class AudioExtractor(Protocol):
         for backends with an upload size cap (see scripts/01_transcribe.py's
         transcribe_with_groq). Raises AudioExtractorError on failure."""
         ...
+
+
+@dataclass
+class VideoFetchResult:
+    returncode: int
+    # merged stdout+stderr, exactly as streamed to the console -- the
+    # private-video markers fetch_lecture scans for land here
+    output: str
+
+
+@runtime_checkable
+class VideoFetcher(Protocol):
+    def fetch(
+        self, url: str, output_path: Path, format: str, cookies_browser: str | None = None
+    ) -> VideoFetchResult:
+        """Download url to output_path via yt-dlp, streaming progress
+        lines to stdout as they arrive -- the web UI's live progress bar
+        depends on this happening in real time, not buffered until the
+        process exits. Returns a result with .returncode and .output;
+        doesn't raise for a yt-dlp failure itself (a normal, expected
+        outcome the caller inspects via .returncode), only for a genuine
+        OS-level problem launching the process."""
+        ...

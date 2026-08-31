@@ -13,6 +13,7 @@ from notely.ports import (
     LlmApiError,
     LlmResponse,
     LlmUsage,
+    VideoFetchResult,
 )
 
 
@@ -159,3 +160,30 @@ class FakeAudioExtractor:
         if self._error is not None:
             raise self._error
         Path(out_path).write_bytes(self._audio_bytes)
+
+
+class FakeVideoFetcher:
+    """Returns a canned VideoFetchResult and, on a "successful" call
+    (returncode 0), writes `video_bytes` to output_path -- the real
+    adapter's actual point is producing that file, so callers that check
+    output_path.exists() afterward (fetch_lecture's own verify_video call)
+    need a fake that does too. Records every call's full argument set."""
+
+    def __init__(self, returncode: int = 0, output: str = "", video_bytes: bytes | None = None):
+        self._returncode = returncode
+        self._output = output
+        self._video_bytes = video_bytes or b"fake mp4 bytes"
+        self.calls: list[dict] = []
+
+    def fetch(self, url, output_path, format, cookies_browser=None) -> VideoFetchResult:
+        self.calls.append(
+            {
+                "url": url,
+                "output_path": str(output_path),
+                "format": format,
+                "cookies_browser": cookies_browser,
+            }
+        )
+        if self._returncode == 0:
+            Path(output_path).write_bytes(self._video_bytes)
+        return VideoFetchResult(self._returncode, self._output)

@@ -9,7 +9,7 @@ downstream stage when video_urls.json is re-pointed.
 import json
 
 from conftest import load_stage
-from fakes import FakeMediaProbe
+from fakes import FakeMediaProbe, FakeVideoFetcher
 
 fetch_videos = load_stage("00_fetch_videos.py")
 
@@ -18,9 +18,11 @@ URL_B = "https://youtu.be/bbbbbbbbbbb"
 
 
 def _stub_yt_dlp(monkeypatch, videos_dir, *, succeeds=True):
-    """Point the module at a tmp videos dir and replace the network call with
-    a stub that just writes a file. Returns the list of URLs it was asked to
-    download, so tests can assert on cache hits/misses."""
+    """Point the module at a tmp videos dir and replace the network call
+    (via VideoFetcher -- see tests/test_video_fetcher_port.py for that
+    port's own contract test) with a FakeVideoFetcher that just writes a
+    file. Returns the list of URLs it was asked to download, so tests can
+    assert on cache hits/misses."""
     monkeypatch.setattr(fetch_videos, "VIDEOS_DIR", videos_dir)
     # media_probe is unused here -- this cache-logic suite isn't about the
     # MediaProbe port itself (see tests/test_media_probe_port.py for that);
@@ -28,16 +30,25 @@ def _stub_yt_dlp(monkeypatch, videos_dir, *, succeeds=True):
     monkeypatch.setattr(
         fetch_videos, "verify_video", lambda p, media_probe: p.exists() and p.stat().st_size > 0
     )
+
     downloaded = []
+    fetcher = FakeVideoFetcher(
+        returncode=0 if succeeds else 1,
+        output="" if succeeds else "ERROR: something went wrong",
+        video_bytes=b"fake mp4 bytes",
+    )
+    real_fetch = fetcher.fetch
 
-    def fake_run_yt_dlp(url, output_path, cookies_browser):
+    def _tracking_fetch(url, output_path, format, cookies_browser=None):
         downloaded.append(url)
-        if succeeds:
-            output_path.write_bytes(b"fake mp4 bytes")
-            return fetch_videos._YtDlpResult(0, "")
-        return fetch_videos._YtDlpResult(1, "ERROR: something went wrong")
+        return real_fetch(url, output_path, format, cookies_browser)
 
-    monkeypatch.setattr(fetch_videos, "run_yt_dlp", fake_run_yt_dlp)
+    fetcher.fetch = _tracking_fetch
+    # fetch_lecture only constructs YtDlpVideoFetcher() itself when no
+    # video_fetcher is passed in -- patch the constructor so every call in
+    # this file (none of which pass video_fetcher explicitly) picks up the
+    # fake without touching each call site.
+    monkeypatch.setattr(fetch_videos, "YtDlpVideoFetcher", lambda: fetcher)
     return downloaded
 
 
@@ -130,24 +141,26 @@ def test_force_redownloads_and_refreshes_the_record(tmp_path, monkeypatch):
     assert json.loads((videos / "lecture01.source.json").read_text()) == {"url": URL_A}
 
 
-# --- verify_video through the real MediaProbe port (not monkeypatched away,
-# unlike every test above) --------------------------------------------------
+# --- verify_video/fetch_lecture through the real MediaProbe/VideoFetcher
+# ports (injected directly as call arguments, not monkeypatched away like
+# every test above) -----------------------------------------------------
 
 
-def test_fetch_lecture_end_to_end_with_fake_media_probe(tmp_path, monkeypatch):
+def test_fetch_lecture_end_to_end_with_fake_media_probe_and_video_fetcher(tmp_path, monkeypatch):
     videos = tmp_path / "videos"
     monkeypatch.setattr(fetch_videos, "VIDEOS_DIR", videos)
 
-    def fake_run_yt_dlp(url, output_path, cookies_browser):
-        output_path.write_bytes(b"fake mp4 bytes")
-        return fetch_videos._YtDlpResult(0, "")
-
-    monkeypatch.setattr(fetch_videos, "run_yt_dlp", fake_run_yt_dlp)
-
     fake_probe = FakeMediaProbe(durations={str(videos / "lecture01.mp4"): 3600.0})
+    fake_fetcher = FakeVideoFetcher(returncode=0, video_bytes=b"fake mp4 bytes")
 
-    assert fetch_videos.fetch_lecture("lecture01", URL_A, force=False, media_probe=fake_probe) is True
+    ok = fetch_videos.fetch_lecture(
+        "lecture01", URL_A, force=False, media_probe=fake_probe, video_fetcher=fake_fetcher
+    )
+
+    assert ok is True
     assert fake_probe.calls == [str(videos / "lecture01.mp4")]
+    assert fake_fetcher.calls[0]["url"] == URL_A
+    assert fake_fetcher.calls[0]["format"] == fetch_videos.FORMAT
     assert json.loads((videos / "lecture01.source.json").read_text()) == {"url": URL_A}
 
 

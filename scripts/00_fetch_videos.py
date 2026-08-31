@@ -14,8 +14,6 @@ URL it came from in input/videos/<lecture_id>.source.json.
 import argparse
 import json
 import os
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -29,6 +27,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from notely.adapters.ffprobe_media_probe import FfprobeMediaProbe  # noqa: E402
+from notely.adapters.ytdlp_video_fetcher import YtDlpVideoFetcher  # noqa: E402
 
 VIDEO_URLS_PATH = ROOT / "input" / "video_urls.json"
 VIDEOS_DIR = ROOT / "input" / "videos"
@@ -97,62 +96,15 @@ def write_source_url(path: Path, url: str) -> None:
     tmp.replace(path)
 
 
-class _YtDlpResult:
-    """Mimics the CompletedProcess fields fetch_lecture inspects."""
-
-    def __init__(self, returncode: int, output: str):
-        self.returncode = returncode
-        # stdout and stderr are merged during streaming; expose the combined
-        # text as .stderr since that's where the private-video markers land.
-        self.stderr = output
-
-
-def run_yt_dlp(url: str, output_path: Path, cookies_browser: str | None) -> _YtDlpResult:
-    cmd = [
-        # -m yt_dlp with the running interpreter, so the venv's yt-dlp is
-        # found even when .venv/bin isn't on PATH.
-        sys.executable,
-        "-m",
-        "yt_dlp",
-        "-f",
-        FORMAT,
-        "--merge-output-format",
-        "mp4",
-        # one "[download]  NN.N%" line per progress tick, so callers (and the
-        # web UI) can watch download progress instead of a silent blob.
-        "--newline",
-        "--progress",
-        "-o",
-        str(output_path),
-    ]
-    # yt-dlp needs a JS runtime to run YouTube's player code; without one it
-    # falls back to legacy clients whose stream URLs YouTube now 500s on.
-    # deno is yt-dlp's default (enabled automatically if present); if only
-    # node is installed, enable that instead.
-    if not shutil.which("deno") and shutil.which("node"):
-        cmd += ["--js-runtimes", "node"]
-    if cookies_browser:
-        cmd += ["--cookies-from-browser", cookies_browser]
-    # "--" separates options from the positional URL -- defense in depth in
-    # case a malformed/malicious value ever lands in video_urls.json outside
-    # the web UI's own validation (webui/config.py's URL check).
-    cmd += ["--", url]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    lines = []
-    for line in proc.stdout:
-        line = line.rstrip("\n")
-        lines.append(line)
-        print(line, flush=True)
-    returncode = proc.wait()
-    return _YtDlpResult(returncode, "\n".join(lines))
-
-
-def fetch_lecture(lecture_id: str, url: str, force: bool, media_probe=None) -> bool:
+def fetch_lecture(lecture_id: str, url: str, force: bool, media_probe=None, video_fetcher=None) -> bool:
     """media_probe: a MediaProbe (see notely.ports), defaults to the real
-    ffprobe-backed adapter; tests inject a fake instead of needing ffprobe
-    installed."""
+    ffprobe-backed adapter. video_fetcher: a VideoFetcher, defaults to the
+    real yt-dlp-backed adapter. Both default to their real adapter; tests
+    inject a fake instead of needing ffprobe/yt-dlp installed."""
     if media_probe is None:
         media_probe = FfprobeMediaProbe()
+    if video_fetcher is None:
+        video_fetcher = YtDlpVideoFetcher()
     output_path = VIDEOS_DIR / f"{lecture_id}.mp4"
     source_marker = source_path(lecture_id)
 
@@ -184,20 +136,20 @@ def fetch_lecture(lecture_id: str, url: str, force: bool, media_probe=None) -> b
     # vouching for a file that is now stale, partial, or gone.
     source_marker.unlink(missing_ok=True)
 
-    result = run_yt_dlp(url, output_path, cookies_browser=None)
+    result = video_fetcher.fetch(url, output_path, format=FORMAT, cookies_browser=None)
 
     if result.returncode != 0:
-        stderr_lower = result.stderr.lower()
-        if any(marker in stderr_lower for marker in PRIVATE_MARKERS):
+        output_lower = result.output.lower()
+        if any(marker in output_lower for marker in PRIVATE_MARKERS):
             cookies_browser = os.environ.get("YOUTUBE_COOKIES_BROWSER", "chrome")
             print(
                 f"[{lecture_id}] video appears private/sign-in-required; "
                 f"retrying with --cookies-from-browser {cookies_browser}"
             )
-            result = run_yt_dlp(url, output_path, cookies_browser=cookies_browser)
+            result = video_fetcher.fetch(url, output_path, format=FORMAT, cookies_browser=cookies_browser)
 
     if result.returncode != 0:
-        print(f"[{lecture_id}] ERROR: yt-dlp failed:\n{result.stderr}", file=sys.stderr)
+        print(f"[{lecture_id}] ERROR: yt-dlp failed:\n{result.output}", file=sys.stderr)
         if output_path.exists():
             output_path.unlink()
         return False
