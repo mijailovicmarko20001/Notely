@@ -46,8 +46,6 @@ Notes:
 """
 
 import argparse
-import json
-import os
 import sys
 from pathlib import Path
 
@@ -65,6 +63,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
 from notely.adapters.cv2_frame_reader import Cv2FrameReader  # noqa: E402
+from notely.io import save_json  # noqa: E402
 from notely.paths import PROJECT_ROOT  # noqa: E402
 from notely.paths import VIDEOS_DIR as INPUT_VIDEOS_DIR  # noqa: E402
 
@@ -222,14 +221,10 @@ def process_lecture(
     print(f"[{lecture_id}] detecting slide changes: interval={interval}s threshold={threshold} crop={crop}")
     events = detect_events(video_path, interval, threshold, crop, frames_dir, frame_reader=frame_reader)
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    # Temp file + atomic rename: a killed process can never leave a
+    # Atomic write (see notely.io): a killed process can never leave a
     # truncated-but-non-empty artifact that a later run's exists()-and-
     # nonempty skip check would wrongly trust as done.
-    tmp_json = output_json.with_name(f"{output_json.name}.tmp{os.getpid()}")
-    with open(tmp_json, "w", encoding="utf-8") as f:
-        json.dump(events, f, indent=2)
-    tmp_json.replace(output_json)
+    save_json(output_json, events)
 
     print(f"[done] {lecture_id}: {len(events)} frame events -> {output_json}")
     return True

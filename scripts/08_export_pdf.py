@@ -86,7 +86,7 @@ def export_pdf(md_path: Path, pdf_path: Path, html_to_pdf=None) -> None:
     Chrome/Chromium installed."""
     if html_to_pdf is None:
         html_to_pdf = ChromeHtmlToPdf()
-    html = HTML_TEMPLATE.format(body=markdown_to_html(md_path.read_text(), md_path.parent))
+    html = HTML_TEMPLATE.format(body=markdown_to_html(md_path.read_text(encoding="utf-8"), md_path.parent))
 
     with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, dir=str(md_path.parent)) as f:
         f.write(html)

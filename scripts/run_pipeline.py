@@ -12,7 +12,6 @@ Usage:
   python scripts/run_pipeline.py --all --assemble       # Run all, then assemble final guide
 """
 
-import json
 import sys
 import subprocess
 import argparse
@@ -30,18 +29,13 @@ _PROJECT_ROOT_FOR_IMPORT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
+from notely.io import load_json  # noqa: E402
 from notely.paths import PROJECT_ROOT  # noqa: E402
 
 
 def get_project_root():
     """Return the project root directory (parent of scripts/)."""
     return PROJECT_ROOT
-
-
-def load_json(path):
-    """Load JSON from file."""
-    with open(path) as f:
-        return json.load(f)
 
 
 def run_stage(stage_num, lecture_id=None, extra_args=None):

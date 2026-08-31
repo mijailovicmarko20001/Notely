@@ -4,7 +4,6 @@ Mirrors the stage scripts' convention: everything is relative to the project
 root (the parent of this package), so the working directory never matters.
 """
 
-import json
 import os
 import re
 import sys
@@ -25,6 +24,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
 # re-exported for other webui/ modules that do `from .config import
 # SCRIPTS_DIR` etc. (see tests/webui/conftest.py's docstring for the full
 # list) -- noqa since ruff can't see that cross-module usage.
+from notely.io import load_json_or_default  # noqa: E402
 from notely.paths import (  # noqa: E402, F401
     INPUT_DIR,
     OUTPUT_DIR,
@@ -54,11 +54,7 @@ LECTURE_ID_RE = re.compile(r"^lecture\d{2,}$")
 
 
 def load_video_urls() -> dict:
-    try:
-        with open(VIDEO_URLS_PATH) as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+    return load_json_or_default(VIDEO_URLS_PATH, {})
 
 
 def validate_lecture_id(lecture_id: str, must_exist: bool = True) -> str:

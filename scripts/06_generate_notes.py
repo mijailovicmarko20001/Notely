@@ -79,6 +79,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
 from notely.ports import LlmApiError  # noqa: E402
+from notely.io import load_json, save_json, write_text_atomic  # noqa: E402
 from notely.paths import PROJECT_ROOT  # noqa: E402
 
 INPUT_SEGMENTED_DIR = PROJECT_ROOT / "output" / "segmented_transcripts"
@@ -151,25 +152,13 @@ def load_dotenv_if_available() -> None:
         pass
 
 
-def _write_json_atomic(path: Path, data) -> None:
-    """Write via a temp file + atomic rename so a killed process never
-    leaves a truncated-but-non-empty file behind."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp{os.getpid()}")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    tmp.replace(path)
-
-
-def _write_text_atomic(path: Path, text: str) -> None:
-    """Same guarantee as _write_json_atomic, for the final notes/<id>.md —
-    the one file webui/progress.py::artifact_ok checks to decide stage 6
-    is done and skippable on a later run."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp{os.getpid()}")
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(text)
-    tmp.replace(path)
+# Local names kept (rather than updating every call site below) for the
+# same atomic-write guarantee, now backed by one shared implementation --
+# see notely.io. _write_text_atomic backs the final notes/<id>.md, the one
+# file webui/progress.py::artifact_ok checks to decide stage 6 is done and
+# skippable on a later run.
+_write_json_atomic = save_json
+_write_text_atomic = write_text_atomic
 
 
 # Anthropic's own recommended long-edge max for vision inputs -- larger
@@ -722,8 +711,7 @@ def process_lecture(llm_client, lecture_id: str, force: bool = False) -> bool:
         return True
 
     try:
-        with open(input_path, encoding="utf-8") as f:
-            slides = json.load(f)
+        slides = load_json(input_path)
     except (OSError, json.JSONDecodeError) as e:
         print(f"[error] {lecture_id}: failed to read {input_path}: {e}", file=sys.stderr)
         return False
@@ -749,8 +737,7 @@ def process_lecture(llm_client, lecture_id: str, force: bool = False) -> bool:
     examples_usage = sum_usage([])
     if detect_examples:
         if examples_cache_path.exists() and not force:
-            with open(examples_cache_path, encoding="utf-8") as f:
-                cached = json.load(f)
+            cached = load_json(examples_cache_path)
             confirmed_list = cached.get("confirmed", [])
             # Older caches (written before usage tracking was added) simply
             # won't have this key -- report zeros rather than crashing.

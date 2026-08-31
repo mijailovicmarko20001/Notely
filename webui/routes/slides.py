@@ -3,12 +3,11 @@ expansion, saving the ordered lecture list, and the three deck-upload flows
 (pool, suggest, per-lecture). Also the video preview-frame grab used by the
 crop-region picker, since that's tuning input for the same setup flow."""
 
-import json
-
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
+from notely.io import save_json
 from .. import config, decks, media, playlist, preflight
 from ..models import LectureEntries, PlaylistExpandRequest
 from .common import load_json, validated_lecture_id
@@ -39,13 +38,11 @@ def set_lectures(body: LectureEntries):
             raise HTTPException(422, f"entry {i}: {err}") from err
         meta[lecture_id] = {"title": e.title or lecture_id}
     config.INPUT_DIR.mkdir(parents=True, exist_ok=True)
-    with open(config.VIDEO_URLS_PATH, "w") as f:
-        json.dump(urls, f, indent=2)
+    save_json(config.VIDEO_URLS_PATH, urls)
     existing_meta = load_json(config.LECTURES_META_PATH, {})
     for k, v in meta.items():
         existing_meta.setdefault(k, {}).update(v)
-    with open(config.LECTURES_META_PATH, "w") as f:
-        json.dump(existing_meta, f, ensure_ascii=False, indent=2)
+    save_json(config.LECTURES_META_PATH, existing_meta)
     return {"ok": True, "lectures": list(urls)}
 
 

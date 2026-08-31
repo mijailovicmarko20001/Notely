@@ -23,8 +23,6 @@ Output:
   - output/segmented_transcripts/<lecture_id>.json
 """
 
-import json
-import os
 import sys
 import argparse
 from pathlib import Path
@@ -41,29 +39,13 @@ _PROJECT_ROOT_FOR_IMPORT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
+from notely.io import load_json, save_json  # noqa: E402
 from notely.paths import PROJECT_ROOT  # noqa: E402
 
 
 def get_project_root():
     """Return the project root directory (parent of scripts/)."""
     return PROJECT_ROOT
-
-
-def load_json(path):
-    """Load JSON from file."""
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_json(path, data):
-    """Save JSON via a temp file + atomic rename, so a killed process never
-    leaves a truncated-but-non-empty artifact that a later run's
-    exists()-and-nonempty skip check would wrongly trust as done."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp{os.getpid()}")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    tmp.replace(path)
 
 
 def assign_transcript_to_runs(timeline, transcript_segments):

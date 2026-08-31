@@ -35,7 +35,6 @@ Notes:
 """
 
 import argparse
-import json
 import os
 import sys
 import tempfile
@@ -57,6 +56,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
 from notely.adapters.faster_whisper_transcriber import FasterWhisperTranscriber  # noqa: E402
 from notely.adapters.ffmpeg_audio_extractor import FfmpegAudioExtractor  # noqa: E402
 from notely.adapters.mlx_transcriber import MlxTranscriber  # noqa: E402
+from notely.io import load_json, save_json  # noqa: E402
 from notely.paths import PROJECT_ROOT  # noqa: E402
 from notely.paths import SLIDES_DIR as INPUT_SLIDES_DIR  # noqa: E402
 from notely.paths import VIDEOS_DIR as INPUT_VIDEOS_DIR  # noqa: E402
@@ -77,7 +77,7 @@ def build_vocabulary_prompt(lecture_id: str) -> str:
     extracted = SLIDES_EXTRACTED_DIR / f"{lecture_id}.json"
     try:
         if extracted.exists():
-            slides = json.loads(extracted.read_text())
+            slides = load_json(extracted)
             titles = [s.get("title", "") for s in slides]
         else:
             pdf = INPUT_SLIDES_DIR / f"{lecture_id}.pdf"
@@ -172,10 +172,7 @@ def transcribe_lecture(
         # Temp file + atomic rename: a killed process (SIGKILL, docker stop,
         # host crash) can never leave a truncated-but-non-empty transcript
         # that the next run's exists()-and-nonempty skip check would trust.
-        tmp_output = output_path.with_name(f"{output_path.name}.tmp{os.getpid()}")
-        with open(tmp_output, "w", encoding="utf-8") as f:
-            json.dump(transcript, f, ensure_ascii=False, indent=2)
-        tmp_output.replace(output_path)
+        save_json(output_path, transcript)
 
         print(f"[done] {lecture_id}: wrote {len(transcript['segments'])} segments -> {output_path}")
 

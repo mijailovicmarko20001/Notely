@@ -6,15 +6,11 @@ manual fixes done for lecture01) and stage 05+ is re-run with --force.
 """
 
 import json
-import os
 import time
 
+from notely.io import load_json as _load
+from notely.io import save_json
 from .config import OUTPUT_DIR, validate_lecture_id
-
-
-def _load(path):
-    with open(path) as f:
-        return json.load(f)
 
 
 def count_low_confidence(lecture_id: str) -> int:
@@ -128,11 +124,9 @@ def apply_corrections(lecture_id: str, corrections: list) -> dict:
             merged.append(e)
     data["timeline"] = merged
 
-    # Temp file + atomic rename: a killed process (e.g. the server restarts
-    # mid-request) can never leave a truncated-but-non-empty timeline that
-    # stage 4's own exists()-and-nonempty skip check would wrongly trust.
-    tmp_path = timeline_path.with_name(f"{timeline_path.name}.tmp{os.getpid()}")
-    with open(tmp_path, "w") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    tmp_path.replace(timeline_path)
+    # Atomic write (see notely.io): a killed process (e.g. the server
+    # restarts mid-request) can never leave a truncated-but-non-empty
+    # timeline that stage 4's own exists()-and-nonempty skip check would
+    # wrongly trust.
+    save_json(timeline_path, data)
     return {"applied": applied, "timeline_entries": len(merged)}

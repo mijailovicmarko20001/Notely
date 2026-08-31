@@ -1,18 +1,11 @@
 """Small helpers shared across the /api routers."""
 
-import json
-
 from fastapi import HTTPException
 
+# Re-exported (not used directly in this file) -- routers do
+# `from .common import load_json, validated_lecture_id`.
+from notely.io import load_json_or_default as load_json  # noqa: F401
 from .. import config
-
-
-def load_json(path, default):
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return default
 
 
 def validated_lecture_id(lecture_id: str) -> str:

@@ -19,7 +19,6 @@ real API call over the whole assembled guide; see generate_topic_index).
 """
 
 import sys
-import json
 import os
 import argparse
 from pathlib import Path
@@ -33,6 +32,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
 from notely.ports import LlmApiError  # noqa: E402
+from notely.io import save_json, write_text_atomic  # noqa: E402
 from notely.paths import PROJECT_ROOT  # noqa: E402
 
 
@@ -51,12 +51,6 @@ def load_dotenv_if_available() -> None:
         load_dotenv(get_project_root() / ".env")
     except ImportError:
         pass
-
-
-def load_json(path):
-    """Load JSON from file."""
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
 
 
 def find_lecture_notes(project_root):
@@ -91,14 +85,10 @@ def read_lecture_notes(path):
     return text
 
 
-def _write_json_atomic(path, data) -> None:
-    """Temp file + atomic rename, matching every other stage's artifact
-    writes (see scripts/04, 05, 06) -- a killed process can never leave a
-    truncated-but-non-empty debug file behind."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp{os.getpid()}")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False))
-    tmp.replace(path)
+# Local name kept (rather than updating every call site below) for the
+# same atomic-write guarantee, now backed by one shared implementation --
+# see notely.io.
+_write_json_atomic = save_json
 
 
 def build_table_of_contents(lectures):
@@ -253,14 +243,10 @@ def assemble_guide(force=False, topic_index=False, llm_client=None):
             if index_md:
                 full_guide = toc + index_md + "\n\n---\n\n" + "\n".join(content_parts)
 
-    # Write output. Temp file + atomic rename: a killed process can never
-    # leave a truncated-but-non-empty study_guide.md that a later run's
+    # Atomic write (see notely.io): a killed process can never leave a
+    # truncated-but-non-empty study_guide.md that a later run's
     # exists()-and-nonempty skip check would wrongly trust as done.
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_output = output_path.with_name(f"{output_path.name}.tmp{os.getpid()}")
-    with open(tmp_output, "w", encoding="utf-8") as f:
-        f.write(full_guide)
-    tmp_output.replace(output_path)
+    write_text_atomic(output_path, full_guide)
 
     print(f"Study guide assembled into {output_path}")
     print(f"Included {len(lectures)} lectures: {', '.join(lectures)}")

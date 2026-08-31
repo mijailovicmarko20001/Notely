@@ -61,7 +61,6 @@ Notes:
 """
 
 import argparse
-import json
 import os
 import re
 import sys
@@ -83,6 +82,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
 
 from notely.adapters.ffprobe_media_probe import FfprobeMediaProbe  # noqa: E402
 from notely.adapters.tesseract_ocr import TesseractOcr  # noqa: E402
+from notely.io import load_json, save_json  # noqa: E402
 from notely.paths import PROJECT_ROOT  # noqa: E402
 from notely.paths import VIDEOS_DIR as INPUT_VIDEOS_DIR  # noqa: E402
 
@@ -146,25 +146,6 @@ DEFAULT_EXAMPLE_INK_TEXT_OVERLAP_MIN = 0.5
 # misread words.
 DEFAULT_EXAMPLE_INK_NOVEL_WORD_MIN = 0.35
 EXAMPLE_SLIDE_RE = re.compile(r"primer|zadatak|vežb|vezb|example|exercise", re.IGNORECASE)
-
-
-def load_json(path: Path):
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_json(path: Path, data) -> None:
-    """Write via a temp file + atomic rename so a killed process (SIGKILL,
-    docker stop, host crash) can never leave a truncated-but-non-empty
-    artifact — `path.exists() and size > 0` is exactly what
-    webui/progress.py::artifact_ok trusts to decide a stage is done and
-    skippable on the next run; a partial `open(path, "w")` write would pass
-    that check while being invalid JSON, silently corrupting resume."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp{os.getpid()}")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    tmp.replace(path)
 
 
 DHASH_SIZE = 8

@@ -32,6 +32,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
 
 from notely.adapters.ffprobe_media_probe import FfprobeMediaProbe  # noqa: E402
 from notely.adapters.ytdlp_video_fetcher import YtDlpVideoFetcher  # noqa: E402
+from notely.io import load_json, save_json  # noqa: E402
 from notely.paths import PROJECT_ROOT, VIDEO_URLS_PATH, VIDEOS_DIR  # noqa: E402
 
 FORMAT = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]"
@@ -57,8 +58,7 @@ def load_video_urls():
     if not VIDEO_URLS_PATH.exists():
         print(f"ERROR: {VIDEO_URLS_PATH} not found", file=sys.stderr)
         sys.exit(1)
-    with open(VIDEO_URLS_PATH) as f:
-        return json.load(f)
+    return load_json(VIDEO_URLS_PATH)
 
 
 def verify_video(path: Path, media_probe) -> bool:
@@ -80,23 +80,18 @@ def read_source_url(path: Path) -> str | None:
     sidecar is missing/corrupt. None always means "can't vouch for this
     file", which callers treat as a cache miss."""
     try:
-        with open(path) as f:
-            data = json.load(f)
-    except (OSError, json.JSONDecodeError):
+        data = load_json(path)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return None
     url = data.get("url") if isinstance(data, dict) else None
     return url if isinstance(url, str) else None
 
 
 def write_source_url(path: Path, url: str) -> None:
-    """Temp file + atomic rename, matching the stage scripts' artifact writes
-    (see scripts/04, 05, 06, 07). A torn write would only ever read back as
-    "no record" and force a re-download, but there's no reason to leave that
-    to chance."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp{os.getpid()}")
-    tmp.write_text(json.dumps({"url": url}, indent=2))
-    tmp.replace(path)
+    """Atomic write (see notely.io) -- a torn write would only ever read
+    back as "no record" and force a re-download, but there's no reason to
+    leave that to chance."""
+    save_json(path, {"url": url})
 
 
 def fetch_lecture(lecture_id: str, url: str, force: bool, media_probe=None, video_fetcher=None) -> bool:

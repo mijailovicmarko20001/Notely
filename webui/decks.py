@@ -8,7 +8,6 @@ actually touched), not in api.py/routes.
 
 import difflib
 import hashlib
-import json
 import logging
 import re
 import shutil
@@ -17,20 +16,14 @@ from pathlib import Path
 
 from fastapi import UploadFile
 
+from notely.io import load_json_or_default as _load_json
+from notely.io import save_json
 from . import config
 from .errors import TooLargeError, ValidationError
 
 log = logging.getLogger("notely.decks")
 
 UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1 MB
-
-
-def _load_json(path, default):
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return default
 
 
 async def save_upload_stream(
@@ -179,8 +172,7 @@ def distribute_pool_deck(merged_path: Path, lecture_ids) -> None:
 def _record_deck_meta(lecture_id: str, original_name: str | None) -> None:
     meta = _load_json(config.LECTURES_META_PATH, {})
     meta.setdefault(lecture_id, {})["deck_original_name"] = original_name
-    with open(config.LECTURES_META_PATH, "w") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=2)
+    save_json(config.LECTURES_META_PATH, meta)
 
 
 async def save_deck_for_lectures(

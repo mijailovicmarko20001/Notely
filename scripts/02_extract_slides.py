@@ -13,8 +13,6 @@ Usage:
 """
 
 import argparse
-import json
-import os
 import sys
 from pathlib import Path
 
@@ -32,6 +30,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
 from notely.adapters.libreoffice_doc_converter import LibreOfficeDocConverter  # noqa: E402
+from notely.io import save_json  # noqa: E402
 from notely.paths import PROJECT_ROOT, SLIDES_DIR  # noqa: E402
 
 OUTPUT_DIR = PROJECT_ROOT / "output" / "slides_extracted"
@@ -166,13 +165,10 @@ def process_lecture(lecture_id: str, force: bool) -> bool:
         print(f"[{lecture_id}] no deck found (looked for {pptx_path.name} / {pdf_path.name}) in {SLIDES_DIR}")
         return False
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    # Temp file + atomic rename: a killed process can never leave a
+    # Atomic write (see notely.io): a killed process can never leave a
     # truncated-but-non-empty artifact that a later run's exists()-and-
     # nonempty skip check would wrongly trust as done.
-    tmp_json = out_json.with_name(f"{out_json.name}.tmp{os.getpid()}")
-    tmp_json.write_text(json.dumps(slides, indent=2, ensure_ascii=False), encoding="utf-8")
-    tmp_json.replace(out_json)
+    save_json(out_json, slides)
     print(f"[{lecture_id}] wrote {len(slides)} slides -> {out_json}")
     return True
 
