@@ -5,11 +5,16 @@ slide-upload routes, which are where TooLargeError/ValidationError/
 NotFoundError actually get raised in this codebase."""
 
 import io
+import sys
+from pathlib import Path
 
 import pytest
 
-from webui import decks
-from webui.errors import TooLargeError, ValidationError
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from pdf_fixtures import make_pdf_bytes  # noqa: E402
+
+from webui import config, decks  # noqa: E402
+from webui.errors import TooLargeError, ValidationError  # noqa: E402
 
 
 # --- A3: save_upload_stream itself (pure, no HTTP) --------------------------
@@ -96,6 +101,35 @@ def test_upload_pool_400_when_no_lectures_configured_yet(client, project_root):
         files=[("files", ("deck.pdf", b"%PDF-1.4 fake", "application/pdf"))],
     )
     assert resp.status_code == 400
+
+
+def test_upload_pool_success_replaces_pool_and_distributes_to_every_lecture(client, project_root):
+    # project_root's default fixture lectures are lecture01 and lecture02
+    # (see tests/webui/conftest.py's _write_default_lectures)
+    deck_a = make_pdf_bytes(["Intro", "CORDIC basics"])
+    deck_b = make_pdf_bytes(["Intro", "New material"])  # shares a page with deck_a
+
+    resp = client.post(
+        "/api/slides/upload-pool",
+        files=[
+            ("files", ("deck_a.pdf", deck_a, "application/pdf")),
+            ("files", ("deck_b.pdf", deck_b, "application/pdf")),
+        ],
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert sorted(body["pool_decks"]) == ["deck_a.pdf", "deck_b.pdf"]
+    assert body["scanned_pages"] == 4
+    assert body["merged_pages"] == 3  # the repeated "Intro" page deduped
+    assert body["duplicate_pages_skipped"] == 1
+    assert body["lectures"] == ["lecture01", "lecture02"]
+
+    # the same merged deck was distributed to every configured lecture
+    for lecture_id in ("lecture01", "lecture02"):
+        deck_path = config.SLIDES_DIR / f"{lecture_id}.pdf"
+        assert deck_path.exists() and deck_path.stat().st_size > 0
 
 
 # --- A4: NotFoundError from media.grab_preview_frame -> 404 -----------------
