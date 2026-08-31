@@ -79,6 +79,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
 from notely.ports import LlmApiError  # noqa: E402
+from notely.cli import require_lecture_id_or_all  # noqa: E402
 from notely.io import load_json, save_json, write_text_atomic  # noqa: E402
 from notely.paths import PROJECT_ROOT  # noqa: E402
 
@@ -959,8 +960,7 @@ def main():
     )
     args = parser.parse_args()
 
-    if bool(args.all) == bool(args.lecture_id):
-        parser.error("provide exactly one of <lecture_id> or --all")
+    require_lecture_id_or_all(parser, args)
 
     load_dotenv_if_available()
 

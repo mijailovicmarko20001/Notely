@@ -32,6 +32,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
 
 from notely.adapters.ffprobe_media_probe import FfprobeMediaProbe  # noqa: E402
 from notely.adapters.ytdlp_video_fetcher import YtDlpVideoFetcher  # noqa: E402
+from notely.cli import require_lecture_id_or_all  # noqa: E402
 from notely.io import load_json, save_json  # noqa: E402
 from notely.paths import PROJECT_ROOT, VIDEO_URLS_PATH, VIDEOS_DIR  # noqa: E402
 
@@ -174,10 +175,7 @@ def main():
     parser.add_argument("--force", action="store_true", help="re-download even if a valid file is cached")
     args = parser.parse_args()
 
-    if not args.all and not args.lecture_id:
-        parser.error("provide a lecture_id or use --all")
-    if args.all and args.lecture_id:
-        parser.error("provide either a lecture_id or --all, not both")
+    require_lecture_id_or_all(parser, args)
 
     video_urls = load_video_urls()
 

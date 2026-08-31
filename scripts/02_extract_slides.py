@@ -30,6 +30,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
 from notely.adapters.libreoffice_doc_converter import LibreOfficeDocConverter  # noqa: E402
+from notely.cli import require_lecture_id_or_all  # noqa: E402
 from notely.io import save_json  # noqa: E402
 from notely.paths import PROJECT_ROOT, SLIDES_DIR  # noqa: E402
 
@@ -180,8 +181,7 @@ def main() -> None:
     parser.add_argument("--force", action="store_true", help="re-run even if output already exists")
     args = parser.parse_args()
 
-    if bool(args.all) == bool(args.lecture_id):
-        parser.error("provide exactly one of <lecture_id> or --all")
+    require_lecture_id_or_all(parser, args)
 
     if args.all:
         lecture_ids = sorted({p.stem for p in SLIDES_DIR.glob("*") if p.suffix.lower() in (".pptx", ".pdf")})

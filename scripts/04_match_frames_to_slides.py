@@ -80,6 +80,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
 
 from notely.adapters.ffprobe_media_probe import FfprobeMediaProbe  # noqa: E402
 from notely.adapters.tesseract_ocr import TesseractOcr  # noqa: E402
+from notely.cli import require_lecture_id_or_all  # noqa: E402
 from notely.env import DEFAULT_OCR_LANG, env_str  # noqa: E402
 from notely.io import load_json, save_json  # noqa: E402
 from notely.paths import PROJECT_ROOT  # noqa: E402
@@ -949,8 +950,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if bool(args.all) == bool(args.lecture_id):
-        parser.error("provide exactly one of <lecture_id> or --all")
+    require_lecture_id_or_all(parser, args)
 
     if args.all:
         event_files = sorted(FRAME_EVENTS_DIR.glob("*.json"))

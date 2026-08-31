@@ -56,6 +56,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
 from notely.adapters.faster_whisper_transcriber import FasterWhisperTranscriber  # noqa: E402
 from notely.adapters.ffmpeg_audio_extractor import FfmpegAudioExtractor  # noqa: E402
 from notely.adapters.mlx_transcriber import MlxTranscriber  # noqa: E402
+from notely.cli import require_lecture_id_or_all  # noqa: E402
 from notely.env import DEFAULT_WHISPER_MODEL, env_str  # noqa: E402
 from notely.io import load_json, save_json  # noqa: E402
 from notely.paths import PROJECT_ROOT  # noqa: E402
@@ -329,8 +330,7 @@ def main():
     )
     args = parser.parse_args()
 
-    if bool(args.all) == bool(args.lecture_id):
-        parser.error("provide exactly one of <lecture_id> or --all")
+    require_lecture_id_or_all(parser, args)
 
     load_dotenv_if_available()
     model_size = env_str("WHISPER_MODEL", DEFAULT_WHISPER_MODEL)
