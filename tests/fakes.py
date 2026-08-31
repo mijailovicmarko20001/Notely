@@ -13,6 +13,7 @@ from notely.ports import (
     LlmApiError,
     LlmResponse,
     LlmUsage,
+    TranscriberError,
     VideoFetchResult,
 )
 
@@ -187,3 +188,27 @@ class FakeVideoFetcher:
         if self._returncode == 0:
             Path(output_path).write_bytes(self._video_bytes)
         return VideoFetchResult(self._returncode, self._output)
+
+
+class FakeTranscriber:
+    """Returns a canned transcript dict, or raises `error` instead if
+    configured. Records every call's full argument set."""
+
+    def __init__(self, transcript: dict | None = None, error: TranscriberError | None = None):
+        self._transcript = transcript or {"language": "en", "segments": []}
+        self._error = error
+        self.calls: list[dict] = []
+
+    def transcribe(self, lecture_id, wav_path, model_size, forced_language, vocab_prompt) -> dict:
+        self.calls.append(
+            {
+                "lecture_id": lecture_id,
+                "wav_path": str(wav_path),
+                "model_size": model_size,
+                "forced_language": forced_language,
+                "vocab_prompt": vocab_prompt,
+            }
+        )
+        if self._error is not None:
+            raise self._error
+        return self._transcript

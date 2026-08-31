@@ -51,7 +51,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from notely.adapters.faster_whisper_transcriber import FasterWhisperTranscriber  # noqa: E402
 from notely.adapters.ffmpeg_audio_extractor import FfmpegAudioExtractor  # noqa: E402
+from notely.adapters.mlx_transcriber import MlxTranscriber  # noqa: E402
 
 INPUT_VIDEOS_DIR = PROJECT_ROOT / "input" / "videos"
 OUTPUT_TRANSCRIPTS_DIR = PROJECT_ROOT / "output" / "transcripts"
@@ -100,15 +102,20 @@ def build_vocabulary_prompt(lecture_id: str) -> str:
     return prompt[:VOCAB_PROMPT_MAX_CHARS]
 
 
-def transcribe_lecture(lecture_id: str, model_size: str, force: bool = False, audio_extractor=None) -> bool:
+def transcribe_lecture(
+    lecture_id: str, model_size: str, force: bool = False, audio_extractor=None, transcriber=None
+) -> bool:
     """Transcribe a single lecture's video and write its transcript JSON.
     Returns False only when a required input was missing (the caller should
     treat that as a failure); an already-done skip and a real successful
     run both return True.
 
     audio_extractor: an AudioExtractor (see notely.ports), defaults to the
-    real ffmpeg-backed adapter; tests inject a fake instead of needing
-    ffmpeg installed."""
+    real ffmpeg-backed adapter. transcriber: a Transcriber, defaults to a
+    backend selected by WHISPER_BACKEND (see below) -- pass one explicitly
+    to bypass that selection entirely (e.g. in a test). Both default to
+    their real adapter; tests inject a fake instead of needing
+    ffmpeg/faster-whisper/mlx installed."""
     if audio_extractor is None:
         audio_extractor = FfmpegAudioExtractor()
     video_path = INPUT_VIDEOS_DIR / f"{lecture_id}.mp4"
@@ -151,14 +158,12 @@ def transcribe_lecture(lecture_id: str, model_size: str, force: bool = False, au
             )
         else:
             audio_extractor.extract_wav(video_path, tmp_wav_path)
-            if backend == "mlx":
-                transcript = transcribe_with_mlx(
-                    lecture_id, tmp_wav_path, model_size, forced_language, vocab_prompt
-                )
-            else:
-                transcript = transcribe_with_faster_whisper(
-                    lecture_id, tmp_wav_path, model_size, forced_language, vocab_prompt
-                )
+            active_transcriber = transcriber
+            if active_transcriber is None:
+                active_transcriber = MlxTranscriber() if backend == "mlx" else FasterWhisperTranscriber()
+            transcript = active_transcriber.transcribe(
+                lecture_id, tmp_wav_path, model_size, forced_language, vocab_prompt
+            )
 
         # Temp file + atomic rename: a killed process (SIGKILL, docker stop,
         # host crash) can never leave a truncated-but-non-empty transcript
@@ -175,33 +180,6 @@ def transcribe_lecture(lecture_id: str, model_size: str, force: bool = False, au
             tmp_wav_path.unlink()
 
     return True
-
-
-def transcribe_with_mlx(lecture_id, wav_path, model_size, forced_language, vocab_prompt) -> dict:
-    """Apple-GPU transcription via mlx-whisper. Returns the transcript dict.
-
-    verbose=True makes mlx print each segment as it's decoded
-    ("[MM:SS.mmm --> MM:SS.mmm] text"), which doubles as live progress for
-    the web UI's parser."""
-    import mlx_whisper  # lazy import, Apple Silicon only
-
-    repo = os.environ.get("WHISPER_MLX_REPO") or f"mlx-community/whisper-{model_size}"
-    print(
-        f"[whisper] {lecture_id}: transcribing on GPU via mlx ('{repo}', "
-        f"language={'pinned ' + forced_language if forced_language else 'auto'})..."
-    )
-    result = mlx_whisper.transcribe(
-        str(wav_path),
-        path_or_hf_repo=repo,
-        language=forced_language,
-        initial_prompt=vocab_prompt or None,
-        verbose=True,
-    )
-    segments = [
-        {"start": float(s["start"]), "end": float(s["end"]), "text": s["text"].strip()}
-        for s in result["segments"]
-    ]
-    return {"language": result.get("language") or forced_language or "", "segments": segments}
 
 
 GROQ_MAX_UPLOAD_MB = 25  # Groq's free-tier audio upload cap, as of when this was written
@@ -314,57 +292,6 @@ def transcribe_with_groq(lecture_id, video_path, forced_language, vocab_prompt, 
     print(
         f"[whisper] {lecture_id}: Groq transcription complete, {len(segments)} segment(s), language={detected_language}"
     )
-    return {"language": detected_language, "segments": segments}
-
-
-def transcribe_with_faster_whisper(lecture_id, wav_path, model_size, forced_language, vocab_prompt) -> dict:
-    """CPU transcription via faster-whisper/ctranslate2. Returns the transcript dict."""
-    from faster_whisper import WhisperModel  # lazy import, deps may not be installed
-
-    # Benchmarked on Apple Silicon (90s Serbian audio, medium model):
-    # float32/4-threads 2.0x realtime, float32/10t 1.9x, int8/10t 1.8x —
-    # ctranslate2's defaults are already optimal there (float32 rides the
-    # AMX units via Accelerate; int8 can't, and extra threads just spin).
-    # Env overrides kept for non-Apple hardware, where int8 usually wins.
-    cpu_threads = int(os.environ.get("WHISPER_CPU_THREADS", "0")) or 4
-    compute_type = os.environ.get("WHISPER_COMPUTE", "auto")
-    print(
-        f"[whisper] {lecture_id}: loading faster-whisper model '{model_size}' "
-        f"(cpu_threads={cpu_threads}, compute_type={compute_type})"
-    )
-    model = WhisperModel(model_size, cpu_threads=cpu_threads, compute_type=compute_type)
-
-    # WHISPER_LANGUAGE pins the language (e.g. "sr"); unset -> auto-detect.
-    # Auto-detection samples only the first 30s and can land on a wrong close
-    # cousin (observed: Serbian lectures detected as "bs" at low confidence,
-    # which measurably degrades technical vocabulary).
-    if forced_language:
-        print(f"[whisper] {lecture_id}: transcribing (language pinned to '{forced_language}')...")
-    else:
-        print(f"[whisper] {lecture_id}: transcribing (auto-detecting language)...")
-    # vad_filter skips silence — lecture pauses are where whisper hallucinates
-    # repeated phrases; timestamps stay mapped to the original timeline.
-    # Segment-level timestamps are sufficient, so word_timestamps stays False.
-    segments_iter, info = model.transcribe(
-        str(wav_path),
-        language=forced_language,
-        initial_prompt=vocab_prompt or None,
-        vad_filter=True,
-    )
-
-    detected_language = info.language
-    print(
-        f"[whisper] {lecture_id}: detected language = {detected_language} "
-        f"(confidence={info.language_probability:.2f})"
-    )
-
-    segments = []
-    for seg in segments_iter:
-        text = seg.text.strip()
-        segments.append({"start": seg.start, "end": seg.end, "text": text})
-        # Whisper is slow on long lectures - log progress as segments stream in.
-        print(f"  [{seg.start:8.2f} -> {seg.end:8.2f}] {text}")
-
     return {"language": detected_language, "segments": segments}
 
 

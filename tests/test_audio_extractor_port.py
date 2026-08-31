@@ -104,10 +104,12 @@ def test_real_adapter_compressed_uses_opus_codec_and_given_bitrate(tmp_path, mon
 
 
 # --- wiring: scripts/01_transcribe.py's transcribe_lecture actually uses
-# the injected AudioExtractor, not a real ffmpeg call ---------------------
+# the injected AudioExtractor (not a real ffmpeg call) and Transcriber (not
+# a real whisper backend) -- see tests/test_transcriber_port.py for the
+# Transcriber port's own contract test. -------------------------------
 
 
-def test_transcribe_lecture_uses_the_injected_audio_extractor(tmp_path, monkeypatch):
+def test_transcribe_lecture_uses_the_injected_audio_extractor_and_transcriber(tmp_path, monkeypatch):
     s01 = load_stage("01_transcribe.py")
     monkeypatch.setattr(s01, "INPUT_VIDEOS_DIR", tmp_path / "input" / "videos")
     monkeypatch.setattr(s01, "OUTPUT_TRANSCRIPTS_DIR", tmp_path / "output" / "transcripts")
@@ -119,16 +121,22 @@ def test_transcribe_lecture_uses_the_injected_audio_extractor(tmp_path, monkeypa
     fake_extractor = FakeAudioExtractor(audio_bytes=b"fake wav bytes")
     seen_wav_bytes = {}
 
-    def fake_transcribe(lecture_id, wav_path, model_size, forced_language, vocab_prompt):
-        # prove the *extracted* audio (from the fake, not real ffmpeg) is
-        # what actually reaches the transcription backend
-        seen_wav_bytes["content"] = Path(wav_path).read_bytes()
-        return {"language": "en", "segments": []}
+    class _RecordingTranscriber:
+        def transcribe(self, lecture_id, wav_path, model_size, forced_language, vocab_prompt):
+            # prove the *extracted* audio (from the fake, not real ffmpeg)
+            # is what actually reaches the transcription backend
+            seen_wav_bytes["content"] = Path(wav_path).read_bytes()
+            return {"language": "en", "segments": []}
 
-    monkeypatch.setattr(s01, "transcribe_with_faster_whisper", fake_transcribe)
     monkeypatch.setattr(s01, "build_vocabulary_prompt", lambda lecture_id: "")
 
-    ok = s01.transcribe_lecture("lecture01", model_size="medium", force=True, audio_extractor=fake_extractor)
+    ok = s01.transcribe_lecture(
+        "lecture01",
+        model_size="medium",
+        force=True,
+        audio_extractor=fake_extractor,
+        transcriber=_RecordingTranscriber(),
+    )
 
     assert ok is True
     assert len(fake_extractor.wav_calls) == 1

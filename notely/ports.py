@@ -146,3 +146,34 @@ class VideoFetcher(Protocol):
         outcome the caller inspects via .returncode), only for a genuine
         OS-level problem launching the process."""
         ...
+
+
+class TranscriberError(Exception):
+    """Raised by a Transcriber implementation when transcription fails."""
+
+
+@runtime_checkable
+class Transcriber(Protocol):
+    def transcribe(
+        self,
+        lecture_id: str,
+        wav_path: Path,
+        model_size: str,
+        forced_language: str | None,
+        vocab_prompt: str,
+    ) -> dict:
+        """Transcribe the audio at wav_path (already-extracted, via
+        AudioExtractor). Returns {"language": str, "segments":
+        [{"start": float, "end": float, "text": str}, ...]}. Raises
+        TranscriberError on failure.
+
+        Covers the two local whisper backends (faster-whisper, mlx), which
+        already share this exact call shape (per-lecture logging aside,
+        this port mainly gives them a common interface to be selected and
+        faked through). WHISPER_BACKEND=groq stays a separate function
+        (transcribe_with_groq) rather than a third implementation of this
+        Protocol -- it works from the original video (not an
+        already-extracted wav_path) and does its own compressed audio
+        extraction internally via AudioExtractor, a genuinely different
+        shape, not just a different backend."""
+        ...
