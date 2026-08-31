@@ -64,7 +64,6 @@ import argparse
 import os
 import re
 import sys
-import unicodedata
 from pathlib import Path
 
 # Only needed to bootstrap the `from notely...` import below (finding
@@ -85,6 +84,7 @@ from notely.adapters.tesseract_ocr import TesseractOcr  # noqa: E402
 from notely.io import load_json, save_json  # noqa: E402
 from notely.paths import PROJECT_ROOT  # noqa: E402
 from notely.paths import VIDEOS_DIR as INPUT_VIDEOS_DIR  # noqa: E402
+from notely.text import fold_diacritics as _fold_diacritics  # noqa: E402
 
 # Best-effort .env loading (same pattern as stages 00/01/06), so OCR_LANG
 # set in .env actually reaches the --ocr-lang default below.
@@ -511,19 +511,6 @@ def build_needs_review(
         "unmatched_slides": unmatched_slides,
         "backward_jumps": backward_jumps,
     }
-
-
-def _fold_diacritics(text: str) -> str:
-    """NFKD-decompose and drop combining marks, so an accented and
-    unaccented spelling of the same word compare equal. Serbian-latin OCR
-    output is inconsistent about diacritics (Tesseract frequently drops or
-    misreads č/ć/š/ž/đ at video resolution) while stage 2's deck-extracted
-    text always has them, so comparing the two without folding manufactures
-    spurious "different word" mismatches on otherwise-identical text. Same
-    technique as stage 5's fold(), duplicated rather than imported since
-    each stage script is meant to run standalone."""
-    normalized = unicodedata.normalize("NFKD", text or "")
-    return "".join(c for c in normalized if not unicodedata.combining(c))
 
 
 def _ocr_words(text: str) -> list[str]:

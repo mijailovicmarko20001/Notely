@@ -41,6 +41,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
 
 from notely.io import load_json, save_json  # noqa: E402
 from notely.paths import PROJECT_ROOT  # noqa: E402
+from notely.text import fold_diacritics  # noqa: E402
 
 
 def get_project_root():
@@ -270,14 +271,11 @@ EXAMPLE_CUES = (
 
 
 def fold(s):
-    """Lowercase and strip diacritics (NFKD decompose + drop combining
-    marks) so cue matching is accent-insensitive -- Serbian-latin text can
-    spell the same word with or without diacritics (vežbanje / vezbanje),
-    and ASR transcripts are inconsistent about which one they emit."""
-    import unicodedata
-
-    normalized = unicodedata.normalize("NFKD", s or "")
-    return "".join(c for c in normalized if not unicodedata.combining(c)).lower()
+    """Lowercase and strip diacritics (see notely.text.fold_diacritics) so
+    cue matching is accent-insensitive -- Serbian-latin text can spell the
+    same word with or without diacritics (vežbanje / vezbanje), and ASR
+    transcripts are inconsistent about which one they emit."""
+    return fold_diacritics(s).lower()
 
 
 def transcript_context_for(timestamp, segments, before=20.0, after=40.0):
