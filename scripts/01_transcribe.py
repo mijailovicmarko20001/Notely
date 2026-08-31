@@ -22,7 +22,9 @@ Usage:
 
 Config:
     WHISPER_MODEL env var selects the faster-whisper model size
-    (default: "small"). Loaded from .env if python-dotenv is available.
+    (default: "medium" -- "small" mis-detects Serbian as Bosnian, see
+    webui/config.py's DEFAULT_ENV). Loaded from .env if python-dotenv is
+    available.
 
 Notes:
     - Skips a lecture if output/transcripts/<lecture_id>.json already exists,
@@ -433,7 +435,7 @@ def main():
         parser.error("provide exactly one of <lecture_id> or --all")
 
     load_dotenv_if_available()
-    model_size = os.environ.get("WHISPER_MODEL", "small")
+    model_size = os.environ.get("WHISPER_MODEL", "medium")
 
     if args.all:
         video_files = sorted(INPUT_VIDEOS_DIR.glob("*.mp4"))

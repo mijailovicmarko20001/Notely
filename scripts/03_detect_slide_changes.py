@@ -14,7 +14,7 @@ Method (per CLAUDE.md "[3] Slide-change detection in video"):
      webcam picture-in-picture overlay.
   3. Downscale to ~320px wide, convert to grayscale, and compute the
      normalized mean absolute pixel difference between consecutive sampled
-     frames. A diff above --threshold (default 0.08) = slide change event.
+     frames. A diff above --threshold (default 0.02) = slide change event.
   4. The very first sampled frame (t=0) is always saved as event_000,
      regardless of whether a "change" was detected for it, since it is the
      slide showing at the start of the video.
@@ -247,8 +247,12 @@ def main() -> None:
     parser.add_argument(
         "--threshold",
         type=float,
-        default=0.08,
-        help="normalized mean-abs-diff above which a frame pair counts as a slide change (default: 0.08)",
+        default=0.02,
+        help=(
+            "normalized mean-abs-diff above which a frame pair counts as a slide change "
+            "(default: 0.02 -- see DOCUMENTATION.md's calibration table; 0.08 detected "
+            "almost nothing on real course recordings)"
+        ),
     )
     parser.add_argument(
         "--crop",

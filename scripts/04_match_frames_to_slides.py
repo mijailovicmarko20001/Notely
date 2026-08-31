@@ -946,8 +946,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--ocr-lang",
-        default=os.environ.get("OCR_LANG", "eng"),
-        help='tesseract language(s), e.g. "srp_latn+eng" (default: env OCR_LANG or "eng")',
+        default=os.environ.get("OCR_LANG", "srp_latn+eng"),
+        help='tesseract language(s) (default: env OCR_LANG or "srp_latn+eng", matching webui/config.py)',
     )
     parser.add_argument(
         "--no-examples",
