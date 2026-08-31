@@ -7,10 +7,10 @@ import base64
 import io
 
 from conftest import load_stage
+from notely.pipeline import examples as m6
 
 m4 = load_stage("04_match_frames_to_slides.py")
 m5 = load_stage("05_segment_transcript.py")
-m6 = load_stage("06_generate_notes.py")
 
 
 # --- stage 4: group_runs -----------------------------------------------------

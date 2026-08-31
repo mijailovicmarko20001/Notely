@@ -23,6 +23,7 @@ from fakes import FakeDocConverter, FakeFrameReader, FakeHtmlToPdf, FakeLlmClien
 from notely.pipeline import assemble as s7
 from notely.pipeline import detect as s3
 from notely.pipeline import export as s8
+from notely.pipeline import notes as s6
 from notely.pipeline import slides as s2
 from notely.ports import SampledFrame
 from pdf_fixtures import make_pdf_bytes
@@ -449,8 +450,6 @@ def test_stage07_assemble_guide_with_topic_index_golden(tmp_path, monkeypatch):
 
 
 # --- Stage 6: note generation ------------------------------------------------
-
-s6 = load_stage("06_generate_notes.py")
 
 
 def test_stage06_process_lecture_golden(tmp_path, monkeypatch):

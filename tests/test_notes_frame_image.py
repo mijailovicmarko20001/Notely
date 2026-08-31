@@ -1,4 +1,4 @@
-"""scripts/06_generate_notes.py::load_frame_image_b64 -- loading/downscaling/
+"""notely.pipeline.examples::load_frame_image_b64 -- loading/downscaling/
 encoding the actual on-screen slide capture for the (opt-in) vision path,
 so live annotations the deck file never had can reach note generation.
 See DOCUMENTATION.md / TODO.md for the full feature."""
@@ -6,9 +6,7 @@ See DOCUMENTATION.md / TODO.md for the full feature."""
 import base64
 import io
 
-from conftest import load_stage
-
-m6 = load_stage("06_generate_notes.py")
+from notely.pipeline import examples as m6
 
 
 def _make_png(tmp_path, name, size, color=(120, 140, 160)):
