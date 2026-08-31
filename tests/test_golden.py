@@ -19,7 +19,7 @@ import json
 from pathlib import Path
 
 from conftest import load_stage
-from fakes import FakeLlmClient, llm_response
+from fakes import FakeLlmClient, FakeOcr, llm_response
 from pdf_fixtures import make_pdf_bytes
 
 EXPECTED_DIR = Path(__file__).parent / "golden" / "expected"
@@ -169,6 +169,92 @@ def test_stage04_matching_pipeline_golden():
     assert {"timeline": timeline, "notes": notes} == _expected_json("stage04_timeline.json")
     assert needs_review == _expected_json("stage04_needs_review.json")
     assert example_candidates == _expected_json("stage04_examples.json")
+
+
+def test_stage04_process_lecture_end_to_end_with_fake_ocr(tmp_path, monkeypatch):
+    # Promoted from "pure pipeline only" (above) to genuinely end-to-end by
+    # the Ocr port (Phase 3): process_lecture itself -- file I/O, frame
+    # hashing (real PIL, not the hand-picked hashes above), and the full
+    # OCR -> TF-IDF -> match -> collapse -> needs_review -> examples chain
+    # -- is now driven entirely by fakes. get_video_duration() still calls
+    # real ffprobe, but only if a video file exists; with none present it
+    # returns None before ever shelling out, staying hermetic without
+    # needing the MediaProbe port (Phase 3, port 3) yet.
+    #
+    # This is a smoke test (does the wiring work end-to-end, sane output),
+    # not a byte-exact pin like the hand-picked-hash pipeline test above --
+    # that test already pins the combination logic precisely; this one's
+    # job is proving process_lecture's own OCR loop and file I/O reach it.
+    from PIL import Image
+
+    monkeypatch.setattr(s4, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(s4, "FRAME_EVENTS_DIR", tmp_path / "output" / "frame_events")
+    monkeypatch.setattr(s4, "SLIDES_EXTRACTED_DIR", tmp_path / "output" / "slides_extracted")
+    monkeypatch.setattr(s4, "OUTPUT_DIR", tmp_path / "output" / "slide_timelines")
+    monkeypatch.setattr(s4, "INPUT_VIDEOS_DIR", tmp_path / "input" / "videos")  # empty -> duration=None
+    s4.FRAME_EVENTS_DIR.mkdir(parents=True)
+    s4.SLIDES_EXTRACTED_DIR.mkdir(parents=True)
+
+    frames_dir = s4.FRAME_EVENTS_DIR / "lecture01_frames"
+    frames_dir.mkdir(parents=True)
+    # Half-black-half-white, flipped per frame -- gives each frame a real,
+    # distinguishing dHash (a flat solid color hashes to 0 for every frame,
+    # per test_matcher.py's own note, which would wrongly trigger OCR-dedup
+    # between every frame here).
+    for name, flip in [("frame_000.png", False), ("frame_001.png", True), ("frame_002.png", False)]:
+        img = Image.new("L", (64, 48), color=0 if not flip else 255)
+        for x in range(32, 64):
+            for y in range(48):
+                img.putpixel((x, y), 255 if not flip else 0)
+        img.save(frames_dir / name)
+
+    rel_paths = [f"output/frame_events/lecture01_frames/frame_{i:03d}.png" for i in range(3)]
+    events = [{"timestamp": float(i * 5), "frame_image_path": rel} for i, rel in enumerate(rel_paths)]
+    (s4.FRAME_EVENTS_DIR / "lecture01.json").write_text(json.dumps(events))
+
+    slides = [
+        {
+            "slide_number": 1,
+            "title": "Introduction",
+            "body_text": "Overview",
+            "notes_text": "",
+            "image_path": "",
+        },
+        {
+            "slide_number": 2,
+            "title": "Summary",
+            "body_text": "Key takeaways",
+            "notes_text": "",
+            "image_path": "",
+        },
+    ]
+    (s4.SLIDES_EXTRACTED_DIR / "lecture01.json").write_text(json.dumps(slides))
+
+    fake_ocr = FakeOcr(
+        texts={
+            str(tmp_path / rel_paths[0]): "Introduction Overview",
+            str(tmp_path / rel_paths[1]): "Summary Key takeaways",
+            str(tmp_path / rel_paths[2]): "Summary Key takeaways",
+        }
+    )
+
+    ok = s4.process_lecture(
+        "lecture01",
+        margin=s4.DEFAULT_BACKWARD_JUMP_MARGIN,
+        confidence_threshold=s4.DEFAULT_CONFIDENCE_THRESHOLD,
+        force=True,
+        ocr_lang="eng",
+        ocr=fake_ocr,
+    )
+    assert ok is True
+
+    # every event was actually routed through the fake, in the requested language
+    assert fake_ocr.calls == [(str(tmp_path / rel), "eng") for rel in rel_paths]
+
+    timeline_data = json.loads((s4.OUTPUT_DIR / "lecture01.json").read_text())
+    assert [entry["slide_number"] for entry in timeline_data["timeline"]] == [1, 2]
+    assert (s4.OUTPUT_DIR / "lecture01_needs_review.json").exists()
+    assert (s4.OUTPUT_DIR / "lecture01_examples.json").exists()
 
 
 # --- Stage 5: transcript segmentation ---------------------------------------

@@ -13,6 +13,7 @@ ports whose stage hasn't been wired yet.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 
@@ -48,4 +49,16 @@ class LlmClient(Protocol):
         messages, temperature, ...) and return its concatenated text plus
         normalized usage. Raises LlmApiError on failure -- never returns
         None or a partial response."""
+        ...
+
+
+@runtime_checkable
+class Ocr(Protocol):
+    def image_to_text(self, image_path: Path, lang: str) -> str:
+        """OCR the image at image_path using the given tesseract language
+        spec (e.g. "srp_latn+eng"). Returns '' on any OCR failure -- never
+        raises. Matches scripts/04_match_frames_to_slides.py's original
+        ocr_frame contract: this stage's own docstring notes OCR failures
+        shouldn't kill the whole run, so the port preserves that rather
+        than pushing error handling onto every caller."""
         ...

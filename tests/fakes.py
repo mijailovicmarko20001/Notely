@@ -35,3 +35,22 @@ def llm_response(text: str, input_tokens: int = 100, output_tokens: int = 50, **
     return LlmResponse(
         text=text, usage=LlmUsage(input_tokens=input_tokens, output_tokens=output_tokens, **usage_kwargs)
     )
+
+
+class FakeOcr:
+    """Maps image_path (str) -> canned OCR text, rather than an ordered
+    queue like FakeLlmClient -- stage 4 OCRs a list of frame paths, and a
+    test fixture naming its frames is a more natural and less brittle way
+    to pin "this frame's text" than "the Nth call". Any path not in
+    `texts` returns '' -- the same value the real adapter returns on an
+    OCR failure, so a test can leave a frame's OCR text unset to simulate
+    that. Records every (image_path, lang) it was asked to OCR."""
+
+    def __init__(self, texts: dict[str, str] | None = None):
+        self._texts = dict(texts or {})
+        self.calls: list[tuple[str, str]] = []
+
+    def image_to_text(self, image_path, lang: str) -> str:
+        key = str(image_path)
+        self.calls.append((key, lang))
+        return self._texts.get(key, "")

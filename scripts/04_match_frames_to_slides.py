@@ -72,6 +72,16 @@ from pathlib import Path
 # Project root = parent of scripts/
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
+# project root, not on sys.path by default when this file is run directly
+# (python scripts/04_match_frames_to_slides.py) -- same fix
+# tests/conftest.py applies for test discovery. Must happen before the
+# `from notely...` import below.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from notely.adapters.tesseract_ocr import TesseractOcr  # noqa: E402
+
 # Best-effort .env loading (same pattern as stages 00/01/06), so OCR_LANG
 # set in .env actually reaches the --ocr-lang default below.
 try:
@@ -189,20 +199,6 @@ def frame_hash(image_path: Path, hash_size: int = DHASH_SIZE) -> int:
 
 def hamming_distance(a: int, b: int) -> int:
     return bin(a ^ b).count("1")
-
-
-def ocr_frame(image_path: Path, lang: str = "eng") -> str:
-    """OCR a single frame image with pytesseract; returns stripped text ('' on failure)."""
-    import pytesseract
-    from PIL import Image
-
-    try:
-        with Image.open(image_path) as img:
-            text = pytesseract.image_to_string(img, lang=lang)
-    except Exception as exc:  # noqa: BLE001 - OCR failures shouldn't kill the whole run
-        print(f"  warning: OCR failed for {image_path}: {exc}", file=sys.stderr)
-        return ""
-    return text.strip()
 
 
 def build_slide_reference_texts(slides: list[dict]) -> dict[int, str]:
@@ -775,6 +771,7 @@ def process_lecture(
     confidence_threshold: float,
     force: bool,
     ocr_lang: str = "eng",
+    ocr=None,
     stay_margin: float = DEFAULT_STAY_MARGIN,
     min_forward_score: float = DEFAULT_MIN_FORWARD_SCORE,
     detect_examples: bool = True,
@@ -785,7 +782,12 @@ def process_lecture(
 ) -> bool:
     """Returns False only when required input (frame events or extracted
     slides) was missing (the caller should treat that as a failure); an
-    already-done skip and a real successful run both return True."""
+    already-done skip and a real successful run both return True.
+
+    ocr: an Ocr (see notely.ports), defaults to the real pytesseract-backed
+    adapter; tests inject a fake instead of needing tesseract installed."""
+    if ocr is None:
+        ocr = TesseractOcr()
     events_path = FRAME_EVENTS_DIR / f"{lecture_id}.json"
     slides_path = SLIDES_EXTRACTED_DIR / f"{lecture_id}.json"
     output_json = OUTPUT_DIR / f"{lecture_id}.json"
@@ -834,7 +836,7 @@ def process_lecture(
                 )
             else:
                 print(f"  [ocr {i + 1}/{len(events)}] {frame_path.name}", flush=True)
-                event["ocr_text"] = ocr_frame(frame_path, lang=ocr_lang)
+                event["ocr_text"] = ocr.image_to_text(frame_path, ocr_lang)
             prev_hash, prev_ocr_text = h, event["ocr_text"]
         if n_deduped:
             print(f"[{lecture_id}] skipped OCR for {n_deduped}/{len(events)} near-duplicate frame(s)")
