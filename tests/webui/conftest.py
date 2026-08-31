@@ -1,35 +1,25 @@
 """Shared fixtures for the FastAPI TestClient suite (T1).
 
-The tricky part: several modules bind webui.config's path constants into
-their *own* module namespace at import time (`from .config import
-OUTPUT_DIR` etc.), so monkeypatching `webui.config.OUTPUT_DIR` alone does
-nothing for code in those modules -- each module's own copy of the name
-has to be repointed too. A `grep -n "from .config import" webui/*.py`
-turns up:
+Phase 6 (cleanup plan): webui/jobs.py, webui/progress.py, webui/review.py,
+and webui/main.py used to bind webui.config's path constants into their
+*own* module namespace at import time (`from .config import OUTPUT_DIR`
+etc.), so monkeypatching `webui.config.OUTPUT_DIR` alone did nothing for
+code in those modules -- each module's own copy of the name had to be
+repointed too. They now do `from . import config` and read `config.X`
+through the module reference instead (same pattern webui/decks.py,
+webui/media.py, and webui/routes/* already used), so patching
+webui.config's own attributes is enough for all of them.
 
-    webui/jobs.py:     LOGS_DIR, PROJECT_ROOT, SCRIPTS_DIR, VIDEOS_DIR
-    webui/review.py:   OUTPUT_DIR
-    webui/progress.py: INPUT_DIR, OUTPUT_DIR
-    webui/main.py:     OUTPUT_DIR, PROJECT_ROOT
-
-(webui/preflight.py imports the *function* `get_api_key`, not a path
-constant -- that one's fine as-is, since the function body still looks up
-`ENV_PATH` in config's own module globals every call.)
-
-webui/decks.py, webui/media.py, webui/routes/* all do `from . import
-config` / `from .. import config` and access `config.WHATEVER` through the
-module reference, so those pick up monkeypatched config attributes for
-free.
-
-webui.main also runs `OUTPUT_DIR.mkdir(...)` and mounts `StaticFiles` at
-`/files` pointed at `OUTPUT_DIR` **at import time** -- that mount is baked
-into the app object and can't be repointed by later monkeypatching. So the
-paths get redirected to a *session*-scoped tmp directory before `webui.main`
-is ever imported (nothing in tests/ imports it before this fixture runs),
-and a function-scoped autouse fixture wipes/rebuilds that same directory
-tree before every test for per-test isolation. Tests must never assert on
-`/files/...` static-mount content for a *newly swapped* directory --  that
-part of the app is fixed at first import.
+webui.main also runs `config.OUTPUT_DIR.mkdir(...)` and mounts
+`StaticFiles` at `/files` pointed at `config.OUTPUT_DIR` **at import
+time** -- that mount is baked into the app object and can't be repointed
+by later monkeypatching. So the paths get redirected to a *session*-scoped
+tmp directory before `webui.main` is ever imported (nothing in tests/
+imports it before this fixture runs), and a function-scoped autouse
+fixture wipes/rebuilds that same directory tree before every test for
+per-test isolation. Tests must never assert on `/files/...` static-mount
+content for a *newly swapped* directory -- that part of the app is fixed
+at first import.
 """
 
 import json
@@ -73,18 +63,22 @@ def _project_root(tmp_path_factory):
 
 @pytest.fixture(scope="session")
 def _patched_paths(_project_root):
-    """Repoint every module's path constants at `_project_root`, once, before
-    `webui.main` (and therefore its StaticFiles mount) is ever imported."""
+    """Repoint webui.config's path constants at `_project_root`, once,
+    before `webui.main` (and therefore its StaticFiles mount) is ever
+    imported. jobs.py/progress.py/review.py/main.py all read config.X
+    through the module reference (Phase 6), so patching config's own
+    attributes here is enough for all of them -- no per-module copies to
+    repoint separately.
+
+    config.PROJECT_ROOT *is* repointed at the tmp root (jobs.py uses it as
+    the subprocess cwd for stage scripts). This is safe for
+    webui/main.py's STATIC_DIR too, unlike before Phase 6: STATIC_DIR is
+    now Path(__file__).resolve().parent / "static" (this file's own
+    directory), not derived from PROJECT_ROOT at all."""
     from webui import config
 
     root = _project_root
-    # config.PROJECT_ROOT is deliberately left pointing at the *real* repo
-    # root: webui/main.py computes STATIC_DIR = PROJECT_ROOT / "webui" /
-    # "static" at import time and mounts it immediately, so if PROJECT_ROOT
-    # were repointed here, main.py would try (and fail) to serve the app's
-    # own JS/CSS from a tmp dir that doesn't have a webui/static/ under it.
-    # Nothing reads config.PROJECT_ROOT for user data -- every data path
-    # below is repointed explicitly instead of being derived from it.
+    config.PROJECT_ROOT = root
     config.SCRIPTS_DIR = root / "scripts"
     config.INPUT_DIR = root / "input"
     config.OUTPUT_DIR = root / "output"
@@ -94,28 +88,6 @@ def _patched_paths(_project_root):
     config.ENV_PATH = root / ".env"
     config.VIDEO_URLS_PATH = config.INPUT_DIR / "video_urls.json"
     config.LECTURES_META_PATH = config.INPUT_DIR / "lectures.json"
-
-    from webui import jobs, progress, review
-
-    jobs.LOGS_DIR = config.LOGS_DIR
-    # Unlike config.PROJECT_ROOT above, jobs.PROJECT_ROOT *is* repointed at
-    # the tmp root: jobs.py uses it as the subprocess cwd, so leaving it at
-    # the real repo root would make the scheduler run stage subprocesses
-    # from the wrong cwd.
-    jobs.PROJECT_ROOT = root
-    jobs.SCRIPTS_DIR = config.SCRIPTS_DIR
-    # get_video_duration() reads jobs.VIDEOS_DIR (re-exported from config,
-    # same pattern as the others above) to build the videos/ path.
-    jobs.VIDEOS_DIR = config.VIDEOS_DIR
-    progress.INPUT_DIR = config.INPUT_DIR
-    progress.OUTPUT_DIR = config.OUTPUT_DIR
-    review.OUTPUT_DIR = config.OUTPUT_DIR
-
-    from webui import main as main_module
-
-    main_module.OUTPUT_DIR = config.OUTPUT_DIR
-    # main_module.PROJECT_ROOT is deliberately left alone too, for the same
-    # STATIC_DIR reason as config.PROJECT_ROOT above.
 
     return config
 

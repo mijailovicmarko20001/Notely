@@ -5,6 +5,7 @@ Run from the repo root:  uvicorn webui.main:app --port 8000
 """
 
 import os
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -12,11 +13,15 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .config import OUTPUT_DIR, PROJECT_ROOT
+from . import config
 from .errors import NotelyError
 from .routes import router
 
-STATIC_DIR = PROJECT_ROOT / "webui" / "static"
+# This file's own directory, not derived from config.PROJECT_ROOT: the
+# static assets ship alongside this module regardless of where the
+# project root/user-data paths point (tests repoint config.PROJECT_ROOT
+# at a tmp dir; the app's own JS/CSS still live here).
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title="Notely")
 app.include_router(router)
@@ -102,8 +107,8 @@ async def no_cache_static(request: Request, call_next):
     return response
 
 
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/files", StaticFiles(directory=str(OUTPUT_DIR)), name="files")
+config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/files", StaticFiles(directory=str(config.OUTPUT_DIR)), name="files")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 

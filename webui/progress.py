@@ -8,7 +8,7 @@ the expected artifact existing on disk (STAGE_ARTIFACTS).
 import re
 
 from notely.stages import MAX_PIPELINE_STAGE, STAGES_BY_NUMBER
-from .config import INPUT_DIR, OUTPUT_DIR
+from . import config
 
 STAGE_NAMES = {n: STAGES_BY_NUMBER[n].name for n in range(MAX_PIPELINE_STAGE + 1)}
 
@@ -16,11 +16,11 @@ STAGE_NAMES = {n: STAGES_BY_NUMBER[n].name for n in range(MAX_PIPELINE_STAGE + 1
 def stage_artifact(stage: int, lecture_id: str = None):
     """Path that must exist (and be non-empty) for the stage to count as done.
 
-    Looks up this module's own INPUT_DIR/OUTPUT_DIR (not notely.paths'
-    directly) so tests can monkeypatch progress.INPUT_DIR/OUTPUT_DIR to
-    redirect artifact checks into a tmp tree, same as before the stage
-    registry existed."""
-    return STAGES_BY_NUMBER[stage].artifact_path(INPUT_DIR, OUTPUT_DIR, lecture_id)
+    Looks up config.INPUT_DIR/OUTPUT_DIR through the module reference (not
+    a `from .config import` copy) so tests can monkeypatch
+    config.INPUT_DIR/OUTPUT_DIR to redirect artifact checks into a tmp
+    tree -- one place to patch instead of a separate copy per importer."""
+    return STAGES_BY_NUMBER[stage].artifact_path(config.INPUT_DIR, config.OUTPUT_DIR, lecture_id)
 
 
 def artifact_ok(stage: int, lecture_id: str = None) -> bool:

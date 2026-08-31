@@ -8,17 +8,18 @@ tmp_path-based project-root fixture with stub stage scripts already living
 alongside tests/test_jobs.py's 69 pure-logic tests. As of this writing,
 tests/test_jobs.py has no such fixture (just JobManager()/build_tasks()
 called directly, no monkeypatching, no scripts dir) -- so this file adds
-its own, following the same monkeypatch-the-re-exported-constants pattern
-used by tests/webui/conftest.py, rather than editing test_jobs.py (which
-stays untouched and green).
-"""
+its own, rather than editing test_jobs.py (which stays untouched and
+green). Only webui.config's own constants need patching (Phase 6:
+webui/jobs.py and webui/progress.py now read config.X through the module
+reference instead of each binding its own `from .config import X` copy at
+import time, so there's exactly one place to redirect)."""
 
 import json
 import time
 
 import pytest
 
-from webui import config, jobs, progress
+from webui import config, jobs
 
 # --- fixture: tmp project root + stub stage scripts -------------------------
 
@@ -50,10 +51,6 @@ def project(tmp_path, monkeypatch):
         )
     )
 
-    # config.py itself (SCRIPTS_DIR is read fresh via config.SCRIPTS_DIR by
-    # webui.media, not relevant here, but keep it consistent) plus the
-    # copies re-exported at import time into webui.jobs / webui.progress --
-    # see tests/webui/conftest.py's docstring for why both are needed.
     monkeypatch.setattr(config, "PROJECT_ROOT", root)
     monkeypatch.setattr(config, "SCRIPTS_DIR", root / "scripts")
     monkeypatch.setattr(config, "INPUT_DIR", root / "input")
@@ -61,14 +58,6 @@ def project(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "LOGS_DIR", root / "output" / "logs")
     monkeypatch.setattr(config, "VIDEOS_DIR", root / "input" / "videos")
     monkeypatch.setattr(config, "ENV_PATH", root / ".env")
-
-    monkeypatch.setattr(jobs, "PROJECT_ROOT", root)
-    monkeypatch.setattr(jobs, "SCRIPTS_DIR", root / "scripts")
-    monkeypatch.setattr(jobs, "LOGS_DIR", root / "output" / "logs")
-    monkeypatch.setattr(jobs, "VIDEOS_DIR", root / "input" / "videos")
-
-    monkeypatch.setattr(progress, "INPUT_DIR", root / "input")
-    monkeypatch.setattr(progress, "OUTPUT_DIR", root / "output")
 
     return root
 

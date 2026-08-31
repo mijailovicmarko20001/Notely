@@ -21,19 +21,19 @@ import threading
 import time
 import uuid
 
-from . import progress
-from .config import LOGS_DIR, PROJECT_ROOT, SCRIPTS_DIR, VIDEOS_DIR, stage_env
+from . import config, progress
 
 # notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
 # project root -- not guaranteed to already be on sys.path depending on how
 # the server was launched (uvicorn webui.main:app vs. python -m webui.main
 # vs. an IDE run config), so this is asserted explicitly rather than
 # assumed. Must happen before the `from notely...` import below.
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+if str(config.PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(config.PROJECT_ROOT))
 
 from notely.adapters.ffprobe_media_probe import FfprobeMediaProbe  # noqa: E402
 from notely.runner import build_tasks  # noqa: E402, F401 (re-exported: webui.jobs.build_tasks is public API)
+from notely.stages import MAX_PIPELINE_STAGE  # noqa: E402
 
 MAX_EVENTS_IN_MEMORY = 2000
 
@@ -51,14 +51,14 @@ def stage_script(stage: int) -> str:
     # SCRIPTS_DIR at a tmp dir of differently-named stub scripts (still
     # "{stage:02d}_*.py") to drive the real scheduler without the real
     # pipeline -- a fixed-name lookup would break that test seam.
-    matches = sorted(glob.glob(str(SCRIPTS_DIR / f"{stage:02d}_*.py")))
+    matches = sorted(glob.glob(str(config.SCRIPTS_DIR / f"{stage:02d}_*.py")))
     if not matches:
         raise FileNotFoundError(f"no script for stage {stage}")
     return matches[0]
 
 
 def get_video_duration(lecture_id: str):
-    return _MEDIA_PROBE.get_duration(VIDEOS_DIR / f"{lecture_id}.mp4")
+    return _MEDIA_PROBE.get_duration(config.VIDEOS_DIR / f"{lecture_id}.mp4")
 
 
 class JobManager:
@@ -228,8 +228,8 @@ class JobManager:
         try:
             proc = subprocess.Popen(
                 argv,
-                cwd=str(PROJECT_ROOT),
-                env=stage_env(),
+                cwd=str(config.PROJECT_ROOT),
+                env=config.stage_env(),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -291,12 +291,12 @@ class JobManager:
         return status == "done"
 
     def _run(self, tasks):
-        LOGS_DIR.mkdir(parents=True, exist_ok=True)
-        log_path = LOGS_DIR / f"{self.job['id']}.log"
+        config.LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        log_path = config.LOGS_DIR / f"{self.job['id']}.log"
         failed_lectures = set()  # a failure only skips that lecture's remaining stages
 
         # stage 7 (assembly, lecture_id=None) runs after both lanes drain
-        final_tasks = [(i, t) for i, t in enumerate(tasks) if t[1] == 7]
+        final_tasks = [(i, t) for i, t in enumerate(tasks) if t[1] == MAX_PIPELINE_STAGE]
 
         # One lane per independent resource, so no stage ever queues behind a
         # stage using different hardware:
@@ -305,7 +305,7 @@ class JobManager:
         #   gpu — transcription (stage 1) when WHISPER_BACKEND=mlx.
         #   cpu — extraction/detection/OCR/segmentation (2-5), plus
         #         transcription on the CPU backend.
-        gpu_transcribe = stage_env().get("WHISPER_BACKEND", "").lower() == "mlx"
+        gpu_transcribe = config.stage_env().get("WHISPER_BACKEND", "").lower() == "mlx"
         lanes = [
             ("net", {0}),
             ("cpu", {2, 3, 4, 5} if gpu_transcribe else {1, 2, 3, 4, 5}),
