@@ -50,6 +50,14 @@ def _run_under_c_locale(code: str) -> subprocess.CompletedProcess:
 
 
 def test_stage05_save_json_writes_utf8_under_c_locale():
+    # The embedded `code` string below is argv to a subprocess (`python -c`).
+    # It must stay pure ASCII, escapes only, including in its own comments --
+    # on Linux under LC_ALL=C with PYTHONUTF8=0/PYTHONCOERCECLOCALE=0, a
+    # single literal non-ASCII byte anywhere in that argv gets
+    # surrogateescape-decoded by CPython's own startup and then can't be
+    # re-encoded to compile, so the interpreter fails before the test body
+    # ever runs (macOS's locale handling doesn't hit this, which is why a
+    # literal accented char here passed locally but broke in CI).
     code = """
 import importlib.util, tempfile, pathlib
 spec = importlib.util.spec_from_file_location("s05", "scripts/05_segment_transcript.py")
@@ -58,7 +66,8 @@ spec.loader.exec_module(mod)
 path = pathlib.Path(tempfile.mktemp())
 mod.save_json(path, {"transcript_text": "Ovo je \\u010d\\u0161\\u017e\\u0111\\u0107 test"})
 raw = path.read_bytes()
-assert "čšžđć".encode() in raw, raw  # ensure_ascii=False: real UTF-8 bytes, not \\u escapes
+# ensure_ascii=False: real UTF-8 bytes were written, not literal \\u escapes.
+assert "\\u010d\\u0161\\u017e\\u0111\\u0107".encode() in raw, raw
 print("OK")
 """
     result = _run_under_c_locale(code)
@@ -68,6 +77,8 @@ print("OK")
 
 
 def test_stage07_assemble_guide_writes_utf8_under_c_locale():
+    # See the ASCII-only-argv note in test_stage05_... above -- same constraint
+    # applies to this embedded `code` string.
     code = """
 import tempfile, pathlib
 from notely.pipeline import assemble as mod
@@ -79,7 +90,7 @@ notes_dir.mkdir(parents=True)
 ok = mod.assemble_guide(force=True, topic_index=False)
 assert ok is True
 raw = (tmp / "output" / "study_guide.md").read_bytes()
-assert "čšžđć".encode() in raw, raw
+assert "\\u010d\\u0161\\u017e\\u0111\\u0107".encode() in raw, raw
 print("OK")
 """
     result = _run_under_c_locale(code)
