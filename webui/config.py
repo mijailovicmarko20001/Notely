@@ -24,6 +24,11 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
 # re-exported for other webui/ modules that do `from .config import
 # SCRIPTS_DIR` etc. (see tests/webui/conftest.py's docstring for the full
 # list) -- noqa since ruff can't see that cross-module usage.
+from notely.env import (  # noqa: E402
+    DEFAULT_OCR_LANG,
+    DEFAULT_STAGE3_THRESHOLD,
+    DEFAULT_WHISPER_MODEL,
+)
 from notely.io import load_json_or_default  # noqa: E402
 from notely.paths import (  # noqa: E402, F401
     INPUT_DIR,
@@ -73,9 +78,9 @@ SETTING_KEYS = ("ANTHROPIC_API_KEY", "WHISPER_MODEL", "NOTES_MODEL", "OCR_LANG")
 
 DEFAULT_STAGE_OPTIONS = {
     "crop": "0.12,0.06,0.63,0.88",  # stage 03 — Zoom capture of PDF viewer
-    "threshold": 0.02,  # stage 03
+    "threshold": DEFAULT_STAGE3_THRESHOLD,  # stage 03 -- D1, see notely.env
     "interval": 1.5,  # stage 03
-    "ocr_lang": "srp_latn+eng",  # stage 04
+    "ocr_lang": DEFAULT_OCR_LANG,  # stage 04 -- D3, see notely.env
     "margin": 0.15,  # stage 04
     "stay_margin": 0.05,  # stage 04
     "confidence_threshold": 0.25,  # stage 04
@@ -88,9 +93,9 @@ DEFAULT_STAGE_OPTIONS = {
 }
 
 DEFAULT_ENV = {
-    "WHISPER_MODEL": "medium",  # "small" mis-detected Serbian as Bosnian
+    "WHISPER_MODEL": DEFAULT_WHISPER_MODEL,  # D2, see notely.env
     "NOTES_MODEL": "claude-sonnet-5",
-    "OCR_LANG": "srp_latn+eng",
+    "OCR_LANG": DEFAULT_OCR_LANG,  # D3, see notely.env
 }
 
 

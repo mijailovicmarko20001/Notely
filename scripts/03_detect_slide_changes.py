@@ -63,6 +63,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
 from notely.adapters.cv2_frame_reader import Cv2FrameReader  # noqa: E402
+from notely.env import DEFAULT_STAGE3_THRESHOLD  # noqa: E402
 from notely.io import save_json  # noqa: E402
 from notely.paths import PROJECT_ROOT  # noqa: E402
 from notely.paths import VIDEOS_DIR as INPUT_VIDEOS_DIR  # noqa: E402
@@ -250,7 +251,7 @@ def main() -> None:
     parser.add_argument(
         "--threshold",
         type=float,
-        default=0.02,
+        default=DEFAULT_STAGE3_THRESHOLD,
         help=(
             "normalized mean-abs-diff above which a frame pair counts as a slide change "
             "(default: 0.02 -- see DOCUMENTATION.md's calibration table; 0.08 detected "

@@ -61,7 +61,6 @@ Notes:
 """
 
 import argparse
-import os
 import re
 import sys
 from pathlib import Path
@@ -81,6 +80,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
 
 from notely.adapters.ffprobe_media_probe import FfprobeMediaProbe  # noqa: E402
 from notely.adapters.tesseract_ocr import TesseractOcr  # noqa: E402
+from notely.env import DEFAULT_OCR_LANG, env_str  # noqa: E402
 from notely.io import load_json, save_json  # noqa: E402
 from notely.paths import PROJECT_ROOT  # noqa: E402
 from notely.paths import VIDEOS_DIR as INPUT_VIDEOS_DIR  # noqa: E402
@@ -900,7 +900,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--ocr-lang",
-        default=os.environ.get("OCR_LANG", "srp_latn+eng"),
+        default=env_str("OCR_LANG", DEFAULT_OCR_LANG),
         help='tesseract language(s) (default: env OCR_LANG or "srp_latn+eng", matching webui/config.py)',
     )
     parser.add_argument(
