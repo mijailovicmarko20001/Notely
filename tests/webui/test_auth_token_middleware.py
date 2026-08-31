@@ -1,25 +1,25 @@
-"""Characterization tests for webui/main.py's auth_token_check middleware
+"""Characterization tests for webui/middleware.py's auth_token_check
 (previously zero coverage): the opt-in NOTELY_AUTH_TOKEN shared-secret guard.
 
-_AUTH_TOKEN is read from the environment once at webui.main's import time
-(main.py:77), so it can't be flipped per-test via env vars without reloading
-the module -- which would rebuild the real app's middleware stack and static
+_AUTH_TOKEN is read from the environment once at webui.middleware's import
+time, so it can't be flipped per-test via env vars without reloading the
+module -- which would rebuild the real app's middleware stack and static
 mounts the session-scoped `client` fixture depends on (see
 tests/webui/conftest.py's docstring). Instead, this mounts the exact same
 middleware *function* on a tiny throwaway app and monkeypatches the module
-attribute it reads (webui.main._AUTH_TOKEN) directly -- exercising the real
-production code, isolated from the shared app instance."""
+attribute it reads (webui.middleware._AUTH_TOKEN) directly -- exercising
+the real production code, isolated from the shared app instance."""
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from webui import main as webui_main
+from webui import middleware as webui_middleware
 
 
 def _app_with_token(monkeypatch, token):
-    monkeypatch.setattr(webui_main, "_AUTH_TOKEN", token)
+    monkeypatch.setattr(webui_middleware, "_AUTH_TOKEN", token)
     app = FastAPI()
-    app.middleware("http")(webui_main.auth_token_check)
+    app.middleware("http")(webui_middleware.auth_token_check)
 
     @app.get("/api/state")
     def state():
@@ -68,7 +68,8 @@ def test_non_api_path_is_never_gated(monkeypatch):
 
 def test_events_endpoint_accepts_query_param_token(monkeypatch):
     # EventSource (browser SSE client) can't set custom headers, so the
-    # SSE endpoint alone also accepts ?token=... -- see main.py:87-89.
+    # SSE endpoint alone also accepts ?token=... -- see middleware.py's
+    # auth_token_check.
     client = _app_with_token(monkeypatch, "secret123")
     resp = client.get("/api/jobs/current/events?token=secret123")
     assert resp.status_code == 200
