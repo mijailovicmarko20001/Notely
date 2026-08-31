@@ -64,3 +64,17 @@ jobs:
 
       - name: Run tests
         run: python -m pytest tests/ -q
+
+  docker-build:
+    # ubuntu-latest runners are amd64 natively, so a plain `docker build`
+    # here -- no buildx/QEMU emulation needed -- verifies the amd64 image
+    # actually builds: previously untested (TODO.md), since local
+    # verification would have meant installing buildx and running a slow
+    # QEMU-emulated build on this project's arm64 (Apple Silicon) dev
+    # machine. Build-only, not pushed anywhere -- no registry configured.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the (CPU-only) base image for linux/amd64
+        run: docker build --target base --platform linux/amd64 -t notely:amd64-ci .

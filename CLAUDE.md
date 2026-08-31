@@ -1,5 +1,17 @@
 # CLAUDE.md — Lecture Video + Slide → Study Notes Pipeline
 
+> **This is the original design spec, frozen** — kept as-is because it's still
+> an accurate description of the pipeline scripts (`scripts/00`-`08`) and the
+> reasoning behind each stage. Two things have since grown beyond what it
+> describes and aren't reflected below: a local web UI (`webui/`, FastAPI +
+> vanilla JS — the "no web app" line just below predates it) that drives the
+> same stage scripts, and a test suite (`tests/`, pytest). See
+> `DOCUMENTATION.md` for the current, accurate picture of both, and for how/why
+> the design diverged from this document in the places it did (§3, "How we got
+> here"). The "Suggested stack" section below also lists a few libraries
+> (`scenedetect`, `sentence-transformers`) that were never actually adopted —
+> `requirements.txt` is the source of truth for what's really installed.
+
 ## What we're building
 
 A local, offline pipeline that takes recorded lecture videos + the professor's
@@ -335,11 +347,12 @@ it actually is.
 - `yt-dlp` — fetching video from YouTube links
 - `ffprobe` (ships with ffmpeg) — verifying downloaded video integrity
 - `faster-whisper` — transcription
-- `python-pptx`, `pypdfium2` / `pdfplumber` — slide text + rendering
+- `python-pptx`, `pypdfium2` — slide text + rendering
 - `pypdf` — PDF page merging (webui slide-pool dedup)
-- `opencv-python`, optionally `scenedetect` — slide-change detection
+- `opencv-python-headless` — slide-change detection (headless: no GUI libs
+  needed, Docker-friendly; API-identical to `opencv-python`)
 - `pytesseract` (+ tesseract binary installed via apt) — OCR
-- `sentence-transformers` or `scikit-learn` (TF-IDF) — text similarity
+- `scikit-learn` (TF-IDF) — text similarity
 - `anthropic` Python SDK — note generation
 - `ffmpeg` — audio extraction, format normalization
 - `python-dotenv` — load `ANTHROPIC_API_KEY` from `.env`

@@ -63,8 +63,8 @@ the same whether or not those binaries are installed. CI
 - Commit messages: one topic per commit, explain *why* not just *what* (see
   `git log` for the convention — e.g. "Concurrency: unify JobManager
   locking, fix start/cancel races"). If a change is driven by an item in
-  one of the `*_TODO.md` files, reference it (e.g. "see OPEN_SOURCE_TODO.md
-  O2") and update that file's checkbox/notes in the same PR.
+  `TODO.md`, reference it and check the item off (or delete it) in the
+  same PR.
 
 ## Reporting bugs / requesting features
 
