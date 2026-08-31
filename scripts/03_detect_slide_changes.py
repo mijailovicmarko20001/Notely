@@ -197,18 +197,21 @@ def process_lecture(
     threshold: float,
     crop_str: str | None,
     force: bool,
-) -> None:
+) -> bool:
+    """Returns False only when no video was found (the caller should treat
+    that as a failure); an already-done skip and a real successful run
+    both return True."""
     video_path = INPUT_VIDEOS_DIR / f"{lecture_id}.mp4"
     output_json = OUTPUT_DIR / f"{lecture_id}.json"
     frames_dir = OUTPUT_DIR / f"{lecture_id}_frames"
 
     if not video_path.exists():
         print(f"[skip] {lecture_id}: no video found at {video_path}", file=sys.stderr)
-        return
+        return False
 
     if output_json.exists() and not force:
         print(f"[skip] {lecture_id}: {output_json} already exists (use --force to redo)")
-        return
+        return True
 
     crop = parse_crop(crop_str) if crop_str else None
 
@@ -225,6 +228,7 @@ def process_lecture(
     tmp_json.replace(output_json)
 
     print(f"[done] {lecture_id}: {len(events)} frame events -> {output_json}")
+    return True
 
 
 def main() -> None:
@@ -273,14 +277,21 @@ def main() -> None:
     else:
         lecture_ids = [args.lecture_id]
 
+    failures = []
     for lecture_id in lecture_ids:
-        process_lecture(
+        ok = process_lecture(
             lecture_id,
             interval=args.interval,
             threshold=args.threshold,
             crop_str=args.crop,
             force=args.force,
         )
+        if not ok:
+            failures.append(lecture_id)
+
+    if failures:
+        print(f"FAILED: {', '.join(failures)}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

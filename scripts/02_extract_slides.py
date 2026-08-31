@@ -17,6 +17,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -159,11 +160,14 @@ def extract_from_pdf(pdf_path: Path, image_dir: Path) -> list[dict]:
     return slides
 
 
-def process_lecture(lecture_id: str, force: bool) -> None:
+def process_lecture(lecture_id: str, force: bool) -> bool:
+    """Returns False only when no slide deck was found (the caller should
+    treat that as a failure); an already-done skip and a real successful
+    run both return True."""
     out_json = OUTPUT_DIR / f"{lecture_id}.json"
     if out_json.exists() and not force:
         print(f"[{lecture_id}] {out_json} already exists, skipping (use --force to re-run)")
-        return
+        return True
 
     pptx_path = SLIDES_DIR / f"{lecture_id}.pptx"
     pdf_path = SLIDES_DIR / f"{lecture_id}.pdf"
@@ -175,7 +179,7 @@ def process_lecture(lecture_id: str, force: bool) -> None:
         slides = extract_from_pdf(pdf_path, image_dir)
     else:
         print(f"[{lecture_id}] no deck found (looked for {pptx_path.name} / {pdf_path.name}) in {SLIDES_DIR}")
-        return
+        return False
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     # Temp file + atomic rename: a killed process can never leave a
@@ -185,6 +189,7 @@ def process_lecture(lecture_id: str, force: bool) -> None:
     tmp_json.write_text(json.dumps(slides, indent=2))
     tmp_json.replace(out_json)
     print(f"[{lecture_id}] wrote {len(slides)} slides -> {out_json}")
+    return True
 
 
 def main() -> None:
@@ -205,8 +210,10 @@ def main() -> None:
     else:
         lecture_ids = [args.lecture_id]
 
-    for lecture_id in lecture_ids:
-        process_lecture(lecture_id, force=args.force)
+    failures = [lid for lid in lecture_ids if not process_lecture(lid, force=args.force)]
+    if failures:
+        print(f"FAILED: {', '.join(failures)}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

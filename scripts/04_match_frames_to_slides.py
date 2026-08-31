@@ -782,7 +782,10 @@ def process_lecture(
     example_ink_delta: int = DEFAULT_EXAMPLE_INK_DELTA,
     example_ink_text_overlap_min: float = DEFAULT_EXAMPLE_INK_TEXT_OVERLAP_MIN,
     example_ink_novel_word_min: float = DEFAULT_EXAMPLE_INK_NOVEL_WORD_MIN,
-) -> None:
+) -> bool:
+    """Returns False only when required input (frame events or extracted
+    slides) was missing (the caller should treat that as a failure); an
+    already-done skip and a real successful run both return True."""
     events_path = FRAME_EVENTS_DIR / f"{lecture_id}.json"
     slides_path = SLIDES_EXTRACTED_DIR / f"{lecture_id}.json"
     output_json = OUTPUT_DIR / f"{lecture_id}.json"
@@ -791,14 +794,14 @@ def process_lecture(
 
     if not events_path.exists():
         print(f"[skip] {lecture_id}: no frame events found at {events_path}", file=sys.stderr)
-        return
+        return False
     if not slides_path.exists():
         print(f"[skip] {lecture_id}: no extracted slides found at {slides_path}", file=sys.stderr)
-        return
+        return False
 
     if output_json.exists() and not force:
         print(f"[skip] {lecture_id}: {output_json} already exists (use --force to redo)")
-        return
+        return True
 
     events = load_json(events_path)
     slides = load_json(slides_path)
@@ -894,6 +897,7 @@ def process_lecture(
         f"({n_flags} item(s) flagged -> {needs_review_json}, "
         f"{len(example_candidates)} example candidate(s) -> {examples_json})"
     )
+    return True
 
 
 def main() -> None:
@@ -1009,8 +1013,9 @@ def main() -> None:
     else:
         lecture_ids = [args.lecture_id]
 
+    failures = []
     for lecture_id in lecture_ids:
-        process_lecture(
+        ok = process_lecture(
             lecture_id,
             margin=args.margin,
             confidence_threshold=args.confidence_threshold,
@@ -1024,6 +1029,12 @@ def main() -> None:
             example_ink_text_overlap_min=args.example_ink_text_overlap_min,
             example_ink_novel_word_min=args.example_ink_novel_word_min,
         )
+        if not ok:
+            failures.append(lecture_id)
+
+    if failures:
+        print(f"FAILED: {', '.join(failures)}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

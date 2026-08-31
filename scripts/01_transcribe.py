@@ -144,18 +144,21 @@ def extract_audio_compressed(video_path: Path, out_path: Path, bitrate: str = "2
         raise RuntimeError(f"ffmpeg failed compressing audio from {video_path}:\n{stderr}")
 
 
-def transcribe_lecture(lecture_id: str, model_size: str, force: bool = False) -> None:
-    """Transcribe a single lecture's video and write its transcript JSON."""
+def transcribe_lecture(lecture_id: str, model_size: str, force: bool = False) -> bool:
+    """Transcribe a single lecture's video and write its transcript JSON.
+    Returns False only when a required input was missing (the caller should
+    treat that as a failure); an already-done skip and a real successful
+    run both return True."""
     video_path = INPUT_VIDEOS_DIR / f"{lecture_id}.mp4"
     output_path = OUTPUT_TRANSCRIPTS_DIR / f"{lecture_id}.json"
 
     if not video_path.exists():
         print(f"[skip] {lecture_id}: no video found at {video_path}", file=sys.stderr)
-        return
+        return False
 
     if output_path.exists() and not force:
         print(f"[skip] {lecture_id}: transcript already exists at {output_path} (use --force to redo)")
-        return
+        return True
 
     OUTPUT_TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -206,6 +209,8 @@ def transcribe_lecture(lecture_id: str, model_size: str, force: bool = False) ->
     finally:
         if tmp_wav_path.exists():
             tmp_wav_path.unlink()
+
+    return True
 
 
 def transcribe_with_mlx(lecture_id, wav_path, model_size, forced_language, vocab_prompt) -> dict:
@@ -437,15 +442,22 @@ def main():
     load_dotenv_if_available()
     model_size = os.environ.get("WHISPER_MODEL", "medium")
 
+    failures = []
     if args.all:
         video_files = sorted(INPUT_VIDEOS_DIR.glob("*.mp4"))
         if not video_files:
             print(f"No videos found in {INPUT_VIDEOS_DIR}")
             return
         for video_path in video_files:
-            transcribe_lecture(video_path.stem, model_size=model_size, force=args.force)
+            if not transcribe_lecture(video_path.stem, model_size=model_size, force=args.force):
+                failures.append(video_path.stem)
     else:
-        transcribe_lecture(args.lecture_id, model_size=model_size, force=args.force)
+        if not transcribe_lecture(args.lecture_id, model_size=model_size, force=args.force):
+            failures.append(args.lecture_id)
+
+    if failures:
+        print(f"FAILED: {', '.join(failures)}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

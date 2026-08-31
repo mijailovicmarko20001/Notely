@@ -28,7 +28,7 @@ s04 = load_stage("04_match_frames_to_slides.py")
 
 def test_stage03_threshold_default_matches_webui(monkeypatch):
     captured = {}
-    monkeypatch.setattr(s03, "process_lecture", lambda lecture_id, **kw: captured.update(kw))
+    monkeypatch.setattr(s03, "process_lecture", lambda lecture_id, **kw: captured.update(kw) or True)
     monkeypatch.setattr(sys, "argv", ["03_detect_slide_changes.py", "lecture01"])
 
     s03.main()
@@ -38,7 +38,7 @@ def test_stage03_threshold_default_matches_webui(monkeypatch):
 
 def test_stage01_whisper_model_default_matches_webui(monkeypatch):
     captured = {}
-    monkeypatch.setattr(s01, "transcribe_lecture", lambda lecture_id, **kw: captured.update(kw))
+    monkeypatch.setattr(s01, "transcribe_lecture", lambda lecture_id, **kw: captured.update(kw) or True)
     monkeypatch.setattr(s01, "load_dotenv_if_available", lambda: None)  # don't let a real .env leak in
     monkeypatch.delenv("WHISPER_MODEL", raising=False)
     monkeypatch.setattr(sys, "argv", ["01_transcribe.py", "lecture01"])
@@ -50,7 +50,7 @@ def test_stage01_whisper_model_default_matches_webui(monkeypatch):
 
 def test_stage04_ocr_lang_default_matches_webui(monkeypatch):
     captured = {}
-    monkeypatch.setattr(s04, "process_lecture", lambda lecture_id, **kw: captured.update(kw))
+    monkeypatch.setattr(s04, "process_lecture", lambda lecture_id, **kw: captured.update(kw) or True)
     monkeypatch.delenv("OCR_LANG", raising=False)
     monkeypatch.setattr(sys, "argv", ["04_match_frames_to_slides.py", "lecture01"])
 
