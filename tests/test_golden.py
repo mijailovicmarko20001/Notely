@@ -23,6 +23,7 @@ from fakes import FakeDocConverter, FakeFrameReader, FakeHtmlToPdf, FakeLlmClien
 from notely.pipeline import assemble as s7
 from notely.pipeline import detect as s3
 from notely.pipeline import export as s8
+from notely.pipeline import matching as s4
 from notely.pipeline import notes as s6
 from notely.pipeline import slides as s2
 from notely.ports import SampledFrame
@@ -107,8 +108,6 @@ def test_stage02_extract_from_pptx_golden(tmp_path):
 
 
 # --- Stage 4: frame-to-slide matching (pure combination pipeline) ----------
-
-s4 = load_stage("04_match_frames_to_slides.py")
 
 STAGE4_SLIDES = [
     {

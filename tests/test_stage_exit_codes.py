@@ -21,6 +21,7 @@ import pytest
 
 from conftest import load_stage
 from notely.pipeline import detect as m03
+from notely.pipeline import matching as m04
 from notely.pipeline import slides as m02
 
 s01 = load_stage("01_transcribe.py")
@@ -35,20 +36,20 @@ def empty_project(tmp_path, monkeypatch):
     video, no slide deck, no frame events, nothing. These are already
     fully-resolved Path objects computed from PROJECT_ROOT at each module's
     import time, so they're repointed directly rather than via PROJECT_ROOT
-    (which nothing re-derives paths from after import). Stages 2/3's dir
-    constants are patched on notely.pipeline.slides/detect (Phase 5 moved
-    process_lecture there) -- s02/s03.process_lecture is the same function
-    object either way, but its own global lookups resolve against that
-    module, not the script's re-export of it."""
+    (which nothing re-derives paths from after import). Stages 2/3/4's dir
+    constants are patched on notely.pipeline.slides/detect/matching (Phase 5
+    moved process_lecture there) -- s02/s03/s04.process_lecture is the same
+    function object either way, but its own global lookups resolve against
+    that module, not the script's re-export of it."""
     monkeypatch.setattr(s01, "INPUT_VIDEOS_DIR", tmp_path / "input" / "videos")
     monkeypatch.setattr(s01, "OUTPUT_TRANSCRIPTS_DIR", tmp_path / "output" / "transcripts")
     monkeypatch.setattr(m02, "SLIDES_DIR", tmp_path / "input" / "slides")
     monkeypatch.setattr(m02, "OUTPUT_DIR", tmp_path / "output" / "slides_extracted")
     monkeypatch.setattr(m03, "INPUT_VIDEOS_DIR", tmp_path / "input" / "videos")
     monkeypatch.setattr(m03, "OUTPUT_DIR", tmp_path / "output" / "frame_events")
-    monkeypatch.setattr(s04, "FRAME_EVENTS_DIR", tmp_path / "output" / "frame_events")
-    monkeypatch.setattr(s04, "SLIDES_EXTRACTED_DIR", tmp_path / "output" / "slides_extracted")
-    monkeypatch.setattr(s04, "OUTPUT_DIR", tmp_path / "output" / "slide_timelines")
+    monkeypatch.setattr(m04, "FRAME_EVENTS_DIR", tmp_path / "output" / "frame_events")
+    monkeypatch.setattr(m04, "SLIDES_EXTRACTED_DIR", tmp_path / "output" / "slides_extracted")
+    monkeypatch.setattr(m04, "OUTPUT_DIR", tmp_path / "output" / "slide_timelines")
     return tmp_path
 
 

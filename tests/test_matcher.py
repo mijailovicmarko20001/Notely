@@ -1,15 +1,17 @@
-"""scripts/04_match_frames_to_slides.py: the sequential-order-constrained
-matcher. Per CLAUDE.md this is "the highest-risk stage in the pipeline" --
-worth pinning its margin/stay_margin/min_forward_score behavior down with
-synthetic cases, on top of the manual dry-run verification already done
-against real lecture01 data (see DOCUMENTATION.md and TODO.md for that
-investigation)."""
+"""notely.pipeline.matching: the sequential-order-constrained matcher. Per
+CLAUDE.md this is "the highest-risk stage in the pipeline" -- worth pinning
+its margin/stay_margin/min_forward_score behavior down with synthetic
+cases, on top of the manual dry-run verification already done against real
+lecture01 data (see DOCUMENTATION.md and TODO.md for that investigation).
+
+frame_hash/hamming_distance/DHASH_DEDUP_THRESHOLD (the OCR-dedup pre-pass)
+live in notely.pipeline.example_detect, imported here as m4d -- see that
+module's docstring for why."""
 
 import numpy as np
 
-from conftest import load_stage
-
-m4 = load_stage("04_match_frames_to_slides.py")
+from notely.pipeline import example_detect as m4d
+from notely.pipeline import matching as m4
 
 
 def _events(n):
@@ -179,23 +181,23 @@ def _make_image(tmp_path, name, fill):
 
 
 def test_hamming_distance_identical_hashes_is_zero():
-    assert m4.hamming_distance(0b1010, 0b1010) == 0
+    assert m4d.hamming_distance(0b1010, 0b1010) == 0
 
 
 def test_hamming_distance_counts_differing_bits():
-    assert m4.hamming_distance(0b0000, 0b1011) == 3
+    assert m4d.hamming_distance(0b0000, 0b1011) == 3
 
 
 def test_frame_hash_identical_images_have_zero_distance(tmp_path):
     a = _make_image(tmp_path, "a.png", (200, 200, 200))
     b = _make_image(tmp_path, "b.png", (200, 200, 200))
-    assert m4.hamming_distance(m4.frame_hash(a), m4.frame_hash(b)) == 0
+    assert m4d.hamming_distance(m4d.frame_hash(a), m4d.frame_hash(b)) == 0
 
 
 def test_frame_hash_a_solid_image_has_no_gradient_bits(tmp_path):
     # a perfectly flat image has no left>right pixel transitions anywhere
     a = _make_image(tmp_path, "flat.png", (128, 128, 128))
-    assert m4.frame_hash(a) == 0
+    assert m4d.frame_hash(a) == 0
 
 
 def test_frame_hash_distinguishes_very_different_images(tmp_path):
@@ -215,5 +217,5 @@ def test_frame_hash_distinguishes_very_different_images(tmp_path):
         for y in range(48):
             img_b.putpixel((x, y), 0)
     img_b.save(b_path)
-    dist = m4.hamming_distance(m4.frame_hash(a_path), m4.frame_hash(b_path))
-    assert dist > m4.DHASH_DEDUP_THRESHOLD
+    dist = m4d.hamming_distance(m4d.frame_hash(a_path), m4d.frame_hash(b_path))
+    assert dist > m4d.DHASH_DEDUP_THRESHOLD

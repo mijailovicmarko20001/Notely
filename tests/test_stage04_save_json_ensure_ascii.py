@@ -10,9 +10,7 @@ _examples.json) silently \\u-escape this course's actual Serbian text
 (OCR excerpts, slide titles) instead of writing it as UTF-8, inconsistent
 with every other stage's JSON output."""
 
-from conftest import load_stage
-
-m4 = load_stage("04_match_frames_to_slides.py")
+from notely.pipeline import matching as m4
 
 
 def test_save_json_writes_non_ascii_text_as_utf8_not_escaped(tmp_path):
