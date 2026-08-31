@@ -6,7 +6,14 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import url2pathname
 
-from notely.ports import DocConverterError, HtmlToPdfError, LlmApiError, LlmResponse, LlmUsage
+from notely.ports import (
+    AudioExtractorError,
+    DocConverterError,
+    HtmlToPdfError,
+    LlmApiError,
+    LlmResponse,
+    LlmUsage,
+)
 
 
 class FakeLlmClient:
@@ -125,3 +132,30 @@ class FakeHtmlToPdf:
         if self._error is not None:
             raise self._error
         Path(pdf_path).write_bytes(self._pdf_bytes)
+
+
+class FakeAudioExtractor:
+    """Writes placeholder bytes to the target path, like FakeDocConverter/
+    FakeHtmlToPdf -- downstream code checks a file exists there, but
+    nothing in stage 1 decodes it as real audio until the Transcriber port
+    (also Phase 3) lands and gets its own fake to hand the transcription
+    backend. Raises `error` instead, if configured. Records every call,
+    kept separate per method since they have different signatures."""
+
+    def __init__(self, audio_bytes: bytes | None = None, error: AudioExtractorError | None = None):
+        self._audio_bytes = audio_bytes or b"RIFF\x00\x00\x00\x00WAVEfmt "
+        self._error = error
+        self.wav_calls: list[tuple[str, str]] = []
+        self.compressed_calls: list[tuple[str, str, str]] = []
+
+    def extract_wav(self, video_path, wav_path) -> None:
+        self.wav_calls.append((str(video_path), str(wav_path)))
+        if self._error is not None:
+            raise self._error
+        Path(wav_path).write_bytes(self._audio_bytes)
+
+    def extract_compressed(self, video_path, out_path, bitrate: str = "24k") -> None:
+        self.compressed_calls.append((str(video_path), str(out_path), bitrate))
+        if self._error is not None:
+            raise self._error
+        Path(out_path).write_bytes(self._audio_bytes)

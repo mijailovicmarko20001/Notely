@@ -105,3 +105,21 @@ class HtmlToPdf(Protocol):
         via headless Chrome's --print-to-pdf. Raises HtmlToPdfError on any
         failure -- never leaves pdf_path missing without raising."""
         ...
+
+
+class AudioExtractorError(Exception):
+    """Raised by an AudioExtractor implementation when ffmpeg fails."""
+
+
+@runtime_checkable
+class AudioExtractor(Protocol):
+    def extract_wav(self, video_path: Path, wav_path: Path) -> None:
+        """Extract mono 16kHz PCM WAV audio from video_path to wav_path.
+        Raises AudioExtractorError on failure."""
+        ...
+
+    def extract_compressed(self, video_path: Path, out_path: Path, bitrate: str = "24k") -> None:
+        """Extract mono 16kHz Opus/Ogg audio from video_path to out_path --
+        for backends with an upload size cap (see scripts/01_transcribe.py's
+        transcribe_with_groq). Raises AudioExtractorError on failure."""
+        ...

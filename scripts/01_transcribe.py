@@ -37,13 +37,22 @@ Notes:
 import argparse
 import json
 import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 # Project root = parent of scripts/
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
+# project root, not on sys.path by default when this file is run directly
+# (python scripts/01_transcribe.py) -- same fix tests/conftest.py applies
+# for test discovery. Must happen before the `from notely...` import below.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from notely.adapters.ffmpeg_audio_extractor import FfmpegAudioExtractor  # noqa: E402
+
 INPUT_VIDEOS_DIR = PROJECT_ROOT / "input" / "videos"
 OUTPUT_TRANSCRIPTS_DIR = PROJECT_ROOT / "output" / "transcripts"
 SLIDES_EXTRACTED_DIR = PROJECT_ROOT / "output" / "slides_extracted"
@@ -91,64 +100,17 @@ def build_vocabulary_prompt(lecture_id: str) -> str:
     return prompt[:VOCAB_PROMPT_MAX_CHARS]
 
 
-def extract_audio(video_path: Path, wav_path: Path) -> None:
-    """Extract mono 16kHz PCM WAV audio from a video with ffmpeg."""
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(video_path),
-        "-vn",
-        "-acodec",
-        "pcm_s16le",
-        "-ar",
-        "16000",
-        "-ac",
-        "1",
-        str(wav_path),
-    ]
-    print(f"[audio] extracting audio: {video_path.name} -> {wav_path.name}")
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if result.returncode != 0:
-        stderr = result.stderr.decode(errors="replace")
-        raise RuntimeError(f"ffmpeg failed extracting audio from {video_path}:\n{stderr}")
-
-
-def extract_audio_compressed(video_path: Path, out_path: Path, bitrate: str = "24k") -> None:
-    """Extract mono 16kHz audio directly from a video as compressed Opus/Ogg
-    -- for backends with an upload size cap (currently just Groq, see
-    transcribe_with_groq). Opus at 24kbps is a very small file for speech
-    while staying intelligible: a 90-minute lecture comes out around
-    16MB, comfortably under Groq's ~25MB free-tier limit, vs. ~170MB for
-    the uncompressed WAV every other backend uses."""
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(video_path),
-        "-vn",
-        "-ac",
-        "1",
-        "-ar",
-        "16000",
-        "-c:a",
-        "libopus",
-        "-b:a",
-        bitrate,
-        str(out_path),
-    ]
-    print(f"[audio] extracting compressed audio: {video_path.name} -> {out_path.name} ({bitrate})")
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if result.returncode != 0:
-        stderr = result.stderr.decode(errors="replace")
-        raise RuntimeError(f"ffmpeg failed compressing audio from {video_path}:\n{stderr}")
-
-
-def transcribe_lecture(lecture_id: str, model_size: str, force: bool = False) -> bool:
+def transcribe_lecture(lecture_id: str, model_size: str, force: bool = False, audio_extractor=None) -> bool:
     """Transcribe a single lecture's video and write its transcript JSON.
     Returns False only when a required input was missing (the caller should
     treat that as a failure); an already-done skip and a real successful
-    run both return True."""
+    run both return True.
+
+    audio_extractor: an AudioExtractor (see notely.ports), defaults to the
+    real ffmpeg-backed adapter; tests inject a fake instead of needing
+    ffmpeg installed."""
+    if audio_extractor is None:
+        audio_extractor = FfmpegAudioExtractor()
     video_path = INPUT_VIDEOS_DIR / f"{lecture_id}.mp4"
     output_path = OUTPUT_TRANSCRIPTS_DIR / f"{lecture_id}.json"
 
@@ -183,10 +145,12 @@ def transcribe_lecture(lecture_id: str, model_size: str, force: bool = False) ->
         if backend == "groq":
             # Groq does its own (compressed) audio extraction, since it needs
             # a small upload rather than the uncompressed WAV the local
-            # backends use -- no need to also extract_audio() here.
-            transcript = transcribe_with_groq(lecture_id, video_path, forced_language, vocab_prompt)
+            # backends use -- no need to also extract_wav() here.
+            transcript = transcribe_with_groq(
+                lecture_id, video_path, forced_language, vocab_prompt, audio_extractor
+            )
         else:
-            extract_audio(video_path, tmp_wav_path)
+            audio_extractor.extract_wav(video_path, tmp_wav_path)
             if backend == "mlx":
                 transcript = transcribe_with_mlx(
                     lecture_id, tmp_wav_path, model_size, forced_language, vocab_prompt
@@ -251,7 +215,7 @@ def _groq_field(obj, key):
     return obj[key] if isinstance(obj, dict) else getattr(obj, key)
 
 
-def transcribe_with_groq(lecture_id, video_path, forced_language, vocab_prompt) -> dict:
+def transcribe_with_groq(lecture_id, video_path, forced_language, vocab_prompt, audio_extractor) -> dict:
     """Cloud transcription via Groq's hosted Whisper API.
 
     NOT run against a live Groq account (no API key was available while
@@ -302,7 +266,7 @@ def transcribe_with_groq(lecture_id, video_path, forced_language, vocab_prompt) 
     os.close(tmp_fd)
     compressed_path = Path(tmp_name)
     try:
-        extract_audio_compressed(video_path, compressed_path)
+        audio_extractor.extract_compressed(video_path, compressed_path)
         size_mb = compressed_path.stat().st_size / (1024 * 1024)
         if size_mb > GROQ_MAX_UPLOAD_MB:
             raise RuntimeError(
