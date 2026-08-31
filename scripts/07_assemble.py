@@ -169,15 +169,19 @@ def generate_topic_index(full_guide_text: str, model: str, raw_debug_path: Path)
 
 
 def assemble_guide(force=False, topic_index=False):
-    """Main assembly logic."""
+    """Main assembly logic. Returns False only on a real failure (no notes
+    found, or a note file that couldn't be read) -- an already-assembled
+    guide (not forced) is a successful no-op, matching stages 5 and 6's
+    convention for the same situation, so `run_pipeline.py --all --assemble`
+    stays idempotent on an unchanged course."""
     project_root = get_project_root()
 
     output_path = project_root / "output" / "study_guide.md"
 
     # Check if output exists and --force not set
     if output_path.exists() and not force:
-        print(f"Output already exists: {output_path}. Use --force to overwrite.", file=sys.stderr)
-        return False
+        print(f"[skip] Output already exists: {output_path} (use --force to redo)")
+        return True
 
     # Find all lecture notes
     note_files = find_lecture_notes(project_root)
