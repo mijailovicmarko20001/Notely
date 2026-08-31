@@ -20,6 +20,7 @@ from pathlib import Path
 
 from conftest import load_stage
 from fakes import FakeDocConverter, FakeFrameReader, FakeHtmlToPdf, FakeLlmClient, FakeOcr, llm_response
+from notely.pipeline import detect as s3
 from notely.pipeline import slides as s2
 from notely.ports import SampledFrame
 from pdf_fixtures import make_pdf_bytes
@@ -563,8 +564,6 @@ def test_stage08_export_pdf_golden(tmp_path):
 
 
 # --- Stage 3: slide-change detection -----------------------------------------
-
-s3 = load_stage("03_detect_slide_changes.py")
 
 
 def test_stage03_process_lecture_golden(tmp_path, monkeypatch):
