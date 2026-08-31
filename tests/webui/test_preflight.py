@@ -77,23 +77,23 @@ def test_check_tesseract_lang_timeout_treated_as_not_runnable(monkeypatch):
 
 
 def test_check_soffice_found_as_soffice(monkeypatch):
-    monkeypatch.setattr(
-        preflight.shutil, "which", lambda name: "/usr/bin/soffice" if name == "soffice" else None
-    )
+    # check_soffice delegates to LibreOfficeDocConverter.find_binary (see
+    # notely/adapters/libreoffice_doc_converter.py; its own contract test
+    # covers find_binary's PATH-vs-app-bundle logic in detail) -- patch
+    # that seam directly rather than shutil, which it no longer touches.
+    monkeypatch.setattr(preflight.LibreOfficeDocConverter, "find_binary", lambda self: "/usr/bin/soffice")
     result = preflight.check_soffice()
     assert result == {"ok": True, "detail": "/usr/bin/soffice"}
 
 
 def test_check_soffice_found_as_libreoffice_fallback(monkeypatch):
-    monkeypatch.setattr(
-        preflight.shutil, "which", lambda name: "/usr/bin/libreoffice" if name == "libreoffice" else None
-    )
+    monkeypatch.setattr(preflight.LibreOfficeDocConverter, "find_binary", lambda self: "/usr/bin/libreoffice")
     result = preflight.check_soffice()
     assert result == {"ok": True, "detail": "/usr/bin/libreoffice"}
 
 
 def test_check_soffice_not_found(monkeypatch):
-    monkeypatch.setattr(preflight.shutil, "which", lambda name: None)
+    monkeypatch.setattr(preflight.LibreOfficeDocConverter, "find_binary", lambda self: None)
     result = preflight.check_soffice()
     assert result["ok"] is False
     assert "not found" in result["detail"]

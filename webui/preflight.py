@@ -9,7 +9,16 @@ import shutil
 import subprocess
 import sys
 
-from .config import get_api_key
+from .config import PROJECT_ROOT, get_api_key
+
+# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
+# project root -- not guaranteed to already be on sys.path depending on how
+# the server was launched (see webui/jobs.py's identical note). Must
+# happen before the `from notely...` import below.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from notely.adapters.libreoffice_doc_converter import LibreOfficeDocConverter  # noqa: E402
 
 
 def _run_ok(cmd: list, timeout: int = 15) -> tuple:
@@ -41,9 +50,14 @@ def check_tesseract_lang(lang_spec: str) -> dict:
 
 
 def check_soffice() -> dict:
-    for name in ("soffice", "libreoffice"):
-        if shutil.which(name):
-            return {"ok": True, "detail": shutil.which(name)}
+    # Same detection logic scripts/02_extract_slides.py's real conversion
+    # uses (LibreOfficeDocConverter.find_binary): PATH first, then the
+    # macOS app-bundle path shutil.which alone can't see. Previously a
+    # second, PATH-only copy of this lookup that could report "not found"
+    # here while the real conversion still worked.
+    path = LibreOfficeDocConverter().find_binary()
+    if path:
+        return {"ok": True, "detail": path}
     return {"ok": False, "detail": "LibreOffice not found — .pptx decks unsupported, use PDF"}
 
 

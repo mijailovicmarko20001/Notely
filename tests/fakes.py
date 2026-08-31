@@ -2,7 +2,9 @@
 master tests (tests/golden/, tests/test_golden.py) inject. No network, no
 binaries, no SDK objects; deterministic given fixed inputs."""
 
-from notely.ports import LlmApiError, LlmResponse, LlmUsage
+from pathlib import Path
+
+from notely.ports import DocConverterError, LlmApiError, LlmResponse, LlmUsage
 
 
 class FakeLlmClient:
@@ -70,3 +72,26 @@ class FakeMediaProbe:
         key = str(path)
         self.calls.append(key)
         return self._durations.get(key)
+
+
+class FakeDocConverter:
+    """Writes `pdf_bytes` (a real, minimal PDF -- see tests/pdf_fixtures.
+    make_pdf_bytes) to <out_dir>/<input_path.stem>.pdf and returns that
+    path, unlike FakeOcr/FakeMediaProbe's plain canned values: downstream
+    code (render_pdf_to_images) needs an actual, parseable PDF on disk, not
+    just a return value. Raises `error` instead, if configured."""
+
+    def __init__(self, pdf_bytes: bytes | None = None, error: DocConverterError | None = None):
+        self._pdf_bytes = pdf_bytes or b"%PDF-1.4\n%%EOF"
+        self._error = error
+        self.calls: list[tuple[str, str]] = []
+
+    def convert_to_pdf(self, input_path, out_dir) -> Path:
+        self.calls.append((str(input_path), str(out_dir)))
+        if self._error is not None:
+            raise self._error
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        pdf_path = out_dir / f"{Path(input_path).stem}.pdf"
+        pdf_path.write_bytes(self._pdf_bytes)
+        return pdf_path

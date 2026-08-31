@@ -19,7 +19,7 @@ import json
 from pathlib import Path
 
 from conftest import load_stage
-from fakes import FakeLlmClient, FakeOcr, llm_response
+from fakes import FakeDocConverter, FakeLlmClient, FakeOcr, llm_response
 from pdf_fixtures import make_pdf_bytes
 
 EXPECTED_DIR = Path(__file__).parent / "golden" / "expected"
@@ -62,6 +62,44 @@ def test_stage02_extract_from_pdf_golden(tmp_path):
         assert slide.pop("image_path") == f"images/slide_{i:03d}.png"
 
     assert slides == _expected_json("stage02_slides.json")
+
+
+def test_stage02_extract_from_pptx_golden(tmp_path):
+    # Previously zero test coverage at all (not just "unreachable without a
+    # port" -- extract_from_pptx had no test before this). Promoted
+    # straight to golden-mastered by the DocConverter port (Phase 3):
+    # FakeDocConverter writes a real, parseable synthetic PDF (reusing
+    # make_pdf_bytes) in place of a real soffice conversion, so
+    # render_pdf_to_images still runs for real against real pypdfium2.
+    from pptx import Presentation
+
+    s2.PROJECT_ROOT = tmp_path
+
+    prs = Presentation()
+    layout = prs.slide_layouts[1]  # "Title and Content"
+    slide1 = prs.slides.add_slide(layout)
+    slide1.shapes.title.text = "Introduction"
+    slide1.placeholders[1].text_frame.text = "Overview of the topic today"
+
+    slide2 = prs.slides.add_slide(layout)
+    slide2.shapes.title.text = "Summary"
+    slide2.placeholders[1].text_frame.text = "Key takeaways"
+    slide2.notes_slide.notes_text_frame.text = "Remember to mention the exam date"
+
+    pptx_path = tmp_path / "deck.pptx"
+    prs.save(str(pptx_path))
+
+    image_dir = tmp_path / "images"
+    pdf_bytes = make_pdf_bytes(["Introduction\nOverview of the topic today", "Summary\nKey takeaways"])
+    fake_converter = FakeDocConverter(pdf_bytes=pdf_bytes)
+
+    slides = s2.extract_from_pptx(pptx_path, image_dir, doc_converter=fake_converter)
+
+    assert fake_converter.calls == [(str(pptx_path), str(image_dir))]
+    for i, slide in enumerate(slides, start=1):
+        assert slide.pop("image_path") == f"images/slide_{i:03d}.png"
+
+    assert slides == _expected_json("stage02_pptx_slides.json")
 
 
 # --- Stage 4: frame-to-slide matching (pure combination pipeline) ----------

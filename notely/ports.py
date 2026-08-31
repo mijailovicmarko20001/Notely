@@ -74,3 +74,19 @@ class MediaProbe(Protocol):
         verify_video, scripts/04's get_video_duration, webui/jobs.py's
         get_video_duration) into one."""
         ...
+
+
+class DocConverterError(Exception):
+    """Raised by a DocConverter implementation when conversion fails: the
+    binary isn't installed, the conversion subprocess itself failed, or it
+    silently didn't produce the expected output file."""
+
+
+@runtime_checkable
+class DocConverter(Protocol):
+    def convert_to_pdf(self, input_path: Path, out_dir: Path) -> Path:
+        """Convert input_path (e.g. a .pptx deck) to PDF, written into
+        out_dir, and return the resulting PDF's path. Raises
+        DocConverterError on any failure -- never returns a path that
+        doesn't exist."""
+        ...

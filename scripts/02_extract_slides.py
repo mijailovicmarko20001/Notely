@@ -15,47 +15,23 @@ Usage:
 import argparse
 import json
 import os
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
+# project root, not on sys.path by default when this file is run directly
+# (python scripts/02_extract_slides.py) -- same fix tests/conftest.py
+# applies for test discovery. Must happen before the `from notely...`
+# import below.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from notely.adapters.libreoffice_doc_converter import LibreOfficeDocConverter  # noqa: E402
+
 SLIDES_DIR = PROJECT_ROOT / "input" / "slides"
 OUTPUT_DIR = PROJECT_ROOT / "output" / "slides_extracted"
-
-
-def find_soffice() -> str | None:
-    """Locate the LibreOffice headless binary, including common macOS install paths."""
-    candidates = [
-        shutil.which("soffice"),
-        shutil.which("libreoffice"),
-        "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-    ]
-    for candidate in candidates:
-        if candidate and Path(candidate).exists():
-            return candidate
-    return None
-
-
-def convert_pptx_to_pdf(pptx_path: Path, out_dir: Path) -> Path:
-    """Convert a .pptx to .pdf via headless LibreOffice, for rendering purposes only."""
-    soffice = find_soffice()
-    if not soffice:
-        raise RuntimeError(
-            "soffice (LibreOffice) not found on PATH — required to render .pptx "
-            "slides to images.\nInstall it with: brew install --cask libreoffice"
-        )
-    out_dir.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        [soffice, "--headless", "--convert-to", "pdf", "--outdir", str(out_dir), str(pptx_path)],
-        check=True,
-        capture_output=True,
-    )
-    pdf_path = out_dir / f"{pptx_path.stem}.pdf"
-    if not pdf_path.exists():
-        raise RuntimeError(f"soffice conversion did not produce expected file: {pdf_path}")
-    return pdf_path
 
 
 def render_pdf_to_images(pdf_path: Path, image_dir: Path, dpi: int = 150) -> list[str]:
@@ -80,8 +56,14 @@ def render_pdf_to_images(pdf_path: Path, image_dir: Path, dpi: int = 150) -> lis
     return image_paths
 
 
-def extract_from_pptx(pptx_path: Path, image_dir: Path) -> list[dict]:
-    """Extract text via python-pptx; render images by converting to PDF first."""
+def extract_from_pptx(pptx_path: Path, image_dir: Path, doc_converter=None) -> list[dict]:
+    """Extract text via python-pptx; render images by converting to PDF first.
+
+    doc_converter: a DocConverter (see notely.ports), defaults to the real
+    LibreOffice-backed adapter; tests inject a fake instead of needing
+    LibreOffice installed."""
+    if doc_converter is None:
+        doc_converter = LibreOfficeDocConverter()
     from pptx import Presentation
 
     prs = Presentation(str(pptx_path))
@@ -111,7 +93,7 @@ def extract_from_pptx(pptx_path: Path, image_dir: Path) -> list[dict]:
             {"title": title, "body_text": "\n".join(body_parts).strip(), "notes_text": notes_text}
         )
 
-    pdf_path = convert_pptx_to_pdf(pptx_path, image_dir)
+    pdf_path = doc_converter.convert_to_pdf(pptx_path, image_dir)
     image_paths = render_pdf_to_images(pdf_path, image_dir)
 
     if len(image_paths) != len(text_by_slide):
