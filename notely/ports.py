@@ -148,6 +148,42 @@ class VideoFetcher(Protocol):
         ...
 
 
+@dataclass
+class SampledFrame:
+    frame_idx: int
+    timestamp: float
+    # numpy.ndarray, BGR (cv2 convention) -- typed Any so ports.py doesn't
+    # need a numpy import just for a type hint.
+    frame: Any
+
+
+class FrameReaderError(Exception):
+    """Raised by a FrameReader implementation when a video can't be
+    opened, or its FPS can't be determined."""
+
+
+@runtime_checkable
+class FrameReader(Protocol):
+    def sample_frames(self, video_path: Path, interval: float):
+        """Open video_path and return an iterator yielding one
+        SampledFrame every `interval` seconds (by seeking to the nearest
+        frame index via FPS), in timestamp order, until the video ends.
+
+        Raises FrameReaderError immediately (before returning) if the
+        video can't be opened or its FPS can't be determined -- this
+        method itself is not a generator, so that failure surfaces at the
+        call site rather than on first iteration. The returned iterator
+        releases the underlying video handle once exhausted.
+
+        This is a higher-level abstraction than the other 8 ports (which
+        each wrap one stateless call): cv2.VideoCapture is a stateful
+        object (open, seek, read, release), and the frame-stepping logic
+        (interval -> frame index) is business logic stage 3 owns, not
+        something a fake should have to reimplement -- so the port does
+        the stepping and a fake just needs a canned list of frames."""
+        ...
+
+
 class TranscriberError(Exception):
     """Raised by a Transcriber implementation when transcription fails."""
 

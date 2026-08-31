@@ -9,6 +9,7 @@ from urllib.request import url2pathname
 from notely.ports import (
     AudioExtractorError,
     DocConverterError,
+    FrameReaderError,
     HtmlToPdfError,
     LlmApiError,
     LlmResponse,
@@ -212,3 +213,22 @@ class FakeTranscriber:
         if self._error is not None:
             raise self._error
         return self._transcript
+
+
+class FakeFrameReader:
+    """Returns a canned list of SampledFrame in place of really opening and
+    stepping through a video file -- the one port where a fake is
+    meaningfully simpler than the real thing, since real videos are
+    expensive to fabricate as test fixtures. Records every
+    (video_path, interval) call."""
+
+    def __init__(self, frames: list | None = None, error: FrameReaderError | None = None):
+        self._frames = list(frames or [])
+        self._error = error
+        self.calls: list[tuple[str, float]] = []
+
+    def sample_frames(self, video_path, interval: float):
+        self.calls.append((str(video_path), interval))
+        if self._error is not None:
+            raise self._error
+        return iter(self._frames)

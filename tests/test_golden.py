@@ -19,7 +19,8 @@ import json
 from pathlib import Path
 
 from conftest import load_stage
-from fakes import FakeDocConverter, FakeHtmlToPdf, FakeLlmClient, FakeOcr, llm_response
+from fakes import FakeDocConverter, FakeFrameReader, FakeHtmlToPdf, FakeLlmClient, FakeOcr, llm_response
+from notely.ports import SampledFrame
 from pdf_fixtures import make_pdf_bytes
 
 EXPECTED_DIR = Path(__file__).parent / "golden" / "expected"
@@ -560,3 +561,53 @@ def test_stage08_export_pdf_golden(tmp_path):
     assert html.count(f'src="{tmp_path.parent}/slides_extracted/lecture01_images/slide_001.png"') == 1
 
     assert pdf_path.read_bytes() == b"%PDF-1.4 fake\n%%EOF"
+
+
+# --- Stage 3: slide-change detection -----------------------------------------
+
+s3 = load_stage("03_detect_slide_changes.py")
+
+
+def test_stage03_process_lecture_golden(tmp_path, monkeypatch):
+    # Previously zero test coverage at all (not just "unreachable without a
+    # port"). Promoted straight to golden-mastered by the FrameReader port
+    # (Phase 3, the last of the 9): FakeFrameReader hands process_lecture
+    # small synthetic numpy frames -- no real video file, no opencv video
+    # decoding -- while cv2's own (real) resize/cvtColor/imwrite still run
+    # for real on those frames, same as frame_hash's real-PIL precedent in
+    # stage 4's tests.
+    import numpy as np
+
+    monkeypatch.setattr(s3, "INPUT_VIDEOS_DIR", tmp_path / "input" / "videos")
+    monkeypatch.setattr(s3, "OUTPUT_DIR", tmp_path / "output" / "frame_events")
+    monkeypatch.setattr(s3, "PROJECT_ROOT", tmp_path)
+    video_dir = tmp_path / "input" / "videos"
+    video_dir.mkdir(parents=True)
+    # process_lecture only checks this file exists -- FakeFrameReader never
+    # actually opens it.
+    (video_dir / "lecture01.mp4").write_bytes(b"placeholder")
+
+    frames = [
+        SampledFrame(frame_idx=0, timestamp=0.0, frame=np.full((48, 64, 3), 50, dtype=np.uint8)),
+        # identical color -- no change event
+        SampledFrame(frame_idx=45, timestamp=1.5, frame=np.full((48, 64, 3), 50, dtype=np.uint8)),
+        # different color -- a change event
+        SampledFrame(frame_idx=90, timestamp=3.0, frame=np.full((48, 64, 3), 200, dtype=np.uint8)),
+    ]
+    fake_reader = FakeFrameReader(frames=frames)
+
+    ok = s3.process_lecture(
+        "lecture01", interval=1.5, threshold=0.02, crop_str=None, force=True, frame_reader=fake_reader
+    )
+
+    assert ok is True
+    assert fake_reader.calls == [(str(video_dir / "lecture01.mp4"), 1.5)]
+
+    events = json.loads((s3.OUTPUT_DIR / "lecture01.json").read_text())
+    # first frame always saved, second (identical) frame is not, third
+    # (different color) is -- exactly 2 events
+    assert [e["timestamp"] for e in events] == [0.0, 3.0]
+    for i, event in enumerate(events):
+        image_path = tmp_path / event["frame_image_path"]
+        assert image_path.exists() and image_path.stat().st_size > 0
+        assert event["frame_image_path"] == f"output/frame_events/lecture01_frames/event_{i:03d}.png"

@@ -53,6 +53,17 @@ from pathlib import Path
 
 # Project root = parent of scripts/
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
+# project root, not on sys.path by default when this file is run directly
+# (python scripts/03_detect_slide_changes.py) -- same fix tests/conftest.py
+# applies for test discovery. Must happen before the `from notely...`
+# import below.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from notely.adapters.cv2_frame_reader import Cv2FrameReader  # noqa: E402
+
 INPUT_VIDEOS_DIR = PROJECT_ROOT / "input" / "videos"
 OUTPUT_DIR = PROJECT_ROOT / "output" / "frame_events"
 
@@ -120,6 +131,7 @@ def detect_events(
     threshold: float,
     crop: tuple[float, float, float, float] | None,
     frames_dir: Path,
+    frame_reader=None,
 ):
     """
     Sample `video_path` every `interval` seconds, detect slide-change events,
@@ -127,36 +139,24 @@ def detect_events(
 
     Returns a list of {"timestamp": float, "frame_image_path": str} dicts,
     with paths relative to PROJECT_ROOT.
-    """
-    import cv2
 
-    cap = cv2.VideoCapture(str(video_path))
-    if not cap.isOpened():
-        raise RuntimeError(f"could not open video: {video_path}")
+    frame_reader: a FrameReader (see notely.ports), defaults to the real
+    cv2-backed adapter; tests inject a fake instead of needing a real video
+    file (or opencv installed at all)."""
+    import cv2  # still needed here for imwrite -- the frame-sampling/
+    # stepping itself is the FrameReader port's job, not this function's
 
-    fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
-    if fps <= 0:
-        cap.release()
-        raise RuntimeError(f"could not read FPS for video: {video_path} (fps={fps})")
-
-    frame_step = max(1, int(round(interval * fps)))
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    if frame_reader is None:
+        frame_reader = Cv2FrameReader()
 
     frames_dir.mkdir(parents=True, exist_ok=True)
 
     events = []
     prev_gray = None
     event_index = 0
-    frame_idx = 0
 
-    while True:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-        ok, frame = cap.read()
-        if not ok:
-            break
-
-        timestamp = frame_idx / fps
-        cropped = apply_crop(frame, crop)
+    for sampled in frame_reader.sample_frames(video_path, interval):
+        cropped = apply_crop(sampled.frame, crop)
         gray = preprocess_for_diff(cropped)
 
         is_first_frame = prev_gray is None
@@ -174,20 +174,16 @@ def detect_events(
             cv2.imwrite(str(image_path), cropped)
             events.append(
                 {
-                    "timestamp": round(timestamp, 3),
+                    "timestamp": round(sampled.timestamp, 3),
                     "frame_image_path": str(image_path.relative_to(PROJECT_ROOT)),
                 }
             )
             tag = "t=0" if is_first_frame else f"diff={score:.3f}"
-            print(f"  [event {event_index:03d}] t={timestamp:8.2f}s ({tag}) -> {image_name}")
+            print(f"  [event {event_index:03d}] t={sampled.timestamp:8.2f}s ({tag}) -> {image_name}")
             event_index += 1
 
         prev_gray = gray
-        frame_idx += frame_step
-        if total_frames and frame_idx >= total_frames:
-            break
 
-    cap.release()
     return events
 
 
@@ -197,10 +193,15 @@ def process_lecture(
     threshold: float,
     crop_str: str | None,
     force: bool,
+    frame_reader=None,
 ) -> bool:
     """Returns False only when no video was found (the caller should treat
     that as a failure); an already-done skip and a real successful run
-    both return True."""
+    both return True.
+
+    frame_reader: a FrameReader (see notely.ports), defaults to the real
+    cv2-backed adapter; tests inject a fake instead of needing a real
+    video file."""
     video_path = INPUT_VIDEOS_DIR / f"{lecture_id}.mp4"
     output_json = OUTPUT_DIR / f"{lecture_id}.json"
     frames_dir = OUTPUT_DIR / f"{lecture_id}_frames"
@@ -216,7 +217,7 @@ def process_lecture(
     crop = parse_crop(crop_str) if crop_str else None
 
     print(f"[{lecture_id}] detecting slide changes: interval={interval}s threshold={threshold} crop={crop}")
-    events = detect_events(video_path, interval, threshold, crop, frames_dir)
+    events = detect_events(video_path, interval, threshold, crop, frames_dir, frame_reader=frame_reader)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     # Temp file + atomic rename: a killed process can never leave a
