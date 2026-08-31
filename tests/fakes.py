@@ -54,3 +54,19 @@ class FakeOcr:
         key = str(image_path)
         self.calls.append((key, lang))
         return self._texts.get(key, "")
+
+
+class FakeMediaProbe:
+    """Maps path (str) -> canned duration, same dict-keyed-by-path shape as
+    FakeOcr and for the same reason. Any path not in `durations` returns
+    None -- the real adapter's own value for "couldn't determine
+    duration". Records every path it was asked to probe."""
+
+    def __init__(self, durations: dict[str, float] | None = None):
+        self._durations = dict(durations or {})
+        self.calls: list[str] = []
+
+    def get_duration(self, path) -> float | None:
+        key = str(path)
+        self.calls.append(key)
+        return self._durations.get(key)

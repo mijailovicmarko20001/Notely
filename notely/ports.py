@@ -62,3 +62,15 @@ class Ocr(Protocol):
         shouldn't kill the whole run, so the port preserves that rather
         than pushing error handling onto every caller."""
         ...
+
+
+@runtime_checkable
+class MediaProbe(Protocol):
+    def get_duration(self, path: Path) -> float | None:
+        """Video duration in seconds via ffprobe, or None if the file
+        doesn't exist, ffprobe isn't available/fails, or its output isn't a
+        parseable number. Never raises. Collapses what were three separate,
+        near-identical ffprobe subprocess implementations (scripts/00's
+        verify_video, scripts/04's get_video_duration, webui/jobs.py's
+        get_video_duration) into one."""
+        ...

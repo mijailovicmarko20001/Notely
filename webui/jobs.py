@@ -24,7 +24,19 @@ import uuid
 from . import progress
 from .config import LOGS_DIR, PROJECT_ROOT, SCRIPTS_DIR, VIDEOS_DIR, stage_env
 
+# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
+# project root -- not guaranteed to already be on sys.path depending on how
+# the server was launched (uvicorn webui.main:app vs. python -m webui.main
+# vs. an IDE run config), so this is asserted explicitly rather than
+# assumed. Must happen before the `from notely...` import below.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from notely.adapters.ffprobe_media_probe import FfprobeMediaProbe  # noqa: E402
+
 MAX_EVENTS_IN_MEMORY = 2000
+
+_MEDIA_PROBE = FfprobeMediaProbe()
 
 
 class Busy(RuntimeError):
@@ -40,28 +52,7 @@ def stage_script(stage: int) -> str:
 
 
 def get_video_duration(lecture_id: str):
-    video = VIDEOS_DIR / f"{lecture_id}.mp4"
-    if not video.exists():
-        return None
-    try:
-        r = subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "default=noprint_wrappers=1:nokey=1",
-                str(video),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        return float(r.stdout.strip()) if r.returncode == 0 else None
-    except Exception:
-        return None
+    return _MEDIA_PROBE.get_duration(VIDEOS_DIR / f"{lecture_id}.mp4")
 
 
 class JobManager:

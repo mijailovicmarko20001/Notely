@@ -9,6 +9,7 @@ downstream stage when video_urls.json is re-pointed.
 import json
 
 from conftest import load_stage
+from fakes import FakeMediaProbe
 
 fetch_videos = load_stage("00_fetch_videos.py")
 
@@ -21,7 +22,12 @@ def _stub_yt_dlp(monkeypatch, videos_dir, *, succeeds=True):
     a stub that just writes a file. Returns the list of URLs it was asked to
     download, so tests can assert on cache hits/misses."""
     monkeypatch.setattr(fetch_videos, "VIDEOS_DIR", videos_dir)
-    monkeypatch.setattr(fetch_videos, "verify_video", lambda p: p.exists() and p.stat().st_size > 0)
+    # media_probe is unused here -- this cache-logic suite isn't about the
+    # MediaProbe port itself (see tests/test_media_probe_port.py for that);
+    # any non-empty file is treated as a valid download.
+    monkeypatch.setattr(
+        fetch_videos, "verify_video", lambda p, media_probe: p.exists() and p.stat().st_size > 0
+    )
     downloaded = []
 
     def fake_run_yt_dlp(url, output_path, cookies_browser):
@@ -122,3 +128,48 @@ def test_force_redownloads_and_refreshes_the_record(tmp_path, monkeypatch):
 
     assert downloaded == [URL_A]
     assert json.loads((videos / "lecture01.source.json").read_text()) == {"url": URL_A}
+
+
+# --- verify_video through the real MediaProbe port (not monkeypatched away,
+# unlike every test above) --------------------------------------------------
+
+
+def test_fetch_lecture_end_to_end_with_fake_media_probe(tmp_path, monkeypatch):
+    videos = tmp_path / "videos"
+    monkeypatch.setattr(fetch_videos, "VIDEOS_DIR", videos)
+
+    def fake_run_yt_dlp(url, output_path, cookies_browser):
+        output_path.write_bytes(b"fake mp4 bytes")
+        return fetch_videos._YtDlpResult(0, "")
+
+    monkeypatch.setattr(fetch_videos, "run_yt_dlp", fake_run_yt_dlp)
+
+    fake_probe = FakeMediaProbe(durations={str(videos / "lecture01.mp4"): 3600.0})
+
+    assert fetch_videos.fetch_lecture("lecture01", URL_A, force=False, media_probe=fake_probe) is True
+    assert fake_probe.calls == [str(videos / "lecture01.mp4")]
+    assert json.loads((videos / "lecture01.source.json").read_text()) == {"url": URL_A}
+
+
+def test_verify_video_rejects_a_zero_duration_file_via_the_real_port(tmp_path):
+    video_path = tmp_path / "lecture01.mp4"
+    video_path.write_bytes(b"corrupt or truncated download")
+    fake_probe = FakeMediaProbe(durations={str(video_path): 0.0})
+
+    assert fetch_videos.verify_video(video_path, fake_probe) is False
+
+
+def test_verify_video_rejects_when_media_probe_cannot_determine_duration(tmp_path):
+    video_path = tmp_path / "lecture01.mp4"
+    video_path.write_bytes(b"some bytes")
+    fake_probe = FakeMediaProbe()  # no duration configured -> None
+
+    assert fetch_videos.verify_video(video_path, fake_probe) is False
+
+
+def test_verify_video_accepts_a_positive_duration_via_the_real_port(tmp_path):
+    video_path = tmp_path / "lecture01.mp4"
+    video_path.write_bytes(b"a real-looking download")
+    fake_probe = FakeMediaProbe(durations={str(video_path): 42.5})
+
+    assert fetch_videos.verify_video(video_path, fake_probe) is True

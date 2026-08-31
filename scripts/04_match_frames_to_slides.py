@@ -64,7 +64,6 @@ import argparse
 import json
 import os
 import re
-import subprocess
 import sys
 import unicodedata
 from pathlib import Path
@@ -80,6 +79,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from notely.adapters.ffprobe_media_probe import FfprobeMediaProbe  # noqa: E402
 from notely.adapters.tesseract_ocr import TesseractOcr  # noqa: E402
 
 # Best-effort .env loading (same pattern as stages 00/01/06), so OCR_LANG
@@ -398,34 +398,6 @@ def match_events_to_slides(
         )
 
     return matches
-
-
-def get_video_duration(lecture_id: str) -> float | None:
-    """Best-effort video duration in seconds via ffprobe; None if unavailable."""
-    video_path = INPUT_VIDEOS_DIR / f"{lecture_id}.mp4"
-    if not video_path.exists():
-        return None
-    try:
-        result = subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "default=noprint_wrappers=1:nokey=1",
-                str(video_path),
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=30,
-        )
-        if result.returncode != 0:
-            return None
-        return float(result.stdout.decode().strip())
-    except (subprocess.SubprocessError, ValueError, OSError):
-        return None
 
 
 def group_runs(matches: list[dict]) -> list[list[dict]]:
@@ -772,6 +744,7 @@ def process_lecture(
     force: bool,
     ocr_lang: str = "eng",
     ocr=None,
+    media_probe=None,
     stay_margin: float = DEFAULT_STAY_MARGIN,
     min_forward_score: float = DEFAULT_MIN_FORWARD_SCORE,
     detect_examples: bool = True,
@@ -785,9 +758,13 @@ def process_lecture(
     already-done skip and a real successful run both return True.
 
     ocr: an Ocr (see notely.ports), defaults to the real pytesseract-backed
-    adapter; tests inject a fake instead of needing tesseract installed."""
+    adapter. media_probe: a MediaProbe, defaults to the real ffprobe-backed
+    adapter. Both default to their real adapter; tests inject a fake
+    instead of needing tesseract/ffprobe installed."""
     if ocr is None:
         ocr = TesseractOcr()
+    if media_probe is None:
+        media_probe = FfprobeMediaProbe()
     events_path = FRAME_EVENTS_DIR / f"{lecture_id}.json"
     slides_path = SLIDES_EXTRACTED_DIR / f"{lecture_id}.json"
     output_json = OUTPUT_DIR / f"{lecture_id}.json"
@@ -866,7 +843,7 @@ def process_lecture(
                 f"slide {m['slide_number']} (score={m['score']:.3f}){jump_tag}{stay_tag}"
             )
 
-        video_duration = get_video_duration(lecture_id)
+        video_duration = media_probe.get_duration(INPUT_VIDEOS_DIR / f"{lecture_id}.mp4")
         timeline, notes = collapse_to_timeline(matches, video_duration)
 
     needs_review = build_needs_review(matches, timeline, slides, confidence_threshold)

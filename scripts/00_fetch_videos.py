@@ -20,6 +20,16 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
+# project root, not on sys.path by default when this file is run directly
+# (python scripts/00_fetch_videos.py) -- same fix tests/conftest.py applies
+# for test discovery. Must happen before the `from notely...` import below.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from notely.adapters.ffprobe_media_probe import FfprobeMediaProbe  # noqa: E402
+
 VIDEO_URLS_PATH = ROOT / "input" / "video_urls.json"
 VIDEOS_DIR = ROOT / "input" / "videos"
 FORMAT = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]"
@@ -49,30 +59,13 @@ def load_video_urls():
         return json.load(f)
 
 
-def verify_video(path: Path) -> bool:
-    """Return True if path exists, is non-empty, and ffprobe reports a positive duration."""
+def verify_video(path: Path, media_probe) -> bool:
+    """Return True if path exists, is non-empty, and ffprobe reports a
+    positive duration. media_probe: a MediaProbe (see notely.ports)."""
     if not path.exists() or path.stat().st_size == 0:
         return False
-    result = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            str(path),
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        return False
-    try:
-        return float(result.stdout.strip()) > 0
-    except ValueError:
-        return False
+    duration = media_probe.get_duration(path)
+    return duration is not None and duration > 0
 
 
 def source_path(lecture_id: str) -> Path:
@@ -154,7 +147,12 @@ def run_yt_dlp(url: str, output_path: Path, cookies_browser: str | None) -> _YtD
     return _YtDlpResult(returncode, "\n".join(lines))
 
 
-def fetch_lecture(lecture_id: str, url: str, force: bool) -> bool:
+def fetch_lecture(lecture_id: str, url: str, force: bool, media_probe=None) -> bool:
+    """media_probe: a MediaProbe (see notely.ports), defaults to the real
+    ffprobe-backed adapter; tests inject a fake instead of needing ffprobe
+    installed."""
+    if media_probe is None:
+        media_probe = FfprobeMediaProbe()
     output_path = VIDEOS_DIR / f"{lecture_id}.mp4"
     source_marker = source_path(lecture_id)
 
@@ -162,7 +160,7 @@ def fetch_lecture(lecture_id: str, url: str, force: bool) -> bool:
     # came from the URL currently configured for this lecture id. Ids are
     # reused across courses (lecture01 is always lecture01), so filename
     # alone can't tell a fresh download from last term's leftovers.
-    if not force and verify_video(output_path):
+    if not force and verify_video(output_path, media_probe):
         cached_url = read_source_url(source_marker)
         if cached_url == url:
             print(f"[{lecture_id}] cached, skipping")
@@ -204,7 +202,7 @@ def fetch_lecture(lecture_id: str, url: str, force: bool) -> bool:
             output_path.unlink()
         return False
 
-    if not verify_video(output_path):
+    if not verify_video(output_path, media_probe):
         print(
             f"[{lecture_id}] ERROR: downloaded file failed verification "
             f"(missing, empty, or zero duration) — deleting",
