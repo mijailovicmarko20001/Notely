@@ -8,17 +8,18 @@ tmp_path-based project-root fixture with stub stage scripts already living
 alongside tests/test_jobs.py's 69 pure-logic tests. As of this writing,
 tests/test_jobs.py has no such fixture (just JobManager()/build_tasks()
 called directly, no monkeypatching, no scripts dir) -- so this file adds
-its own, following the same monkeypatch-the-re-exported-constants pattern
-used by tests/webui/conftest.py, rather than editing test_jobs.py (which
-stays untouched and green).
-"""
+its own, rather than editing test_jobs.py (which stays untouched and
+green). Only webui.config's own constants need patching (Phase 6:
+webui/jobs.py and webui/progress.py now read config.X through the module
+reference instead of each binding its own `from .config import X` copy at
+import time, so there's exactly one place to redirect)."""
 
 import json
 import time
 
 import pytest
 
-from webui import config, jobs, progress
+from webui import config, jobs
 
 # --- fixture: tmp project root + stub stage scripts -------------------------
 
@@ -41,15 +42,15 @@ def project(tmp_path, monkeypatch):
     (root / "input" / "slides").mkdir(parents=True)
     (root / "output" / "logs").mkdir(parents=True)
     (root / "scripts").mkdir(parents=True)
-    (root / "input" / "video_urls.json").write_text(json.dumps({
-        "lecture01": "https://youtu.be/aaaaaaaaaaa",
-        "lecture02": "https://youtu.be/bbbbbbbbbbb",
-    }))
+    (root / "input" / "video_urls.json").write_text(
+        json.dumps(
+            {
+                "lecture01": "https://youtu.be/aaaaaaaaaaa",
+                "lecture02": "https://youtu.be/bbbbbbbbbbb",
+            }
+        )
+    )
 
-    # config.py itself (SCRIPTS_DIR is read fresh via config.SCRIPTS_DIR by
-    # webui.media, not relevant here, but keep it consistent) plus the
-    # copies re-exported at import time into webui.jobs / webui.progress --
-    # see tests/webui/conftest.py's docstring for why both are needed.
     monkeypatch.setattr(config, "PROJECT_ROOT", root)
     monkeypatch.setattr(config, "SCRIPTS_DIR", root / "scripts")
     monkeypatch.setattr(config, "INPUT_DIR", root / "input")
@@ -58,20 +59,20 @@ def project(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "VIDEOS_DIR", root / "input" / "videos")
     monkeypatch.setattr(config, "ENV_PATH", root / ".env")
 
-    monkeypatch.setattr(jobs, "PROJECT_ROOT", root)
-    monkeypatch.setattr(jobs, "SCRIPTS_DIR", root / "scripts")
-    monkeypatch.setattr(jobs, "LOGS_DIR", root / "output" / "logs")
-    monkeypatch.setattr(jobs, "VIDEOS_DIR", root / "input" / "videos")
-
-    monkeypatch.setattr(progress, "INPUT_DIR", root / "input")
-    monkeypatch.setattr(progress, "OUTPUT_DIR", root / "output")
-
     return root
 
 
 def write_stub(
-    scripts_dir, stage, *, name="stub", exit_code=0, sleep=0.0,
-    write_artifact=True, log_path=None, stdout_lines=None, fail_for_lecture=None,
+    scripts_dir,
+    stage,
+    *,
+    name="stub",
+    exit_code=0,
+    sleep=0.0,
+    write_artifact=True,
+    log_path=None,
+    stdout_lines=None,
+    fail_for_lecture=None,
 ):
     """A stage script that: optionally sleeps, optionally logs
     "<time> start/end <stage> <lecture_id>" lines to `log_path` (append
@@ -111,9 +112,7 @@ def write_stub(
         lines.append("    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)")
         lines.append("    with open(path, 'w') as f: f.write('stub\\n')")
     if log_path is not None:
-        lines.append(
-            f"open({str(log_path)!r}, 'a').write(f'{{time.time()}}|end|{stage}|{{lecture_id}}\\n')"
-        )
+        lines.append(f"open({str(log_path)!r}, 'a').write(f'{{time.time()}}|end|{stage}|{{lecture_id}}\\n')")
     lines.append(f"sys.exit(1 if _fail else {exit_code})")
     script.write_text("\n".join(lines) + "\n")
     return script
@@ -129,9 +128,7 @@ def wait_until(predicate, timeout=5.0, interval=0.01):
 
 
 def wait_for_job_done(manager, timeout=5.0):
-    return wait_until(
-        lambda: (manager.job or {}).get("status") not in (None, "running"), timeout=timeout
-    )
+    return wait_until(lambda: (manager.job or {}).get("status") not in (None, "running"), timeout=timeout)
 
 
 def read_log(path):
@@ -147,19 +144,28 @@ def read_log(path):
 
 # --- lane parallelism --------------------------------------------------------
 
+
 def test_different_lanes_run_concurrently(project):
     log = project / "order.log"
-    write_stub(config.SCRIPTS_DIR, 0, sleep=0.3, log_path=log)   # net lane
-    write_stub(config.SCRIPTS_DIR, 6, sleep=0.3, log_path=log)   # api lane
+    write_stub(config.SCRIPTS_DIR, 0, sleep=0.3, log_path=log)  # net lane
+    write_stub(config.SCRIPTS_DIR, 6, sleep=0.3, log_path=log)  # api lane
 
     manager = jobs.JobManager()
     tasks = [("lecture01", 0, []), ("lecture02", 6, [])]
-    started = time.time()
     manager.start_job(tasks)
     assert wait_for_job_done(manager, timeout=5)
-    elapsed = time.time() - started
 
-    assert elapsed < 0.55, f"lanes ran serially instead of concurrently ({elapsed:.2f}s)"
+    # assert on the recorded start/end windows instead of total wall-clock
+    # elapsed -- a wall-clock threshold has to leave slack for subprocess
+    # spawn overhead, which made this flaky under load; the two lanes'
+    # windows overlapping is what "ran concurrently" actually means.
+    rows = read_log(log)
+    starts = {st: ts for ts, ev, st, _ in rows if ev == "start"}
+    ends = {st: ts for ts, ev, st, _ in rows if ev == "end"}
+    assert starts[0] < ends[6] and starts[6] < ends[0], (
+        f"lanes ran serially instead of concurrently: "
+        f"stage0={starts[0]:.3f}-{ends[0]:.3f} stage6={starts[6]:.3f}-{ends[6]:.3f}"
+    )
     assert manager.job["status"] == "done"
 
 
@@ -172,15 +178,23 @@ def test_same_lane_tasks_run_one_at_a_time(project):
 
     manager = jobs.JobManager()
     tasks = [("lecture01", 1, []), ("lecture02", 1, [])]
-    started = time.time()
     manager.start_job(tasks)
     assert wait_for_job_done(manager, timeout=5)
-    elapsed = time.time() - started
 
-    assert elapsed >= 0.4, f"same-lane tasks overlapped ({elapsed:.2f}s)"
+    # same reasoning as test_different_lanes_run_concurrently above: check
+    # the recorded windows don't overlap, rather than inferring
+    # non-overlap from a minimum total wall-clock elapsed.
+    rows = read_log(log)
+    starts = {lec: ts for ts, ev, st, lec in rows if ev == "start"}
+    ends = {lec: ts for ts, ev, st, lec in rows if ev == "end"}
+    assert ends["lecture01"] <= starts["lecture02"] or ends["lecture02"] <= starts["lecture01"], (
+        f"same-lane tasks overlapped: lecture01={starts['lecture01']:.3f}-{ends['lecture01']:.3f} "
+        f"lecture02={starts['lecture02']:.3f}-{ends['lecture02']:.3f}"
+    )
 
 
 # --- dependency ordering per lecture -----------------------------------------
+
 
 def test_later_stage_waits_for_earlier_stage_same_lecture(project):
     # stage 0 (net lane) and stage 1 (cpu lane) for the SAME lecture: since
@@ -216,6 +230,7 @@ def test_independent_lectures_are_not_serialized_by_each_others_deps(project):
 
 # --- failure skips downstream -------------------------------------------------
 
+
 def test_failure_skips_downstream_tasks_for_same_lecture_only(project):
     write_stub(config.SCRIPTS_DIR, 1, fail_for_lecture="lecture01")
     write_stub(config.SCRIPTS_DIR, 2, exit_code=0)
@@ -223,8 +238,8 @@ def test_failure_skips_downstream_tasks_for_same_lecture_only(project):
     manager = jobs.JobManager()
     tasks = [
         ("lecture01", 1, []),
-        ("lecture01", 2, []),   # must be skipped
-        ("lecture02", 1, []),   # unaffected
+        ("lecture01", 2, []),  # must be skipped
+        ("lecture02", 1, []),  # unaffected
     ]
     manager.start_job(tasks)
     assert wait_for_job_done(manager, timeout=5)
@@ -251,6 +266,7 @@ def test_missing_artifact_marks_stage_blocked_not_done(project):
 
 
 # --- cancel semantics ---------------------------------------------------------
+
 
 def test_cancel_stops_pending_and_running_tasks(project):
     write_stub(config.SCRIPTS_DIR, 1, sleep=1.0)
@@ -286,9 +302,7 @@ def test_cancel_during_final_assembly_terminates_the_stage7_process(project):
     manager = jobs.JobManager()
     started = time.time()
     manager.start_job([(None, 7, [])])
-    assert wait_until(
-        lambda: any(e["type"] == "stage_start" for e in manager.events_since(0)), timeout=2
-    )
+    assert wait_until(lambda: any(e["type"] == "stage_start" for e in manager.events_since(0)), timeout=2)
 
     manager.cancel()
     assert wait_for_job_done(manager, timeout=5)
@@ -319,6 +333,7 @@ def test_cancel_before_final_assembly_starts_marks_it_cancelled_without_running(
 
 # --- final-task status while executing ---------------------------------------
 
+
 def test_final_task_status_shows_running_while_executing(project):
     """Regression test for a gap found while writing this suite: `_run()`'s
     final-tasks loop used to call `_run_task("final", ...)` directly without
@@ -334,9 +349,9 @@ def test_final_task_status_shows_running_while_executing(project):
     manager = jobs.JobManager()
     manager.start_job([(None, 7, [])])
 
-    assert wait_until(
-        lambda: any(e["type"] == "stage_start" for e in manager.events_since(0)), timeout=2
-    ), "stage 7 never started"
+    assert wait_until(lambda: any(e["type"] == "stage_start" for e in manager.events_since(0)), timeout=2), (
+        "stage 7 never started"
+    )
     # the task is executing right now (proc registered, event fired) and the
     # status field reflects that instead of still claiming "pending"
     assert manager.job["tasks"][0]["status"] == "running"
@@ -346,6 +361,7 @@ def test_final_task_status_shows_running_while_executing(project):
 
 
 # --- snapshot consistency under concurrent polling (C1 regression) ----------
+
 
 def test_snapshot_survives_concurrent_polling_without_torn_json(project):
     import threading

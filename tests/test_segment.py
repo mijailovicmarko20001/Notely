@@ -54,6 +54,7 @@ def test_missing_title_or_body_treated_as_empty_string():
 # can (opt-in) show it to Claude and embed it in the note -- see
 # DOCUMENTATION.md / TODO.md for the full feature.
 
+
 def test_frame_image_path_carried_through_single_run():
     timeline = [
         {"slide_number": 1, "start": 0.0, "end": 5.0, "last_frame_image_path": "event_000.png"},

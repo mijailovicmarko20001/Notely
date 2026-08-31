@@ -118,16 +118,10 @@
       <div class="chip-list collapsed" id="run-lectures"></div>
       <label>Stages</label>
       <div class="chip-summary" id="run-stages-summary"></div>
-      <div class="chip-list collapsed" id="run-stages">
-        <label class="chip"><input type="checkbox" value="0" checked> 0 · Fetch video</label>
-        <label class="chip"><input type="checkbox" value="1" checked> 1 · Transcribe</label>
-        <label class="chip"><input type="checkbox" value="2" checked> 2 · Extract slides</label>
-        <label class="chip"><input type="checkbox" value="3" checked> 3 · Detect slide changes</label>
-        <label class="chip"><input type="checkbox" value="4" checked> 4 · Match frames</label>
-        <label class="chip"><input type="checkbox" value="5" checked> 5 · Segment transcript</label>
-        <label class="chip"><input type="checkbox" value="6" checked> 6 · Generate notes</label>
-        <label class="chip"><input type="checkbox" value="7" checked> 7 · Assemble guide</label>
-      </div>
+      <!-- Rendered from GET /settings's `stages` (notely.stages, the
+           backend's stage registry) at boot, not hardcoded here -- see
+           loadDefaults() in app.js. -->
+      <div class="chip-list collapsed" id="run-stages"></div>
       <label class="chip gap-top"><input type="checkbox" id="run-force"> Re-do stages that already ran</label>
       <details><summary>Advanced (per-stage tuning)</summary>
         <div class="stack gap-top">
@@ -197,15 +191,15 @@
   </section>
 </main>
 
-<!-- Guide-tab rendering only (client-side markdown + math for the study
-     guide preview; stage 08's PDF export does the same server-side with
-     Chrome). Needs internet the first time the tab is opened — same
-     external-CDN trade-off DOCUMENTATION.md already notes for PDF export. -->
+<!-- Guide-tab math typesetting only (markdown -> HTML is server-side now,
+     see notely.pipeline.export.render_guide_html; stage 08's PDF export
+     uses the same math-stashing via markdown_to_html). Needs internet the
+     first time the tab is opened — same external-CDN trade-off
+     DOCUMENTATION.md already notes for PDF export. -->
 <script>
   MathJax = { tex: { inlineMath: [['$', '$']], displayMath: [['$$', '$$']] } };
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

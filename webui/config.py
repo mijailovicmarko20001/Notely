@@ -4,19 +4,41 @@ Mirrors the stage scripts' convention: everything is relative to the project
 root (the parent of this package), so the working directory never matters.
 """
 
-import json
 import os
 import re
+import sys
 from pathlib import Path
 
 from dotenv import dotenv_values, set_key
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SCRIPTS_DIR = PROJECT_ROOT / "scripts"
-INPUT_DIR = PROJECT_ROOT / "input"
-OUTPUT_DIR = PROJECT_ROOT / "output"
-VIDEOS_DIR = INPUT_DIR / "videos"
-SLIDES_DIR = INPUT_DIR / "slides"
+# Only needed to bootstrap the `from notely...` import below (finding
+# notely/ on sys.path) -- notely.paths.PROJECT_ROOT is the same value and
+# is what the rest of this file uses. Not guaranteed to already be on
+# sys.path depending on how the server was launched (uvicorn
+# webui.main:app vs. python -m webui.main vs. an IDE run config).
+_PROJECT_ROOT_FOR_IMPORT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
+
+# SCRIPTS_DIR/SLIDES_DIR/VIDEOS_DIR aren't referenced in this file, only
+# re-exported for other webui/ modules that do `from .config import
+# SCRIPTS_DIR` etc. (see tests/webui/conftest.py's docstring for the full
+# list) -- noqa since ruff can't see that cross-module usage.
+from notely.env import (  # noqa: E402
+    DEFAULT_OCR_LANG,
+    DEFAULT_STAGE3_THRESHOLD,
+    DEFAULT_WHISPER_MODEL,
+)
+from notely.io import load_json_or_default  # noqa: E402
+from notely.paths import (  # noqa: E402, F401
+    INPUT_DIR,
+    OUTPUT_DIR,
+    PROJECT_ROOT,
+    SCRIPTS_DIR,
+    SLIDES_DIR,
+    VIDEOS_DIR,
+)
+
 LOGS_DIR = OUTPUT_DIR / "logs"
 # In Docker, /app/.env is a symlink into the persistent volume — but
 # python-dotenv's set_key replaces the file atomically (temp file + rename),
@@ -37,11 +59,7 @@ LECTURE_ID_RE = re.compile(r"^lecture\d{2,}$")
 
 
 def load_video_urls() -> dict:
-    try:
-        with open(VIDEO_URLS_PATH) as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+    return load_json_or_default(VIDEO_URLS_PATH, {})
 
 
 def validate_lecture_id(lecture_id: str, must_exist: bool = True) -> str:
@@ -53,30 +71,31 @@ def validate_lecture_id(lecture_id: str, must_exist: bool = True) -> str:
         raise ValueError(f"unknown lecture id: {lecture_id!r}")
     return lecture_id
 
+
 # Settings the UI exposes, with defaults. Course-specific defaults come from
 # the validated lecture01 run (see CLAUDE.md / memory).
 SETTING_KEYS = ("ANTHROPIC_API_KEY", "WHISPER_MODEL", "NOTES_MODEL", "OCR_LANG")
 
 DEFAULT_STAGE_OPTIONS = {
-    "crop": "0.12,0.06,0.63,0.88",   # stage 03 — Zoom capture of PDF viewer
-    "threshold": 0.02,                # stage 03
-    "interval": 1.5,                  # stage 03
-    "ocr_lang": "srp_latn+eng",      # stage 04
-    "margin": 0.15,                   # stage 04
-    "stay_margin": 0.05,              # stage 04
-    "confidence_threshold": 0.25,     # stage 04
-    "min_forward_score": 0.05,        # stage 04
-    "example_score_max": 0.12,        # stage 04 — worked-example detection
-    "example_ink_delta": 12,          # stage 04 — worked-example detection
+    "crop": "0.12,0.06,0.63,0.88",  # stage 03 — Zoom capture of PDF viewer
+    "threshold": DEFAULT_STAGE3_THRESHOLD,  # stage 03 -- D1, see notely.env
+    "interval": 1.5,  # stage 03
+    "ocr_lang": DEFAULT_OCR_LANG,  # stage 04 -- D3, see notely.env
+    "margin": 0.15,  # stage 04
+    "stay_margin": 0.05,  # stage 04
+    "confidence_threshold": 0.25,  # stage 04
+    "min_forward_score": 0.05,  # stage 04
+    "example_score_max": 0.12,  # stage 04 — worked-example detection
+    "example_ink_delta": 12,  # stage 04 — worked-example detection
     "example_ink_text_overlap_min": 0.5,  # stage 04 — worked-example detection
-    "example_ink_novel_word_min": 0.35,   # stage 04 — worked-example detection
-    "min_dwell": 5.0,                 # stage 05
+    "example_ink_novel_word_min": 0.35,  # stage 04 — worked-example detection
+    "min_dwell": 5.0,  # stage 05
 }
 
 DEFAULT_ENV = {
-    "WHISPER_MODEL": "medium",  # "small" mis-detected Serbian as Bosnian
+    "WHISPER_MODEL": DEFAULT_WHISPER_MODEL,  # D2, see notely.env
     "NOTES_MODEL": "claude-sonnet-5",
-    "OCR_LANG": "srp_latn+eng",
+    "OCR_LANG": DEFAULT_OCR_LANG,  # D3, see notely.env
 }
 
 

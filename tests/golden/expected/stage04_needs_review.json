@@ -1,0 +1,14 @@
+{
+  "low_confidence_matches": [
+    {
+      "event_index": 2,
+      "timestamp": 10.0,
+      "frame_image_path": "frame_002.png",
+      "ocr_excerpt": "",
+      "slide_number": 1,
+      "score": 0.0
+    }
+  ],
+  "unmatched_slides": [],
+  "backward_jumps": []
+}

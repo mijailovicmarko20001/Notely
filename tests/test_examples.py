@@ -7,13 +7,14 @@ import base64
 import io
 
 from conftest import load_stage
+from notely.pipeline import example_detect as m4
+from notely.pipeline import examples as m6
 
-m4 = load_stage("04_match_frames_to_slides.py")
 m5 = load_stage("05_segment_transcript.py")
-m6 = load_stage("06_generate_notes.py")
 
 
 # --- stage 4: group_runs -----------------------------------------------------
+
 
 def test_group_runs_groups_consecutive_same_slide():
     matches = [
@@ -32,6 +33,7 @@ def test_group_runs_empty_input():
 
 
 # --- stage 4: detect_example_candidates -------------------------------------
+
 
 def _match(event_index, slide_number, score, timestamp=None):
     return {
@@ -113,14 +115,22 @@ def test_detect_examples_animation_build_reveal_is_not_annotated():
     ]
     matches[0]["ocr_excerpt"] = "RDBMS MIB databases installed"
     matches[1]["ocr_excerpt"] = "RDBMS MIB databases installed actively opened databases"
-    slides = [{
-        "slide_number": 1, "title": "Uvod",
-        "body_text": "RDBMS MIB databases installed actively opened databases configuration parameters",
-    }]
+    slides = [
+        {
+            "slide_number": 1,
+            "title": "Uvod",
+            "body_text": "RDBMS MIB databases installed actively opened databases configuration parameters",
+        }
+    ]
     hashes = {0: 0b0000, 1: 0b0111}  # hamming distance 3, well above ink_delta
     candidates = m4.detect_example_candidates(
-        matches, slides, hashes, score_max=0.12, ink_delta=3,
-        ink_text_overlap_min=0.5, ink_novel_word_min=0.2,
+        matches,
+        slides,
+        hashes,
+        score_max=0.12,
+        ink_delta=3,
+        ink_text_overlap_min=0.5,
+        ink_novel_word_min=0.2,
     )
     assert candidates == []
 
@@ -167,6 +177,7 @@ def test_ocr_text_overlap_is_case_and_punctuation_insensitive():
 
 
 # --- stage 4: ocr_novel_word_ratio ------------------------------------------
+
 
 def test_ocr_novel_word_ratio_all_words_already_in_deck_text_is_zero():
     # Calibrated against a real false positive: a dense slide revealed by a
@@ -224,6 +235,7 @@ def test_detect_examples_does_not_collapse_across_different_kinds():
 
 # --- stage 5: fold / transcript_context_for / score_example_cues -----------
 
+
 def test_fold_strips_diacritics_and_lowercases():
     assert m5.fold("Vežbanje") == "vezbanje"
 
@@ -254,14 +266,23 @@ def test_transcript_context_for_empty_segments_returns_empty_string():
 
 # --- stage 5: attach_example_candidates -------------------------------------
 
+
 def test_attach_example_candidates_lands_on_matching_slide_number():
     output = [
         {"slide_number": 1, "windows": [[0.0, 10.0]], "example_candidates": []},
         {"slide_number": 2, "windows": [[10.0, 20.0]], "example_candidates": []},
     ]
     examples_data = [
-        {"event_index": 0, "timestamp": 12.0, "frame_image_path": "e.png",
-         "slide_number": 2, "kind": "whiteboard", "score": 0.01, "ink_delta": None, "ocr_excerpt": ""},
+        {
+            "event_index": 0,
+            "timestamp": 12.0,
+            "frame_image_path": "e.png",
+            "slide_number": 2,
+            "kind": "whiteboard",
+            "score": 0.01,
+            "ink_delta": None,
+            "ocr_excerpt": "",
+        },
     ]
     m5.attach_example_candidates(examples_data, output, canonical={}, transcript_segments=[])
     assert output[0]["example_candidates"] == []
@@ -278,8 +299,16 @@ def test_attach_example_candidates_falls_back_to_window_containment():
         {"slide_number": 1, "windows": [[0.0, 25.0]], "example_candidates": []},
     ]
     examples_data = [
-        {"event_index": 0, "timestamp": 12.0, "frame_image_path": "e.png",
-         "slide_number": 2, "kind": "whiteboard", "score": 0.01, "ink_delta": None, "ocr_excerpt": ""},
+        {
+            "event_index": 0,
+            "timestamp": 12.0,
+            "frame_image_path": "e.png",
+            "slide_number": 2,
+            "kind": "whiteboard",
+            "score": 0.01,
+            "ink_delta": None,
+            "ocr_excerpt": "",
+        },
     ]
     m5.attach_example_candidates(examples_data, output, canonical={}, transcript_segments=[])
     assert len(output[0]["example_candidates"]) == 1
@@ -298,6 +327,7 @@ def test_attach_example_candidates_no_candidates_still_sets_empty_key():
 
 
 # --- stage 6: parse_example_verdict -----------------------------------------
+
 
 def test_parse_verdict_bare_json():
     text = '{"is_example": true, "kind": "whiteboard", "caption": "x", "confidence": 0.9}'
@@ -337,6 +367,7 @@ def test_parse_verdict_missing_required_field_returns_none():
 
 # --- stage 6: fmt_ts / frame_md_path -----------------------------------------
 
+
 def test_fmt_ts_under_a_minute():
     assert m6.fmt_ts(5) == "0:05"
 
@@ -357,6 +388,7 @@ def test_frame_md_path_strips_output_prefix_and_points_up_one_level():
 
 # --- stage 6: rank_example_candidates ---------------------------------------
 
+
 def test_rank_example_candidates_prefers_cue_hits_then_kind_then_time():
     slide = {}
     late_with_cue = (slide, {"kind": "example_slide", "timestamp": 100.0, "cue_hits": ["primer"]})
@@ -367,8 +399,10 @@ def test_rank_example_candidates_prefers_cue_hits_then_kind_then_time():
 
 # --- stage 6: load_frame_image_b64 with an explicit max_dim ----------------
 
+
 def _make_png(tmp_path, name, size, color=(120, 140, 160)):
     from PIL import Image
+
     path = tmp_path / name
     Image.new("RGB", size, color=color).save(path)
     return path
@@ -379,6 +413,7 @@ def test_load_frame_image_respects_explicit_max_dim(tmp_path):
     m6.PROJECT_ROOT = tmp_path
     b64 = m6.load_frame_image_b64("big.png", max_dim=1024)
     from PIL import Image
+
     decoded = Image.open(io.BytesIO(base64.b64decode(b64)))
     assert max(decoded.size) <= 1024
     assert round(decoded.size[0] / decoded.size[1], 3) == round(3840 / 2160, 3)
@@ -389,6 +424,7 @@ def test_load_frame_image_default_max_dim_still_1568(tmp_path):
     m6.PROJECT_ROOT = tmp_path
     b64 = m6.load_frame_image_b64("big.png")
     from PIL import Image
+
     decoded = Image.open(io.BytesIO(base64.b64decode(b64)))
     assert max(decoded.size) <= m6.FRAME_IMAGE_MAX_DIM
     assert max(decoded.size) > 1024  # default (1568) is bigger than the example-confirm path's 1024

@@ -1,16 +1,23 @@
-"""Single-job pipeline runner with two-lane parallelism.
+"""Single-job pipeline runner with per-resource lane parallelism.
 
 One job at a time (single-user local tool), but within a job, tasks run on
-two lanes that use different resources and so overlap safely:
+3-4 lanes that use different resources and so overlap safely (see _run's
+own lane construction for the exact set, which depends on WHISPER_BACKEND):
 
-  IO lane  — stage 0 (video download) and stage 6 (note generation via API):
-             network-bound, near-zero CPU. Downloads run ahead of the whole
-             queue; notes generate as soon as each lecture's stage 5 lands.
-  CPU lane — stages 1-5 (transcribe/extract/detect/OCR/segment): these
-             saturate cores, so only one runs at a time.
+  net lane — stage 0 (video download): bandwidth-bound, runs ahead of
+             everything else.
+  cpu lane — stages 1-5 (transcribe/extract/detect/OCR/segment): these
+             saturate cores, so only one runs at a time. Stage 1
+             (transcribe) moves to its own gpu lane instead when
+             WHISPER_BACKEND=mlx, since it no longer contends with the CPU
+             lane's other stages for the same resource.
+  api lane — stage 6 (note generation via the Anthropic API):
+             network-bound, near-zero CPU; trails behind as each lecture's
+             stage 5 lands.
+  gpu lane — stage 1 (transcribe) only when WHISPER_BACKEND=mlx.
 
 Within a lecture, stages remain strictly sequential (stage k needs k-1's
-artifact). Stage 7 (assembly) runs last, after both lanes drain.
+artifact). Stage 7 (assembly) runs last, after every lane drains.
 """
 
 import glob
@@ -21,10 +28,23 @@ import threading
 import time
 import uuid
 
-from . import progress
-from .config import LOGS_DIR, PROJECT_ROOT, SCRIPTS_DIR, VIDEOS_DIR, stage_env
+from . import config, progress
+
+# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
+# project root -- not guaranteed to already be on sys.path depending on how
+# the server was launched (uvicorn webui.main:app vs. python -m webui.main
+# vs. an IDE run config), so this is asserted explicitly rather than
+# assumed. Must happen before the `from notely...` import below.
+if str(config.PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(config.PROJECT_ROOT))
+
+from notely.adapters.ffprobe_media_probe import FfprobeMediaProbe  # noqa: E402
+from notely.runner import build_tasks  # noqa: E402, F401 (re-exported: webui.jobs.build_tasks is public API)
+from notely.stages import MAX_PIPELINE_STAGE  # noqa: E402
 
 MAX_EVENTS_IN_MEMORY = 2000
+
+_MEDIA_PROBE = FfprobeMediaProbe()
 
 
 class Busy(RuntimeError):
@@ -33,25 +53,19 @@ class Busy(RuntimeError):
 
 
 def stage_script(stage: int) -> str:
-    matches = sorted(glob.glob(str(SCRIPTS_DIR / f"{stage:02d}_*.py")))
+    # Glob rather than a fixed filename from the stage registry (see
+    # notely.stages) on purpose: tests/test_jobs_scheduler.py points
+    # SCRIPTS_DIR at a tmp dir of differently-named stub scripts (still
+    # "{stage:02d}_*.py") to drive the real scheduler without the real
+    # pipeline -- a fixed-name lookup would break that test seam.
+    matches = sorted(glob.glob(str(config.SCRIPTS_DIR / f"{stage:02d}_*.py")))
     if not matches:
         raise FileNotFoundError(f"no script for stage {stage}")
     return matches[0]
 
 
 def get_video_duration(lecture_id: str):
-    video = VIDEOS_DIR / f"{lecture_id}.mp4"
-    if not video.exists():
-        return None
-    try:
-        r = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "default=noprint_wrappers=1:nokey=1", str(video)],
-            capture_output=True, text=True, timeout=30,
-        )
-        return float(r.stdout.strip()) if r.returncode == 0 else None
-    except Exception:
-        return None
+    return _MEDIA_PROBE.get_duration(config.VIDEOS_DIR / f"{lecture_id}.mp4")
 
 
 class JobManager:
@@ -63,12 +77,18 @@ class JobManager:
         # "mutated under _cond, serialized under _lock" torn reads.
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)  # scheduler wake-ups
+        # A separate mutex just for the job's log file: log.write()/flush()
+        # (once per subprocess stdout line, potentially thousands of times
+        # per job) has nothing to do with job-state consistency, and used
+        # to borrow self._lock -- serializing disk I/O against every SSE
+        # poll/snapshot/busy check reading job state on the same mutex.
+        self._log_lock = threading.Lock()
         self._thread = None
-        self._procs = {}         # lane name -> running Popen
+        self._procs = {}  # lane name -> running Popen
         self._cancelled = False
-        self._busy = False       # guarded by _lock; claim-and-start atomicity (C2)
-        self.job = None          # snapshot dict
-        self.events = []         # [{seq, type, ...}]
+        self._busy = False  # guarded by _lock; claim-and-start atomicity (C2)
+        self.job = None  # snapshot dict
+        self.events = []  # [{seq, type, ...}]
         self._seq = 0
 
     # -- events -----------------------------------------------------------
@@ -148,7 +168,7 @@ class JobManager:
             self._cond.notify_all()
 
     # -- scheduler ---------------------------------------------------------
-    IO_STAGES = {0, 6}   # network-bound: download, note generation (API)
+    IO_STAGES = {0, 6}  # network-bound: download, note generation (API)
 
     def _deps_done(self, tasks, idx):
         """A task is ready when every earlier task of the same lecture is done."""
@@ -212,14 +232,20 @@ class JobManager:
             argv.append(lecture_id)
         argv += extra
 
-        with self._lock:
-            log.write(f"\n===== task {i} [{lane}]: stage {stage} {lecture_id or ''} =====\n$ {' '.join(argv)}\n")
+        with self._log_lock:
+            log.write(
+                f"\n===== task {i} [{lane}]: stage {stage} {lecture_id or ''} =====\n$ {' '.join(argv)}\n"
+            )
             log.flush()
         skip_line = ""
         try:
             proc = subprocess.Popen(
-                argv, cwd=str(PROJECT_ROOT), env=stage_env(),
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                argv,
+                cwd=str(config.PROJECT_ROOT),
+                env=config.stage_env(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
             )
             # Register in _procs (keyed by lane, including "final" for stage
             # 7 -- see _run()) before doing anything else, and re-check
@@ -233,7 +259,7 @@ class JobManager:
                 proc.terminate()
             for line in proc.stdout:
                 line = line.rstrip("\n")
-                with self._lock:
+                with self._log_lock:
                     log.write(f"[{lecture_id or 'all'}:{stage}] {line}\n")
                 if "[skip]" in line:
                     skip_line = line
@@ -259,6 +285,7 @@ class JobManager:
         finally:
             with self._lock:
                 self._procs.pop(lane, None)
+            with self._log_lock:
                 log.flush()
 
         with self._lock:
@@ -278,12 +305,12 @@ class JobManager:
         return status == "done"
 
     def _run(self, tasks):
-        LOGS_DIR.mkdir(parents=True, exist_ok=True)
-        log_path = LOGS_DIR / f"{self.job['id']}.log"
+        config.LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        log_path = config.LOGS_DIR / f"{self.job['id']}.log"
         failed_lectures = set()  # a failure only skips that lecture's remaining stages
 
         # stage 7 (assembly, lecture_id=None) runs after both lanes drain
-        final_tasks = [(i, t) for i, t in enumerate(tasks) if t[1] == 7]
+        final_tasks = [(i, t) for i, t in enumerate(tasks) if t[1] == MAX_PIPELINE_STAGE]
 
         # One lane per independent resource, so no stage ever queues behind a
         # stage using different hardware:
@@ -292,7 +319,7 @@ class JobManager:
         #   gpu — transcription (stage 1) when WHISPER_BACKEND=mlx.
         #   cpu — extraction/detection/OCR/segmentation (2-5), plus
         #         transcription on the CPU backend.
-        gpu_transcribe = stage_env().get("WHISPER_BACKEND", "").lower() == "mlx"
+        gpu_transcribe = config.stage_env().get("WHISPER_BACKEND", "").lower() == "mlx"
         lanes = [
             ("net", {0}),
             ("cpu", {2, 3, 4, 5} if gpu_transcribe else {1, 2, 3, 4, 5}),
@@ -304,8 +331,8 @@ class JobManager:
         with open(log_path, "a") as log:
             workers = [
                 threading.Thread(
-                    target=self._worker,
-                    args=(name, stages, tasks, log, failed_lectures), daemon=True)
+                    target=self._worker, args=(name, stages, tasks, log, failed_lectures), daemon=True
+                )
                 for name, stages in lanes
             ]
             for w in workers:
@@ -329,9 +356,7 @@ class JobManager:
                 self._run_task("final", i, lecture_id, stage, extra, log)
 
         with self._lock:
-            self.job["status"] = (
-                "cancelled" if self._cancelled else ("failed" if failed_lectures else "done")
-            )
+            self.job["status"] = "cancelled" if self._cancelled else ("failed" if failed_lectures else "done")
             self.job["finished"] = time.time()
             status = self.job["status"]
             self._busy = False
@@ -339,39 +364,3 @@ class JobManager:
 
 
 MANAGER = JobManager()
-
-
-def build_tasks(lecture_ids, stages, options, force, has_api_key):
-    """Translate a UI job request into per-stage argv lists."""
-    opts = options or {}
-
-    def flag(name, key):
-        v = opts.get(key)
-        return [name, str(v)] if v not in (None, "") else []
-
-    tasks = []
-    per_lecture_stages = [s for s in stages if s != 7]
-    for lec in lecture_ids:
-        for s in per_lecture_stages:
-            if s == 6 and not has_api_key:
-                continue  # note generation locked without a key
-            extra = []
-            if s == 3:
-                extra += flag("--crop", "crop") + flag("--threshold", "threshold") + flag("--interval", "interval")
-            elif s == 4:
-                extra += (flag("--ocr-lang", "ocr_lang") + flag("--margin", "margin")
-                          + flag("--stay-margin", "stay_margin")
-                          + flag("--confidence-threshold", "confidence_threshold")
-                          + flag("--min-forward-score", "min_forward_score")
-                          + flag("--example-score-max", "example_score_max")
-                          + flag("--example-ink-delta", "example_ink_delta")
-                          + flag("--example-ink-text-overlap-min", "example_ink_text_overlap_min")
-                          + flag("--example-ink-novel-word-min", "example_ink_novel_word_min"))
-            elif s == 5:
-                extra += flag("--min-dwell", "min_dwell")
-            if force:
-                extra.append("--force")
-            tasks.append((lec, s, extra))
-    if 7 in stages:
-        tasks.append((None, 7, ["--force"]))  # stage 07 fails without --force when output exists
-    return tasks

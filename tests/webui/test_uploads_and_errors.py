@@ -5,14 +5,20 @@ slide-upload routes, which are where TooLargeError/ValidationError/
 NotFoundError actually get raised in this codebase."""
 
 import io
+import sys
+from pathlib import Path
 
 import pytest
 
-from webui import config, decks
-from webui.errors import TooLargeError, ValidationError
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from pdf_fixtures import make_pdf_bytes  # noqa: E402
+
+from webui import config, decks  # noqa: E402
+from webui.errors import TooLargeError, ValidationError  # noqa: E402
 
 
 # --- A3: save_upload_stream itself (pure, no HTTP) --------------------------
+
 
 @pytest.mark.anyio
 async def test_save_upload_stream_rejects_over_cap_upload(tmp_path):
@@ -50,6 +56,7 @@ async def test_save_upload_stream_rejects_empty_file_by_default(tmp_path):
 
 
 # --- A3 end-to-end through the API: /api/slides/upload -> 413 --------------
+
 
 def test_upload_slides_413_when_over_configured_cap(client, monkeypatch):
     # save_deck_for_lectures binds its own `max_bytes` default from
@@ -96,7 +103,37 @@ def test_upload_pool_400_when_no_lectures_configured_yet(client, project_root):
     assert resp.status_code == 400
 
 
+def test_upload_pool_success_replaces_pool_and_distributes_to_every_lecture(client, project_root):
+    # project_root's default fixture lectures are lecture01 and lecture02
+    # (see tests/webui/conftest.py's _write_default_lectures)
+    deck_a = make_pdf_bytes(["Intro", "CORDIC basics"])
+    deck_b = make_pdf_bytes(["Intro", "New material"])  # shares a page with deck_a
+
+    resp = client.post(
+        "/api/slides/upload-pool",
+        files=[
+            ("files", ("deck_a.pdf", deck_a, "application/pdf")),
+            ("files", ("deck_b.pdf", deck_b, "application/pdf")),
+        ],
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert sorted(body["pool_decks"]) == ["deck_a.pdf", "deck_b.pdf"]
+    assert body["scanned_pages"] == 4
+    assert body["merged_pages"] == 3  # the repeated "Intro" page deduped
+    assert body["duplicate_pages_skipped"] == 1
+    assert body["lectures"] == ["lecture01", "lecture02"]
+
+    # the same merged deck was distributed to every configured lecture
+    for lecture_id in ("lecture01", "lecture02"):
+        deck_path = config.SLIDES_DIR / f"{lecture_id}.pdf"
+        assert deck_path.exists() and deck_path.stat().st_size > 0
+
+
 # --- A4: NotFoundError from media.grab_preview_frame -> 404 -----------------
+
 
 def test_preview_frame_404_when_no_video_yet(client):
     resp = client.get("/api/lectures/lecture01/preview-frame")
@@ -107,6 +144,7 @@ def test_preview_frame_404_when_no_video_yet(client):
 
 
 # --- A1: LectureEntries / malformed bodies ----------------------------------
+
 
 def test_set_lectures_rejects_empty_entries_list(client):
     resp = client.post("/api/lectures", json={"entries": []})
@@ -132,6 +170,7 @@ def test_upload_slides_requires_lecture_ids_form_field(client):
 
 
 # --- A4: consistent error shape across both handler paths -------------------
+
 
 def test_starlette_http_exception_and_notely_error_share_response_shape(client, project_root):
     (project_root / "input" / "video_urls.json").write_text("{}")

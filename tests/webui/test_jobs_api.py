@@ -5,30 +5,46 @@ from webui import jobs
 
 
 def test_start_job_rejects_out_of_range_stage(client):
-    resp = client.post("/api/jobs", json={
-        "lecture_ids": ["lecture01"], "stages": [9],
-    })
+    resp = client.post(
+        "/api/jobs",
+        json={
+            "lecture_ids": ["lecture01"],
+            "stages": [9],
+        },
+    )
     assert resp.status_code == 422
 
 
 def test_start_job_rejects_negative_stage(client):
-    resp = client.post("/api/jobs", json={
-        "lecture_ids": ["lecture01"], "stages": [-1],
-    })
+    resp = client.post(
+        "/api/jobs",
+        json={
+            "lecture_ids": ["lecture01"],
+            "stages": [-1],
+        },
+    )
     assert resp.status_code == 422
 
 
 def test_start_job_rejects_non_list_lecture_ids(client):
-    resp = client.post("/api/jobs", json={
-        "lecture_ids": "lecture01", "stages": [1],
-    })
+    resp = client.post(
+        "/api/jobs",
+        json={
+            "lecture_ids": "lecture01",
+            "stages": [1],
+        },
+    )
     assert resp.status_code == 422
 
 
 def test_start_job_rejects_non_list_stages(client):
-    resp = client.post("/api/jobs", json={
-        "lecture_ids": ["lecture01"], "stages": "1",
-    })
+    resp = client.post(
+        "/api/jobs",
+        json={
+            "lecture_ids": ["lecture01"],
+            "stages": "1",
+        },
+    )
     assert resp.status_code == 422
 
 
@@ -51,6 +67,7 @@ def test_start_job_400_when_nothing_to_run_without_api_key(client, monkeypatch):
     # stage 6 (note generation) is silently skipped by build_tasks without an
     # API key -- if that's the only stage requested, there's nothing to run
     from webui import config
+
     monkeypatch.setattr(config, "get_api_key", lambda: "")
     resp = client.post("/api/jobs", json={"lecture_ids": ["lecture01"], "stages": [6]})
     assert resp.status_code == 400

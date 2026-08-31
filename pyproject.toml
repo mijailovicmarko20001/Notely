@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+# notely/ is the one importable package (ports/adapters, landing
+# incrementally starting Phase 3 of the cleanup plan). Explicitly listed
+# rather than left to auto-discovery: without an explicit package list,
+# setuptools picks up every top-level directory in a checkout (webui/, and
+# even a developer's local input/output/data/ dirs) and refuses to build.
+# Every script that needs notely/ also inserts the project root onto
+# sys.path itself (see e.g. scripts/06_generate_notes.py), so this editable
+# install isn't load-bearing for running the pipeline -- it's for `pip
+# install -e ".[dev]"` to have something to resolve the dev group against,
+# and for `import notely...` to work the same way from any cwd.
+[tool.setuptools]
+packages = ["notely", "notely.adapters"]
+
+[project]
+name = "notely"
+version = "0.1.0"
+description = "Local, offline pipeline: lecture video + slides -> condensed study notes"
+requires-python = ">=3.11"
+readme = "README.md"
+license = "MIT"
+
+# Runtime dependencies are declared in requirements.txt (see CONTRIBUTING.md
+# for why: this project is run from a checkout, not installed as a package,
+# and requirements.txt/-lock.txt predate this file). This table exists to
+# give ruff/pytest a project root to anchor on and to hold the dev-only group
+# below -- it does not currently drive `pip install`.
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",   # required by fastapi.testclient.TestClient
+    "anyio>=4.0",     # async test support (tests/webui/*, @pytest.mark.anyio)
+    "ruff>=0.16",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "anyio: mark a test as needing an anyio event loop (see tests/webui/conftest.py)",
+]
+addopts = "--strict-markers"
+filterwarnings = [
+    # Pillow 14 will remove Image.getdata(); scripts/04_match_frames_to_slides.py
+    # still uses it (see that file's own note) -- tracked, not silenced by accident.
+    "ignore:Image.Image.getdata is deprecated:DeprecationWarning",
+]
+
+[tool.ruff]
+target-version = "py311"   # matches the CI matrix floor (.github/workflows/tests.yml)
+line-length = 110          # this codebase's comments regularly run long; avoid reflow churn
+
+[tool.ruff.lint]
+# Correctness-only -- this is not a full style enforcer (see CONTRIBUTING.md).
+# F = pyflakes (unused imports/vars, undefined names, etc.), E7/E9 = a handful
+# of genuine-bug pycodestyle checks (comparisons to None/True with `==`,
+# syntax errors), B = flake8-bugbear (common correctness footguns: mutable
+# default args, loop-variable closures, missing exception chaining).
+select = ["F", "E7", "E9", "B"]
+ignore = [
+    "E731",  # lambda assignment -- used deliberately in a few places (e.g. webui/errors.py)
+    "B008",  # FastAPI's own pattern: File(...)/Form(...)/Depends(...) as a route param
+             # default is how the framework wires dependency injection, not a mutable-
+             # default footgun -- flagging it in a FastAPI codebase is a false positive.
+]

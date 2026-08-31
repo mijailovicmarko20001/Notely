@@ -1,7 +1,7 @@
 """Tests for webui/decks.py's PDF paths -- merge_pool (pypdf), pool upload
-replacement, and _extract_preview_text's pdf branch (pypdfium2). The PyMuPDF
--> pypdfium2/pypdf swap (OPEN_SOURCE_TODO.md O2) had zero test coverage
-before this."""
+replacement -- and webui/lecture_match.py's _extract_preview_text pdf
+branch (pypdfium2). The PyMuPDF -> pypdfium2/pypdf swap (OPEN_SOURCE_TODO.md
+O2) had zero test coverage before this."""
 
 import io
 import sys
@@ -12,7 +12,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pdf_fixtures import make_pdf_bytes  # noqa: E402
 
-from webui import config, decks  # noqa: E402
+from webui import config, decks, lecture_match  # noqa: E402
 from webui.errors import ValidationError  # noqa: E402
 
 
@@ -84,6 +84,7 @@ def test_merge_pool_ignores_a_previously_merged_deck(tmp_path):
 
 # --- pool uploads replace the pool rather than accumulating into it --------
 
+
 def _upload(name: str, pages: list[str]):
     from starlette.datastructures import UploadFile
 
@@ -122,10 +123,12 @@ async def test_save_pool_uploads_leaves_pool_intact_when_an_upload_is_rejected(s
     (pool_dir / "existing.pdf").write_bytes(make_pdf_bytes(["Keep me"]))
 
     with pytest.raises(ValidationError):
-        await decks.save_pool_uploads([
-            _upload("good.pdf", ["Fine"]),
-            _upload("deck.pptx", ["Not a PDF"]),
-        ])
+        await decks.save_pool_uploads(
+            [
+                _upload("good.pdf", ["Fine"]),
+                _upload("deck.pptx", ["Not a PDF"]),
+            ]
+        )
 
     # Replacement is all-or-nothing: a rejected file in the batch must not
     # leave the user with a half-written pool (or none at all).
@@ -137,7 +140,7 @@ def test_extract_preview_text_reads_first_two_pdf_pages(tmp_path):
     path = tmp_path / "deck.pdf"
     path.write_bytes(make_pdf_bytes(["Title Slide", "Second Slide", "Third Slide"]))
 
-    text = decks._extract_preview_text(path, "pdf")
+    text = lecture_match._extract_preview_text(path, "pdf")
 
     assert "Title Slide" in text
     assert "Second Slide" in text
@@ -148,6 +151,6 @@ def test_extract_preview_text_returns_empty_on_unreadable_pdf(tmp_path):
     path = tmp_path / "deck.pdf"
     path.write_bytes(b"not a real pdf")
 
-    text = decks._extract_preview_text(path, "pdf")
+    text = lecture_match._extract_preview_text(path, "pdf")
 
     assert text == ""

@@ -6,15 +6,11 @@ manual fixes done for lecture01) and stage 05+ is re-run with --force.
 """
 
 import json
-import os
 import time
 
-from .config import OUTPUT_DIR, validate_lecture_id
-
-
-def _load(path):
-    with open(path) as f:
-        return json.load(f)
+from notely.io import load_json as _load
+from notely.io import save_json
+from . import config
 
 
 def count_low_confidence(lecture_id: str) -> int:
@@ -23,7 +19,7 @@ def count_low_confidence(lecture_id: str) -> int:
     backward_jumps are informational-only there, so not counted here) for
     a nav badge. Doesn't load slide images/timeline data, just the small
     needs_review.json. 0 if stage 4 hasn't produced one yet."""
-    review_path = OUTPUT_DIR / "slide_timelines" / f"{lecture_id}_needs_review.json"
+    review_path = config.OUTPUT_DIR / "slide_timelines" / f"{lecture_id}_needs_review.json"
     if not review_path.exists():
         return 0
     try:
@@ -35,17 +31,19 @@ def count_low_confidence(lecture_id: str) -> int:
 def get_review_data(lecture_id: str) -> dict:
     # api.py already validates, but this module builds filesystem paths from
     # lecture_id directly -- don't rely on callers to have done it.
-    lecture_id = validate_lecture_id(lecture_id)
-    timeline_path = OUTPUT_DIR / "slide_timelines" / f"{lecture_id}.json"
-    review_path = OUTPUT_DIR / "slide_timelines" / f"{lecture_id}_needs_review.json"
-    slides_path = OUTPUT_DIR / "slides_extracted" / f"{lecture_id}.json"
+    lecture_id = config.validate_lecture_id(lecture_id)
+    timeline_path = config.OUTPUT_DIR / "slide_timelines" / f"{lecture_id}.json"
+    review_path = config.OUTPUT_DIR / "slide_timelines" / f"{lecture_id}_needs_review.json"
+    slides_path = config.OUTPUT_DIR / "slides_extracted" / f"{lecture_id}.json"
     if not timeline_path.exists():
         raise FileNotFoundError(f"no timeline for {lecture_id} — run stage 4 first")
 
     timeline = _load(timeline_path)
-    review = _load(review_path) if review_path.exists() else {
-        "low_confidence_matches": [], "unmatched_slides": [], "backward_jumps": []
-    }
+    review = (
+        _load(review_path)
+        if review_path.exists()
+        else {"low_confidence_matches": [], "unmatched_slides": [], "backward_jumps": []}
+    )
     slides = _load(slides_path) if slides_path.exists() else []
     slide_meta = [
         {
@@ -78,8 +76,8 @@ def apply_corrections(lecture_id: str, corrections: list) -> dict:
     """corrections: [{timestamp, slide_number|null}] — null drops the entry
     (its window merges into the previous entry, matching how the lecture01
     manual fixes were done)."""
-    lecture_id = validate_lecture_id(lecture_id)
-    timeline_path = OUTPUT_DIR / "slide_timelines" / f"{lecture_id}.json"
+    lecture_id = config.validate_lecture_id(lecture_id)
+    timeline_path = config.OUTPUT_DIR / "slide_timelines" / f"{lecture_id}.json"
     data = _load(timeline_path)
     timeline = data.get("timeline", [])
     notes = data.setdefault("notes", [])
@@ -126,11 +124,9 @@ def apply_corrections(lecture_id: str, corrections: list) -> dict:
             merged.append(e)
     data["timeline"] = merged
 
-    # Temp file + atomic rename: a killed process (e.g. the server restarts
-    # mid-request) can never leave a truncated-but-non-empty timeline that
-    # stage 4's own exists()-and-nonempty skip check would wrongly trust.
-    tmp_path = timeline_path.with_name(f"{timeline_path.name}.tmp{os.getpid()}")
-    with open(tmp_path, "w") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    tmp_path.replace(timeline_path)
+    # Atomic write (see notely.io): a killed process (e.g. the server
+    # restarts mid-request) can never leave a truncated-but-non-empty
+    # timeline that stage 4's own exists()-and-nonempty skip check would
+    # wrongly trust.
+    save_json(timeline_path, data)
     return {"applied": applied, "timeline_entries": len(merged)}

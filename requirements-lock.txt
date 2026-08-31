@@ -1,92 +1,92 @@
-# Exact versions installed in the validated dev .venv (python3.12, macOS arm64), 2026-08-17.
+# Exact versions installed in a clean venv (python3.12, macOS arm64), 2026-09-01.
 # `requirements.txt` stays the source of truth (loose >=, cross-platform);
 # use this file for a reproducible install: pip install -r requirements-lock.txt
-# Regenerate after intentionally upgrading a dependency: .venv/bin/pip freeze > requirements-lock.txt
+# Regenerate after intentionally upgrading a dependency:
+#   python3.12 -m venv /tmp/lock-venv && /tmp/lock-venv/bin/pip install -r requirements.txt
+#   && /tmp/lock-venv/bin/pip freeze > requirements-lock.txt
+# (a *clean* venv, not the long-lived dev .venv -- avoids baking in whatever
+# else has accumulated there over time; see D8, cleanup plan Phase 2, for why
+# this file went stale enough once to pin the wrong opencv-python variant).
+# torch/mlx/mlx-whisper aren't unused despite their size (~2GB): mlx-whisper
+# (the Apple-GPU transcription backend, WHISPER_BACKEND=mlx) depends on torch
+# transitively -- confirmed via `pip show torch` before assuming otherwise.
 annotated-doc==0.0.5
 annotated-types==0.8.0
-anthropic==0.120.2
+anthropic==1.2.0
 anyio==4.14.2
-av==18.0.0
+av==18.1.0
 certifi==2026.7.22
-cffi==2.1.1
-charset-normalizer==3.4.9
-click==8.4.2
-cryptography==50.0.0
-ctranslate2==4.8.1
+charset-normalizer==3.5.1
+click==8.5.0
+cloudpickle==3.1.2
+ctranslate2==4.8.2
 distro==1.9.0
 docstring_parser==0.18.0
 fastapi==0.141.1
 faster-whisper==1.2.1
-filelock==3.32.2
+filelock==3.32.5
 flatbuffers==25.12.19
 fsspec==2026.7.0
-groq==1.6.0
+groq==1.7.0
 h11==0.16.0
 hf-xet==1.6.0
 httpcore==1.0.9
+httpcore2==2.12.0
 httptools==0.8.0
 httpx==0.28.1
-huggingface_hub==1.26.0
-idna==3.18
-iniconfig==2.3.0
+httpx2==2.12.0
+huggingface_hub==1.29.0
+idna==3.19
 Jinja2==3.1.6
 jiter==0.16.0
-joblib==1.5.3
-llvmlite==0.48.0
-lxml==6.1.1
+joblib==1.6.0
+llvmlite==0.49.0
+lxml==6.1.2
 Markdown==3.10.3
 MarkupSafe==3.0.3
-mlx==0.32.0
-mlx-metal==0.32.0
+mlx==0.32.2
+mlx-metal==0.32.2
 mlx-whisper==0.4.3
 more-itertools==11.1.0
 mpmath==1.3.0
-narwhals==2.24.0
+narwhals==2.25.0
 networkx==3.6.1
-numba==0.66.0
-numpy==2.4.6
-onnxruntime==1.28.0
-opencv-python==5.0.0.93
+numba==0.67.0
+numpy==2.5.2
+onnxruntime==1.29.0
+opencv-python-headless==5.0.0.93
 packaging==26.3
-pdfminer.six==20260107
-pdfplumber==0.11.10
 pillow==12.3.0
-platformdirs==4.11.0
-pluggy==1.6.0
-protobuf==7.35.1
-pycparser==3.0
-pydantic==2.13.4
-pydantic_core==2.46.4
-pyflakes==3.4.0
-Pygments==2.20.0
-pypdf==6.16.1
-pypdfium2==5.12.1
+protobuf==7.36.1
+pydantic==2.13.5
+pydantic_core==2.46.5
+pypdf==6.16.2
+pypdfium2==5.13.0
 pytesseract==0.3.13
-pytest==9.1.1
-python-dotenv==1.2.2
+python-dotenv==1.2.3
 python-multipart==0.0.32
 python-pptx==1.0.2
 PyYAML==6.0.3
-regex==2026.7.19
+regex==2026.8.31
 requests==2.34.2
-scenedetect==0.7.1
 scikit-learn==1.9.0
-scipy==1.18.0
-setuptools==83.0.0
+scipy==1.18.1
+setuptools==84.0.0
 sniffio==1.3.1
 starlette==1.6.0
 sympy==1.14.0
 threadpoolctl==3.6.0
-tiktoken==0.13.0
+tiktoken==0.14.0
 tokenizers==0.23.1
 torch==2.13.0
 tqdm==4.70.0
-typing-inspection==0.4.2
+truststore==0.10.4
+typing-inspection==0.4.4
 typing_extensions==4.16.0
 urllib3==2.7.0
-uvicorn==0.52.1
+uvicorn==0.52.4
 uvloop==0.22.1
 watchfiles==1.2.0
-websockets==17.0.1
+websockets==17.1
 xlsxwriter==3.2.9
 yt-dlp==2026.8.19

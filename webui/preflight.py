@@ -9,7 +9,16 @@ import shutil
 import subprocess
 import sys
 
-from .config import get_api_key
+from .config import PROJECT_ROOT, get_api_key
+
+# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
+# project root -- not guaranteed to already be on sys.path depending on how
+# the server was launched (see webui/jobs.py's identical note). Must
+# happen before the `from notely...` import below.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from notely.adapters.libreoffice_doc_converter import LibreOfficeDocConverter  # noqa: E402
 
 
 def _run_ok(cmd: list, timeout: int = 15) -> tuple:
@@ -33,7 +42,7 @@ def check_tesseract_lang(lang_spec: str) -> dict:
     if not ok:
         return {"ok": False, "detail": "tesseract not runnable"}
     installed = {line.strip() for line in out.splitlines()}
-    missing = [l for l in lang_spec.split("+") if l and l not in installed]
+    missing = [lang for lang in lang_spec.split("+") if lang and lang not in installed]
     return {
         "ok": not missing,
         "detail": "all languages installed" if not missing else f"missing traineddata: {', '.join(missing)}",
@@ -41,9 +50,14 @@ def check_tesseract_lang(lang_spec: str) -> dict:
 
 
 def check_soffice() -> dict:
-    for name in ("soffice", "libreoffice"):
-        if shutil.which(name):
-            return {"ok": True, "detail": shutil.which(name)}
+    # Same detection logic scripts/02_extract_slides.py's real conversion
+    # uses (LibreOfficeDocConverter.find_binary): PATH first, then the
+    # macOS app-bundle path shutil.which alone can't see. Previously a
+    # second, PATH-only copy of this lookup that could report "not found"
+    # here while the real conversion still worked.
+    path = LibreOfficeDocConverter().find_binary()
+    if path:
+        return {"ok": True, "detail": path}
     return {"ok": False, "detail": "LibreOffice not found — .pptx decks unsupported, use PDF"}
 
 
@@ -61,7 +75,10 @@ def check_whisper_model(model_size: str) -> dict:
         for repo in scan_cache_dir().repos:
             if repo.repo_id == repo_name and repo.size_on_disk > 100_000_000:
                 return {"ok": True, "detail": f"{repo_name} cached ({repo.size_on_disk // 1_000_000} MB)"}
-        return {"ok": False, "detail": f"{repo_name} not cached — first transcription downloads it (~1.5 GB for medium)"}
+        return {
+            "ok": False,
+            "detail": f"{repo_name} not cached — first transcription downloads it (~1.5 GB for medium)",
+        }
     except Exception as e:  # cache scan is best-effort, never fatal
         return {"ok": False, "detail": f"could not scan HF cache: {e}"}
 
@@ -76,7 +93,8 @@ def run_preflight(ocr_lang: str, whisper_model: str) -> dict:
         "yt_dlp": check_yt_dlp(),
         "js_runtime": {
             "ok": shutil.which("deno") is not None or shutil.which("node") is not None,
-            "detail": shutil.which("deno") or shutil.which("node")
+            "detail": shutil.which("deno")
+            or shutil.which("node")
             or "no deno/node — YouTube downloads may miss formats (yt-dlp deprecation)",
         },
         "whisper_model": check_whisper_model(whisper_model),

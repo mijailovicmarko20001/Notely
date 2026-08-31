@@ -22,11 +22,15 @@ def _read_timeline(project_root, lecture_id):
 
 
 def test_apply_corrections_updates_slide_number_and_sets_confidence_to_1(project_root):
-    _write_timeline(project_root, "lecture01", [
-        {"start": 0, "end": 10, "slide_number": 1, "confidence": 0.9},
-        {"start": 10, "end": 20, "slide_number": 2, "confidence": 0.4},
-        {"start": 20, "end": 30, "slide_number": 3, "confidence": 0.9},
-    ])
+    _write_timeline(
+        project_root,
+        "lecture01",
+        [
+            {"start": 0, "end": 10, "slide_number": 1, "confidence": 0.9},
+            {"start": 10, "end": 20, "slide_number": 2, "confidence": 0.4},
+            {"start": 20, "end": 30, "slide_number": 3, "confidence": 0.9},
+        ],
+    )
     result = review.apply_corrections("lecture01", [{"timestamp": 15, "slide_number": 5}])
     assert result == {"applied": 1, "timeline_entries": 3}
 
@@ -38,11 +42,15 @@ def test_apply_corrections_updates_slide_number_and_sets_confidence_to_1(project
 
 
 def test_apply_corrections_null_target_merges_into_previous_entry(project_root):
-    _write_timeline(project_root, "lecture01", [
-        {"start": 0, "end": 10, "slide_number": 1, "confidence": 0.9},
-        {"start": 10, "end": 20, "slide_number": 2, "confidence": 0.4},
-        {"start": 20, "end": 30, "slide_number": 3, "confidence": 0.9},
-    ])
+    _write_timeline(
+        project_root,
+        "lecture01",
+        [
+            {"start": 0, "end": 10, "slide_number": 1, "confidence": 0.9},
+            {"start": 10, "end": 20, "slide_number": 2, "confidence": 0.4},
+            {"start": 20, "end": 30, "slide_number": 3, "confidence": 0.9},
+        ],
+    )
     result = review.apply_corrections("lecture01", [{"timestamp": 15, "slide_number": None}])
     assert result == {"applied": 1, "timeline_entries": 2}
 
@@ -54,11 +62,15 @@ def test_apply_corrections_null_target_merges_into_previous_entry(project_root):
 
 
 def test_apply_corrections_null_target_on_first_entry_merges_into_next(project_root):
-    _write_timeline(project_root, "lecture01", [
-        {"start": 0, "end": 10, "slide_number": 1, "confidence": 0.9},
-        {"start": 10, "end": 20, "slide_number": 2, "confidence": 0.4},
-        {"start": 20, "end": 30, "slide_number": 3, "confidence": 0.9},
-    ])
+    _write_timeline(
+        project_root,
+        "lecture01",
+        [
+            {"start": 0, "end": 10, "slide_number": 1, "confidence": 0.9},
+            {"start": 10, "end": 20, "slide_number": 2, "confidence": 0.4},
+            {"start": 20, "end": 30, "slide_number": 3, "confidence": 0.9},
+        ],
+    )
     result = review.apply_corrections("lecture01", [{"timestamp": 5, "slide_number": None}])
     assert result == {"applied": 1, "timeline_entries": 2}
 
@@ -67,11 +79,15 @@ def test_apply_corrections_null_target_on_first_entry_merges_into_next(project_r
 
 
 def test_apply_corrections_merges_adjacent_entries_sharing_slide_number(project_root):
-    _write_timeline(project_root, "lecture01", [
-        {"start": 0, "end": 10, "slide_number": 1, "confidence": 0.9},
-        {"start": 10, "end": 20, "slide_number": 2, "confidence": 0.5},
-        {"start": 20, "end": 30, "slide_number": 1, "confidence": 0.9},
-    ])
+    _write_timeline(
+        project_root,
+        "lecture01",
+        [
+            {"start": 0, "end": 10, "slide_number": 1, "confidence": 0.9},
+            {"start": 10, "end": 20, "slide_number": 2, "confidence": 0.5},
+            {"start": 20, "end": 30, "slide_number": 1, "confidence": 0.9},
+        ],
+    )
     # correcting the middle entry to slide 1 makes all three adjacent and
     # same-numbered -- they should collapse into a single entry
     result = review.apply_corrections("lecture01", [{"timestamp": 15, "slide_number": 1}])
@@ -93,9 +109,13 @@ def test_apply_corrections_ignores_timestamp_outside_any_window(project_root):
 
 
 def test_apply_corrections_writes_atomically_no_leftover_tmp_file(project_root):
-    _write_timeline(project_root, "lecture01", [
-        {"start": 0, "end": 10, "slide_number": 1, "confidence": 0.9},
-    ])
+    _write_timeline(
+        project_root,
+        "lecture01",
+        [
+            {"start": 0, "end": 10, "slide_number": 1, "confidence": 0.9},
+        ],
+    )
     review.apply_corrections("lecture01", [{"timestamp": 5, "slide_number": 2}])
     timeline_dir = project_root / "output" / "slide_timelines"
     leftovers = [p for p in timeline_dir.iterdir() if ".tmp" in p.name]

@@ -1,0 +1,9 @@
+# Commits listed here are skipped by `git blame` (git >= 2.23:
+# `git blame --ignore-revs-file .git-blame-ignore-revs`, or set once via
+# `git config blame.ignoreRevsFile .git-blame-ignore-revs`). Each entry must
+# be a pure mechanical reformat with no logic change -- verified by running
+# the full test suite before and after, and by diffing with
+# `--ignore-all-space` to confirm only whitespace/line-wrapping moved.
+
+# Format: ruff format across the codebase
+a00620d11e1aca50f562d765ec64e3e385f8c921

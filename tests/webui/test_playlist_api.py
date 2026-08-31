@@ -8,15 +8,18 @@ import pytest
 from webui.playlist import PlaylistError, validate_video_url
 
 
-@pytest.mark.parametrize("bad_url", [
-    "-o /etc/cron.d/x",
-    "--exec touch pwned",
-    "javascript:alert(1)",
-    "file:///etc/passwd",
-    "ftp://example.com/video",
-    "",
-    "not a url",
-])
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "-o /etc/cron.d/x",
+        "--exec touch pwned",
+        "javascript:alert(1)",
+        "file:///etc/passwd",
+        "ftp://example.com/video",
+        "",
+        "not a url",
+    ],
+)
 def test_validate_video_url_rejects_non_http_values(bad_url):
     with pytest.raises(PlaylistError):
         validate_video_url(bad_url)
@@ -33,6 +36,7 @@ def test_validate_video_url_rejects_http_url_without_hostname():
 
 
 # --- through the API ---------------------------------------------------
+
 
 def test_playlist_expand_rejects_flag_shaped_url(client):
     resp = client.post("/api/playlist/expand", json={"url": "-o /etc/cron.d/x"})
@@ -52,23 +56,30 @@ def test_playlist_expand_requires_url_field(client):
 
 
 def test_set_lectures_rejects_flag_shaped_url_in_entry(client):
-    resp = client.post("/api/lectures", json={
-        "entries": [{"title": "Lecture 1", "url": "-o /etc/cron.d/x"}],
-    })
+    resp = client.post(
+        "/api/lectures",
+        json={
+            "entries": [{"title": "Lecture 1", "url": "-o /etc/cron.d/x"}],
+        },
+    )
     assert resp.status_code == 422
 
 
 def test_set_lectures_persists_valid_ordered_entries(client, project_root):
-    resp = client.post("/api/lectures", json={
-        "entries": [
-            {"title": "Intro", "url": "https://youtu.be/aaaaaaaaaaa"},
-            {"title": "Follow-up", "url": "https://youtu.be/bbbbbbbbbbb"},
-        ],
-    })
+    resp = client.post(
+        "/api/lectures",
+        json={
+            "entries": [
+                {"title": "Intro", "url": "https://youtu.be/aaaaaaaaaaa"},
+                {"title": "Follow-up", "url": "https://youtu.be/bbbbbbbbbbb"},
+            ],
+        },
+    )
     assert resp.status_code == 200
     assert resp.json()["lectures"] == ["lecture01", "lecture02"]
 
     import json
+
     urls = json.loads((project_root / "input" / "video_urls.json").read_text())
     assert urls["lecture01"] == "https://youtu.be/aaaaaaaaaaa"
     assert urls["lecture02"] == "https://youtu.be/bbbbbbbbbbb"

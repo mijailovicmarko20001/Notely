@@ -3,13 +3,12 @@ expansion, saving the ordered lecture list, and the three deck-upload flows
 (pool, suggest, per-lecture). Also the video preview-frame grab used by the
 crop-region picker, since that's tuning input for the same setup flow."""
 
-import json
-
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
-from .. import config, decks, media, playlist, preflight
+from notely.io import save_json
+from .. import config, decks, lecture_match, media, playlist, preflight
 from ..models import LectureEntries, PlaylistExpandRequest
 from .common import load_json, validated_lecture_id
 
@@ -24,7 +23,7 @@ def expand(body: PlaylistExpandRequest):
     try:
         return {"entries": playlist.expand_playlist(url)}
     except playlist.PlaylistError as e:
-        raise HTTPException(422, str(e))
+        raise HTTPException(422, str(e)) from e
 
 
 @router.post("/lectures")
@@ -36,16 +35,14 @@ def set_lectures(body: LectureEntries):
         try:
             urls[lecture_id] = playlist.validate_video_url(e.url)
         except playlist.PlaylistError as err:
-            raise HTTPException(422, f"entry {i}: {err}")
+            raise HTTPException(422, f"entry {i}: {err}") from err
         meta[lecture_id] = {"title": e.title or lecture_id}
     config.INPUT_DIR.mkdir(parents=True, exist_ok=True)
-    with open(config.VIDEO_URLS_PATH, "w") as f:
-        json.dump(urls, f, indent=2)
+    save_json(config.VIDEO_URLS_PATH, urls)
     existing_meta = load_json(config.LECTURES_META_PATH, {})
     for k, v in meta.items():
         existing_meta.setdefault(k, {}).update(v)
-    with open(config.LECTURES_META_PATH, "w") as f:
-        json.dump(existing_meta, f, ensure_ascii=False, indent=2)
+    save_json(config.LECTURES_META_PATH, existing_meta)
     return {"ok": True, "lectures": list(urls)}
 
 
@@ -83,7 +80,7 @@ async def suggest_slides(file: UploadFile = File(...)):
     """Suggest which lecture(s) a deck belongs to by comparing its first-slide
     text against the video titles. A pre-fill for the UI dropdown — never a
     silent decision."""
-    suggestions = await decks.suggest_lectures_for_upload(file)
+    suggestions = await lecture_match.suggest_lectures_for_upload(file)
     return {"suggestions": suggestions}
 
 
@@ -106,6 +103,7 @@ def preview_frame(lecture_id: str, t: float = 60.0):
     lecture_id = validated_lecture_id(lecture_id)
     tmp_path = media.grab_preview_frame(lecture_id, t)
     return FileResponse(
-        tmp_path, media_type="image/jpeg",
+        tmp_path,
+        media_type="image/jpeg",
         background=BackgroundTask(lambda: tmp_path.unlink(missing_ok=True)),
     )

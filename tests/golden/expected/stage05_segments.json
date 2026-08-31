@@ -1,0 +1,51 @@
+[
+  {
+    "slide_number": 1,
+    "slide_text": "Introduction\nOverview",
+    "notes_text": "",
+    "transcript_text": "Welcome to the lecture.",
+    "start": 0.0,
+    "end": 10.0,
+    "windows": [
+      [
+        0.0,
+        10.0
+      ]
+    ],
+    "merged_from": [],
+    "frame_image_path": "a.png",
+    "example_candidates": []
+  },
+  {
+    "slide_number": 3,
+    "slide_text": "Summary\nKey takeaways",
+    "notes_text": "",
+    "transcript_text": "Quick aside here.\nNow let's cover the summary.",
+    "start": 13.0,
+    "end": 30.0,
+    "windows": [
+      [
+        13.0,
+        30.0
+      ]
+    ],
+    "merged_from": [
+      2
+    ],
+    "frame_image_path": "c.png",
+    "example_candidates": [
+      {
+        "event_index": 3,
+        "timestamp": 15.0,
+        "frame_image_path": "frame_003.png",
+        "slide_number": 2,
+        "kind": "example_slide",
+        "score": 0.42,
+        "ink_delta": null,
+        "ocr_excerpt": "Worked Example",
+        "transcript_context": "Welcome to the lecture. Quick aside here. Now let's cover the summary.",
+        "cue_hits": []
+      }
+    ]
+  }
+]

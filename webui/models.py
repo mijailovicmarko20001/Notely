@@ -12,6 +12,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from notely.stages import MAX_PIPELINE_STAGE
+
 
 class SettingsUpdate(BaseModel):
     """PUT /settings body. Unknown/extra keys are ignored (matching the old
@@ -54,9 +56,9 @@ class JobRequest(BaseModel):
     @field_validator("stages")
     @classmethod
     def _stages_in_range(cls, v: list[int]) -> list[int]:
-        bad = [s for s in v if s < 0 or s > 7]
+        bad = [s for s in v if s < 0 or s > MAX_PIPELINE_STAGE]
         if bad:
-            raise ValueError(f"stages must be 0-7, got {bad}")
+            raise ValueError(f"stages must be 0-{MAX_PIPELINE_STAGE}, got {bad}")
         return v
 
 

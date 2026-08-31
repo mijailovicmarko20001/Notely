@@ -4,10 +4,11 @@ decide whether a stage actually did anything and whether it's safe to skip
 on a later run — worth pinning down with real tests rather than only
 ad-hoc manual checks."""
 
-from webui import progress
+from webui import config, progress
 
 
 # --- parse_line ------------------------------------------------------------
+
 
 def test_parse_line_ytdlp_download_percent():
     pct = progress.parse_line(0, "[download]  42.5% of 120.00MiB at 3.2MiB/s", {})
@@ -76,15 +77,16 @@ def test_parse_line_indeterminate_stages_return_none():
 
 # --- artifact_ok / stage_artifact ------------------------------------------
 
+
 def test_artifact_ok_false_when_missing(monkeypatch, tmp_path):
-    monkeypatch.setattr(progress, "INPUT_DIR", tmp_path / "input")
-    monkeypatch.setattr(progress, "OUTPUT_DIR", tmp_path / "output")
+    monkeypatch.setattr(config, "INPUT_DIR", tmp_path / "input")
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "output")
     assert progress.artifact_ok(1, "lecture99_does_not_exist") is False
 
 
 def test_artifact_ok_false_when_empty(monkeypatch, tmp_path):
-    monkeypatch.setattr(progress, "INPUT_DIR", tmp_path / "input")
-    monkeypatch.setattr(progress, "OUTPUT_DIR", tmp_path / "output")
+    monkeypatch.setattr(config, "INPUT_DIR", tmp_path / "input")
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "output")
     p = progress.stage_artifact(1, "lecture01")
     p.parent.mkdir(parents=True)
     p.touch()  # exists but zero bytes -- e.g. a killed process's leftover
@@ -92,8 +94,8 @@ def test_artifact_ok_false_when_empty(monkeypatch, tmp_path):
 
 
 def test_artifact_ok_true_when_present_and_nonempty(monkeypatch, tmp_path):
-    monkeypatch.setattr(progress, "INPUT_DIR", tmp_path / "input")
-    monkeypatch.setattr(progress, "OUTPUT_DIR", tmp_path / "output")
+    monkeypatch.setattr(config, "INPUT_DIR", tmp_path / "input")
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "output")
     p = progress.stage_artifact(6, "lecture01")
     p.parent.mkdir(parents=True)
     p.write_text("# lecture01\n\nsome note content")
@@ -101,5 +103,5 @@ def test_artifact_ok_true_when_present_and_nonempty(monkeypatch, tmp_path):
 
 
 def test_stage_artifact_stage7_has_no_lecture_id(monkeypatch, tmp_path):
-    monkeypatch.setattr(progress, "OUTPUT_DIR", tmp_path / "output")
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "output")
     assert progress.stage_artifact(7) == tmp_path / "output" / "study_guide.md"

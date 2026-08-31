@@ -15,7 +15,7 @@ def get_review(lecture_id: str):
     try:
         return review.get_review_data(lecture_id)
     except FileNotFoundError as e:
-        raise HTTPException(404, str(e))
+        raise HTTPException(404, str(e)) from e
 
 
 @router.post("/review/{lecture_id}")
@@ -34,5 +34,5 @@ def post_review(lecture_id: str, body: Corrections):
     try:
         job_id = jobs.MANAGER.start_job(tasks)
     except jobs.Busy as e:
-        raise HTTPException(409, str(e))
+        raise HTTPException(409, str(e)) from e
     return {"ok": True, **result, "job_id": job_id}

@@ -11,6 +11,7 @@ import tempfile
 import threading
 from pathlib import Path
 
+from notely.stages import STAGES_BY_NUMBER
 from . import config
 from .errors import NotFoundError, ServerError
 
@@ -35,14 +36,16 @@ def render_guide_pdf() -> Path:
         # another one that just regenerated the PDF should see it as fresh
         # now and skip a redundant second render.
         if not pdf.exists() or pdf.stat().st_mtime < md.stat().st_mtime:
-            script = config.SCRIPTS_DIR / "08_export_pdf.py"
+            script = config.SCRIPTS_DIR / STAGES_BY_NUMBER[8].script
             fd, tmp_name = tempfile.mkstemp(dir=str(config.OUTPUT_DIR), suffix=".pdf.tmp")
             os.close(fd)
             tmp_path = Path(tmp_name)
             try:
                 r = subprocess.run(
                     [sys.executable, str(script), "--output", str(tmp_path)],
-                    capture_output=True, text=True, timeout=300,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
                 )
                 if r.returncode != 0 or not tmp_path.exists() or tmp_path.stat().st_size == 0:
                     log.error("PDF export failed (rc=%s): %s", r.returncode, (r.stderr or r.stdout)[-2000:])
@@ -74,9 +77,21 @@ def grab_preview_frame(lecture_id: str, t: float = 60.0) -> Path:
 
     def _grab(seek: float) -> bool:
         r = subprocess.run(
-            ["ffmpeg", "-y", "-ss", str(seek), "-i", str(video_path),
-             "-frames:v", "1", "-q:v", "3", str(tmp_path)],
-            capture_output=True, timeout=30,
+            [
+                "ffmpeg",
+                "-y",
+                "-ss",
+                str(seek),
+                "-i",
+                str(video_path),
+                "-frames:v",
+                "1",
+                "-q:v",
+                "3",
+                str(tmp_path),
+            ],
+            capture_output=True,
+            timeout=30,
         )
         return r.returncode == 0 and tmp_path.exists() and tmp_path.stat().st_size > 0
 
@@ -84,12 +99,12 @@ def grab_preview_frame(lecture_id: str, t: float = 60.0) -> Path:
         # t may be past a short video's end -- fall back to the first frame
         if not _grab(t) and not _grab(0):
             raise ServerError("ffmpeg could not extract a preview frame from this video")
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         tmp_path.unlink(missing_ok=True)
-        raise ServerError("timed out extracting a preview frame", status_code=504)
-    except FileNotFoundError:
+        raise ServerError("timed out extracting a preview frame", status_code=504) from exc
+    except FileNotFoundError as exc:
         tmp_path.unlink(missing_ok=True)
-        raise ServerError("ffmpeg not found")
+        raise ServerError("ffmpeg not found") from exc
     except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise

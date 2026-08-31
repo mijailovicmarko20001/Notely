@@ -7,33 +7,20 @@ the expected artifact existing on disk (STAGE_ARTIFACTS).
 
 import re
 
-from .config import INPUT_DIR, OUTPUT_DIR
+from notely.stages import MAX_PIPELINE_STAGE, STAGES_BY_NUMBER
+from . import config
 
-STAGE_NAMES = {
-    0: "Fetch video",
-    1: "Transcribe",
-    2: "Extract slides",
-    3: "Detect slide changes",
-    4: "Match frames to slides",
-    5: "Segment transcript",
-    6: "Generate notes",
-    7: "Assemble study guide",
-}
+STAGE_NAMES = {n: STAGES_BY_NUMBER[n].name for n in range(MAX_PIPELINE_STAGE + 1)}
 
 
 def stage_artifact(stage: int, lecture_id: str = None):
-    """Path that must exist (and be non-empty) for the stage to count as done."""
-    table = {
-        0: INPUT_DIR / "videos" / f"{lecture_id}.mp4",
-        1: OUTPUT_DIR / "transcripts" / f"{lecture_id}.json",
-        2: OUTPUT_DIR / "slides_extracted" / f"{lecture_id}.json",
-        3: OUTPUT_DIR / "frame_events" / f"{lecture_id}.json",
-        4: OUTPUT_DIR / "slide_timelines" / f"{lecture_id}.json",
-        5: OUTPUT_DIR / "segmented_transcripts" / f"{lecture_id}.json",
-        6: OUTPUT_DIR / "notes" / f"{lecture_id}.md",
-        7: OUTPUT_DIR / "study_guide.md",
-    }
-    return table[stage]
+    """Path that must exist (and be non-empty) for the stage to count as done.
+
+    Looks up config.INPUT_DIR/OUTPUT_DIR through the module reference (not
+    a `from .config import` copy) so tests can monkeypatch
+    config.INPUT_DIR/OUTPUT_DIR to redirect artifact checks into a tmp
+    tree -- one place to patch instead of a separate copy per importer."""
+    return STAGES_BY_NUMBER[stage].artifact_path(config.INPUT_DIR, config.OUTPUT_DIR, lecture_id)
 
 
 def artifact_ok(stage: int, lecture_id: str = None) -> bool:

@@ -6,9 +6,12 @@ feeds into every stage subprocess's environment."""
 
 
 def test_put_settings_rejects_newline_injection(client, project_root):
-    resp = client.put("/api/settings", json={
-        "WHISPER_MODEL": "medium\nANTHROPIC_API_KEY=attacker",
-    })
+    resp = client.put(
+        "/api/settings",
+        json={
+            "WHISPER_MODEL": "medium\nANTHROPIC_API_KEY=attacker",
+        },
+    )
     assert resp.status_code == 400
     body = resp.json()
     assert "error" in body and "detail" in body

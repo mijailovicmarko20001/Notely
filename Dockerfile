@@ -21,6 +21,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+COPY notely/ notely/
 COPY scripts/ scripts/
 COPY webui/ webui/
 COPY entrypoint.sh .

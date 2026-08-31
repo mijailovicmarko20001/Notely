@@ -10,10 +10,13 @@ easier to review than large ones.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -e ".[dev]"   # pytest, ruff, and the test-only httpx/anyio
 ```
 
-For an exact reproducible install (matches the maintainer's validated dev
-environment) use `requirements-lock.txt` instead — see its header comment.
+For an exact reproducible install of the *runtime* dependencies (matches the
+maintainer's validated dev environment) use `requirements-lock.txt` in place
+of `requirements.txt` above — see its header comment. Still install `.[dev]`
+separately; it isn't part of the lock file.
 
 System binaries the pipeline needs at runtime (not required just to run the
 test suite — see below): `ffmpeg`, `tesseract` (+ your lecture language's
@@ -36,9 +39,20 @@ the same whether or not those binaries are installed. CI
 
 ## Code style / conventions
 
-- Match the surrounding code, not a style guide — comment density, naming,
-  and structure vary a bit stage to stage; keep new code consistent with
-  whatever file you're editing.
+- Formatting and a correctness-only lint pass (unused imports/variables,
+  undefined names, a handful of real-bug-shaped checks) are enforced by
+  [ruff](https://docs.astral.sh/ruff/) — `ruff check .` and
+  `ruff format --check .`, both run in CI and available as a pre-commit hook
+  (`pre-commit install` once, or run `ruff check --fix . && ruff format .`
+  by hand before committing). See `pyproject.toml` for the exact rule set —
+  it's deliberately narrow, not a full style enforcer. Whole-codebase
+  reformats are listed in `.git-blame-ignore-revs`; run
+  `git config blame.ignoreRevsFile .git-blame-ignore-revs` once per checkout
+  (or pass `--ignore-revs-file` per invocation) so `git blame` skips past
+  them to real authorship.
+- Beyond what ruff checks, match the surrounding code — comment density,
+  naming, and structure vary a bit stage to stage; keep new code consistent
+  with whatever file you're editing.
 - Service logic belongs in `webui/*.py` modules (`decks.py`, `media.py`,
   `jobs.py`, `review.py`), not in `webui/routes/*.py` — routes should stay
   thin HTTP glue. See `webui/errors.py` for the typed-exception pattern
@@ -49,8 +63,8 @@ the same whether or not those binaries are installed. CI
 - Commit messages: one topic per commit, explain *why* not just *what* (see
   `git log` for the convention — e.g. "Concurrency: unify JobManager
   locking, fix start/cancel races"). If a change is driven by an item in
-  one of the `*_TODO.md` files, reference it (e.g. "see OPEN_SOURCE_TODO.md
-  O2") and update that file's checkbox/notes in the same PR.
+  `TODO.md`, reference it and check the item off (or delete it) in the
+  same PR.
 
 ## Reporting bugs / requesting features
 

@@ -29,6 +29,20 @@ Each stage is an independent script in `scripts/`, reading the previous
 stage's JSON artifact and writing its own. Everything lands on disk, so any
 stage can be re-run alone and inspected.
 
+Each script's actual logic lives in `notely/pipeline/` (one module per
+stage, e.g. `notely/pipeline/matching.py` for stage 4); the script itself
+is a thin CLI wrapper (argparse + a call into that module). This split
+exists so every stage's external-world calls (yt-dlp, ffmpeg, whisper,
+tesseract, cv2, the Anthropic API, headless Chrome — one seam each, as
+`notely/ports.py` Protocols implemented by `notely/adapters/*.py`) can be
+faked in a test with no network/binaries/API keys, and so `webui/jobs.py`
+and `scripts/run_pipeline.py` can share one orchestration implementation
+(`notely/runner.py::build_tasks`) instead of the CLI reimplementing a
+weaker version of what the web UI could already do. `notely/paths.py`,
+`io.py`, `text.py`, `env.py`, `cli.py`, and `stages.py` (the stage
+registry both entry points and the web UI's Run tab read stage
+names/numbers from) hold what used to be duplicated per-script.
+
 ```
 [0] 00_fetch_videos.py        YouTube URL ──► input/videos/<id>.mp4         (yt-dlp)
 [1] 01_transcribe.py          video ──► output/transcripts/<id>.json        (whisper: mlx GPU, faster-whisper CPU, or opt-in Groq cloud)
@@ -68,33 +82,54 @@ FastAPI + vanilla JS single page (no build step). Key modules:
 
 | Module | Role |
 |---|---|
-| `config.py` | paths; `.env`-backed settings (`NOTELY_ENV_FILE` override for Docker); `validate_lecture_id()`, the trust-boundary check every filesystem path built from a lecture id goes through |
+| `config.py` | paths (re-exported from `notely.paths`); `.env`-backed settings (`NOTELY_ENV_FILE` override for Docker); `validate_lecture_id()`, the trust-boundary check every filesystem path built from a lecture id goes through |
+| `middleware.py` | `TrustedHostMiddleware` config, origin/CSRF check, opt-in auth-token check, no-cache headers for the static UI — one `middleware.setup(app)` call from `main.py` |
 | `preflight.py` | checks ffmpeg/ffprobe/tesseract(+langs)/soffice/yt-dlp/JS-runtime/API-key/whisper-cache |
 | `playlist.py` | playlist URL → ordered entries via `yt-dlp --flat-playlist -J`; rejects non-http(s) URLs before they reach yt-dlp's argv |
-| `jobs.py` | the four-lane scheduler (see §2.3); single-lock `JobManager`, `Busy` exception for concurrent-start rejection |
-| `progress.py` | per-stage stdout parsers → percent; artifact-existence success table |
+| `jobs.py` | the four-lane scheduler (see §2.3): single-lock `JobManager`, `Busy` exception for concurrent-start rejection. `build_tasks` (translating a run request into per-stage argv) itself lives in `notely/runner.py`, shared with `scripts/run_pipeline.py` — re-exported here as `jobs.build_tasks` |
+| `progress.py` | per-stage stdout parsers → percent; artifact-existence success table, driven by the stage registry (`notely.stages`) |
 | `review.py` | stage-4 review data; manual corrections → timeline rewrite → auto re-run 5–7 |
 | `models.py` | Pydantic request models (`SettingsUpdate`, `JobRequest`, `Corrections`, etc.) — malformed request bodies 422 instead of 500ing on a missing dict key |
 | `errors.py` | typed domain errors (`ValidationError`/`NotFoundError`/`ConflictError`/`TooLargeError`/`ServerError`) → consistent `{"error": ...}` JSON via a handler in `main.py` |
-| `decks.py` | slide-deck upload/merge/dedup logic, streamed to disk in chunks (`MAX_UPLOAD_BYTES`, `NOTELY_MAX_UPLOAD_MB` env), the lecture-matching heuristic |
+| `decks.py` | slide-deck upload/merge/dedup logic, streamed to disk in chunks (`MAX_UPLOAD_BYTES`, `NOTELY_MAX_UPLOAD_MB` env) |
+| `lecture_match.py` | the `/slides/suggest` heuristic — which lecture(s) an uploaded deck probably belongs to, by comparing its opening slides' text against video titles |
 | `media.py` | guide-PDF subprocess orchestration (lock-guarded regen, atomic rename) and the video-frame preview endpoint's ffmpeg orchestration |
-| `routes/` | `settings.py`/`slides.py`/`jobs.py`/`review.py` — the endpoints, one `APIRouter` per resource, mounted under `/api` (this replaced a single 460-line `api.py`) |
+| `routes/` | `settings.py`/`slides.py`/`state.py`/`jobs.py`/`guide.py`/`review.py` — the endpoints, one `APIRouter` per resource, mounted under `/api` (this replaced a single 460-line `api.py`, and `jobs.py` itself later split three ways — state snapshot, job start/poll/cancel/SSE, study guide output — once its own docstring admitted it bundled all three) |
 
-**Backend hardening (2026-08-12)** — a grounded audit
-(`BACKEND_TODO.md`) found and fixed real gaps once `docker-compose.yml`
+**Backend hardening (2026-08-12)** — a grounded security/concurrency/
+architecture audit found and fixed real gaps once `docker-compose.yml`
 started publishing the port beyond localhost: path traversal via
 unvalidated lecture ids, no CSRF/DNS-rebinding protection, `.env` line
 injection through settings writes, yt-dlp argument injection via
 user-supplied URLs, a `JobManager` mutating shared state under
-inconsistent locking, and a couple of start/cancel races. `main.py` now
-adds `TrustedHostMiddleware`, a CSRF-style Origin/Referer check on
-state-changing requests, and opt-in `NOTELY_AUTH_TOKEN` bearer auth for
-anyone who widens the Docker port mapping beyond `127.0.0.1`. The old
-`api.py` was split into `routes/` + the service/model/error modules above
-in the same pass. `tests/webui/` and `tests/test_jobs_scheduler.py` cover
-all of it (160 tests total). Full task-by-task rationale in the git log
-(`Security:`/`Concurrency:`/`Architecture:`/`Tests:` commits) and the
-(now-completed) `BACKEND_TODO.md`.
+inconsistent locking, and a couple of start/cancel races. `webui/
+middleware.py` (originally inline in `main.py`, split out later — see the
+architectural cleanup below) adds `TrustedHostMiddleware`, a CSRF-style
+Origin/Referer check on state-changing requests, and opt-in
+`NOTELY_AUTH_TOKEN` bearer auth for anyone who widens the Docker port
+mapping beyond `127.0.0.1`. The old `api.py` was split into `routes/` +
+the service/model/error modules above in the same pass. `tests/webui/`
+and `tests/test_jobs_scheduler.py` cover all of it (the full suite is
+427 tests as of this writing — `pytest tests/ -q`). Full task-by-task
+rationale in the git log (`Security:`/`Concurrency:`/`Architecture:`/
+`Tests:` commits).
+
+**Architectural cleanup (2026-08-30/31)** — once the feature set above
+stabilized, a test-first refactor made every stage's external-world call
+(yt-dlp, ffmpeg, whisper, tesseract, cv2, the Anthropic API, headless
+Chrome) go through a `notely.ports` Protocol implemented by a real
+`notely/adapters/*.py` adapter, with a fake injected by a "golden master"
+test for each of the 9 pipeline stages — no network, binaries, or API
+keys needed to run the suite. Stage logic itself moved out of
+`scripts/NN_*.py` into `notely/pipeline/`, leaving each script a thin CLI
+wrapper; `notely/stages.py` (the stage registry) and `notely/runner.py`
+(`build_tasks`, shared by `scripts/run_pipeline.py` and
+`webui/jobs.py`) collapsed roughly 25 places that used to hardcode a
+stage's number/name/script/artifact path independently, including one
+real bug (the CLI silently forwarding `--min-dwell` to every stage,
+crashing all but stage 5) and one real capability gap (the CLI couldn't
+pass stage 3/4's own tuning flags at all, only `--force`). Full
+before/after rationale in the git log (`Phase 0`-`Phase 7` commits).
 
 **Frontend redesign (2026-08-12)** — full design-system pass on
 `webui/static/{index.html,style.css,app.js}`: spacing/type/color tokens,
@@ -140,8 +175,13 @@ Stage 7 runs after all lanes drain. Rules learned the hard way:
   the whole pipeline.
 - Progress percent is monotonic per task (concurrent stage-6 slides finish
   out of order).
-- The UI drives stage scripts individually. `run_pipeline.py` (the original
-  CLI orchestrator) cannot pass per-stage flags and is not used by the UI.
+- The UI's `JobManager` drives stage scripts individually (one subprocess
+  per stage/lecture, scheduled across the lanes above); `run_pipeline.py`
+  (the CLI orchestrator, for a terminal/cron/scriptable workflow instead
+  of the web UI) is a separate entry point but shares the same
+  `notely.runner.build_tasks` orchestration logic, including the same
+  per-stage tuning flags (`--crop`, `--ocr-lang`, `--margin`, etc.) the
+  UI's "Advanced" panel exposes.
 
 ### 2.4 Docker
 
@@ -350,18 +390,26 @@ normal case.
 
 ### 4.1 Course-/machine-specific configuration (in `.env` — change per course)
 
-| Key | Current value | Why |
+`.env.example` is the source of truth for every env var the scripts/webui
+actually read, with the real default each one falls back to when unset —
+copy it to `.env` and fill in. The table below isn't a second copy of
+that list; it's the *reasoning* behind the handful of values that aren't
+arbitrary, validated against this project's own real course (22 lectures,
+Serbian, Zoom-recorded) rather than picked blind — useful context for
+tuning your own course's `.env`, not values to copy verbatim:
+
+| Key | What was learned tuning it | Why |
 |---|---|---|
-| `WHISPER_MODEL` | `large-v3-turbo` | benchmark winner |
-| `WHISPER_LANGUAGE` | `sr` | auto-detect misfired to "bs"; **unset for other courses or auto-detect** |
-| `WHISPER_BACKEND` | `mlx` | this Mac's GPU; Docker/non-Apple uses default `faster-whisper`; `groq` is a third, opt-in cloud option (§5.1) |
-| `WHISPER_MLX_REPO` | `mlx-community/whisper-large-v3-turbo` | MLX-converted model |
-| `GROQ_API_KEY` / `GROQ_WHISPER_MODEL` | (unset on this machine) | only read when `WHISPER_BACKEND=groq`; see §5.1 for verification status |
-| `OCR_LANG` | `srp_latn+eng` | slide language; needs matching tesseract traineddata |
-| `NOTES_MODEL` | `claude-sonnet-5` | note generation model |
-| `ANTHROPIC_API_KEY` | (secret) | stage 6 only |
-| Stage-03 crop | `0.12,0.06,0.63,0.88` | this course's Zoom layout (slide region of frame); UI "Advanced" field, default in `webui/config.py::DEFAULT_STAGE_OPTIONS` |
-| Stage-03 threshold | `0.02` | tuned for these recordings (defaults detected almost nothing) |
+| `WHISPER_MODEL` | `large-v3-turbo` beat `medium`/`small` on this course's audio | benchmark winner — see §3's transcription table |
+| `WHISPER_LANGUAGE` | auto-detect misfired to "bs" (Bosnian) on this course's Serbian | pin it once you know the lecture's language; leave unset to auto-detect otherwise |
+| `WHISPER_BACKEND` | `mlx` (Apple GPU) was ~4x faster than CPU on this course's audio | `faster-whisper` (default) works anywhere; `groq` is a third, opt-in cloud option (§5.1) |
+| `OCR_LANG` | `srp_latn+eng` for this course's Serbian-Latin slides | needs the matching tesseract traineddata installed |
+| Stage-03 crop | `0.12,0.06,0.63,0.88` excluded this course's Zoom webcam-tile region | UI "Advanced" field / visual picker; every recording's layout differs, so this one genuinely needs re-tuning per course |
+| Stage-03 threshold | `0.02` (not the naive-looking `0.08`) actually detected slide changes on real recordings | see §3's "How we got here" if your course's default detects almost nothing too |
+
+`NOTES_MODEL` and `ANTHROPIC_API_KEY` are course-independent (which
+Claude model, and your own key) — `.env.example` covers their defaults
+and where to get a key; nothing course-specific to explain here.
 
 ### 4.2 Hardcoded in code (edit source to change)
 
@@ -397,10 +445,10 @@ normal case.
 | Lecture id format | `webui/config.py::LECTURE_ID_RE` | `^lecture\d{2,}$`, and must exist in `video_urls.json` |
 | PDF page setup + styling | `08_export_pdf.py::HTML_TEMPLATE` | A4, 18/16 mm margins, Georgia |
 | MathJax source | `08` + Guide tab | jsDelivr CDN — **PDF export and the Study Guide tab's rendered preview both need internet** (raw markdown/math still downloadable offline via `/files/study_guide.md`) |
-| Markdown parser (Guide tab) | `static/index.html` | marked.js via jsDelivr CDN — client-side render of the assembled guide, mirrors `08_export_pdf.py`'s math-stashing so LaTeX survives the markdown pass |
+| Markdown parser (Guide tab) | `notely/pipeline/export.py::render_guide_html` | server-rendered now (Phase 7 of the architectural cleanup) — shares the same math-stashing as `markdown_to_html`, the PDF-export renderer, so the on-screen preview and the exported PDF can't drift apart the way the old client-side (marked.js) version could |
 | Chrome binary candidates | `08::CHROME_CANDIDATES` | mac + linux paths |
 | Tesseract languages in image | `Dockerfile` | `srp-latn` + `eng` baked in; other languages need an image edit |
-| UI whisper-model dropdown | `static/index.html` | small/medium/large-v3 list |
+| UI whisper-model dropdown | `static/index.html` | small/medium/large-v3/large-v3-turbo list; `loadSetup()` also synthesizes an `<option>` for whatever value is actually saved if it doesn't match one of these, so a future model name never renders a silently-blank select |
 
 ### 4.3 Assumptions baked into the design
 
@@ -499,36 +547,7 @@ The same seam-thinking applies to other pipeline organs:
   explicit opt-in mode later (fall back to an indeterminate spinner,
   like stages 2/5/7 already do), not a silent default swap.
 
-### 5.2 Other known improvements
-
-- **Pin dependencies** (`pip freeze` → constraints file) before wide
-  distribution; loose `>=` pins are a supply-chain and reproducibility risk.
-- **Dedupe the pool at merge time** (stage-5 canonicalization fixes the
-  data, but a 310-slide haystack would also make stage 4 ~3× faster and
-  less ambiguous than the current 936-slide one).
-- **amd64 Docker build** is untested (`docker buildx --platform
-  linux/amd64`) — needed for Intel/Windows students.
-- ~~Web UI guide tab renders raw markdown~~ — fixed 2026-08-11: renders
-  client-side (marked.js + MathJax, both CDN) instead of plain text.
-- ~~No test suite~~ — added 2026-08-11: `tests/` (pytest, dev-only dep) —
-  50 tests covering `webui/progress.py` (stdout parsing + artifact-existence
-  checks), `webui/jobs.py` (`build_tasks` + the scheduler's pure
-  dependency/claim/settled logic), stage 4's matcher (margin/stay_margin/
-  min_forward_score behavior on synthetic cases + `collapse_to_timeline`),
-  and stage 5's duplicate-slide canonicalization. Run: `pytest tests/ -q`.
-  The pipeline's actual output is still validated by artifact inspection,
-  not these tests — they cover the orchestration/algorithm logic around it.
-- ~~In-memory job state~~ — investigated 2026-08-11: the transient
-  run-status view is lost on restart, but that's cosmetic (artifact-
-  existence-based success already makes re-running after a restart
-  skip-and-continue for free). Found and fixed a sharper bug behind the
-  same symptom instead: every stage wrote its output with plain
-  `open(path, "w")`, so a process killed mid-write could leave a
-  non-empty-but-corrupt artifact that `artifact_ok` would trust as done,
-  silently corrupting resume. All stage 1-7 outputs + the Review tab's
-  timeline rewrite now go through a temp-file-then-atomic-rename helper.
-- ~~Truncated overviews~~ from the 1024-token era — checked 2026-08-11: all
-  22 `output/notes/*.md` files were generated in one batch that already
-  post-dates the token-cap fix (mtimes 16:38-17:03 that evening), and a
-  heuristic scan found no abrupt overview endings. Moot; no regeneration
-  needed.
+See `TODO.md` for what's still genuinely open (all of it was once tracked
+here too; every item below it was resolved and moved into §2.2/§3 above,
+or the git log, instead of staying as a strikethrough list alongside the
+one or two things that are still actually open).

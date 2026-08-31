@@ -1,11 +1,9 @@
-"""Tests for scripts/02_extract_slides.py's PDF path (pypdfium2) -- the
+"""Tests for notely.pipeline.slides's PDF path (pypdfium2) -- the
 PyMuPDF -> pypdfium2 swap (see OPEN_SOURCE_TODO.md O2) had zero test coverage
 before this."""
 
-from conftest import load_stage
+from notely.pipeline import slides as extract_slides
 from pdf_fixtures import make_pdf_bytes
-
-extract_slides = load_stage("02_extract_slides.py")
 
 
 def test_render_pdf_to_images_writes_one_png_per_page(tmp_path):
