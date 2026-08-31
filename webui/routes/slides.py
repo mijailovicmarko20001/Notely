@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
 from notely.io import save_json
-from .. import config, decks, media, playlist, preflight
+from .. import config, decks, lecture_match, media, playlist, preflight
 from ..models import LectureEntries, PlaylistExpandRequest
 from .common import load_json, validated_lecture_id
 
@@ -80,7 +80,7 @@ async def suggest_slides(file: UploadFile = File(...)):
     """Suggest which lecture(s) a deck belongs to by comparing its first-slide
     text against the video titles. A pre-fill for the UI dropdown — never a
     silent decision."""
-    suggestions = await decks.suggest_lectures_for_upload(file)
+    suggestions = await lecture_match.suggest_lectures_for_upload(file)
     return {"suggestions": suggestions}
 
 

@@ -1,7 +1,7 @@
 """Tests for webui/decks.py's PDF paths -- merge_pool (pypdf), pool upload
-replacement, and _extract_preview_text's pdf branch (pypdfium2). The PyMuPDF
--> pypdfium2/pypdf swap (OPEN_SOURCE_TODO.md O2) had zero test coverage
-before this."""
+replacement -- and webui/lecture_match.py's _extract_preview_text pdf
+branch (pypdfium2). The PyMuPDF -> pypdfium2/pypdf swap (OPEN_SOURCE_TODO.md
+O2) had zero test coverage before this."""
 
 import io
 import sys
@@ -12,7 +12,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pdf_fixtures import make_pdf_bytes  # noqa: E402
 
-from webui import config, decks  # noqa: E402
+from webui import config, decks, lecture_match  # noqa: E402
 from webui.errors import ValidationError  # noqa: E402
 
 
@@ -140,7 +140,7 @@ def test_extract_preview_text_reads_first_two_pdf_pages(tmp_path):
     path = tmp_path / "deck.pdf"
     path.write_bytes(make_pdf_bytes(["Title Slide", "Second Slide", "Third Slide"]))
 
-    text = decks._extract_preview_text(path, "pdf")
+    text = lecture_match._extract_preview_text(path, "pdf")
 
     assert "Title Slide" in text
     assert "Second Slide" in text
@@ -151,6 +151,6 @@ def test_extract_preview_text_returns_empty_on_unreadable_pdf(tmp_path):
     path = tmp_path / "deck.pdf"
     path.write_bytes(b"not a real pdf")
 
-    text = decks._extract_preview_text(path, "pdf")
+    text = lecture_match._extract_preview_text(path, "pdf")
 
     assert text == ""
