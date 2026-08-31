@@ -20,6 +20,7 @@ from pathlib import Path
 
 from conftest import load_stage
 from fakes import FakeDocConverter, FakeFrameReader, FakeHtmlToPdf, FakeLlmClient, FakeOcr, llm_response
+from notely.pipeline import assemble as s7
 from notely.pipeline import detect as s3
 from notely.pipeline import slides as s2
 from notely.ports import SampledFrame
@@ -397,8 +398,6 @@ def test_stage05_segment_transcript_golden(tmp_path, monkeypatch):
 
 
 # --- Stage 7: assembly (default path, no --topic-index) --------------------
-
-s7 = load_stage("07_assemble.py")
 
 
 def test_stage07_assemble_guide_golden(tmp_path, monkeypatch):

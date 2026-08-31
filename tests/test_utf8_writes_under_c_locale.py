@@ -69,10 +69,8 @@ print("OK")
 
 def test_stage07_assemble_guide_writes_utf8_under_c_locale():
     code = """
-import importlib.util, tempfile, pathlib
-spec = importlib.util.spec_from_file_location("s07", "scripts/07_assemble.py")
-mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod)
+import tempfile, pathlib
+from notely.pipeline import assemble as mod
 tmp = pathlib.Path(tempfile.mkdtemp())
 mod.get_project_root = lambda: tmp
 notes_dir = tmp / "output" / "notes"
