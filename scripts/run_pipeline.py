@@ -122,12 +122,17 @@ Examples:
         print(f"Error: invalid stage range --from {args.from_stage} --to {args.to_stage}", file=sys.stderr)
         sys.exit(1)
 
-    # Build extra args to pass to stage scripts
+    # Build extra args to pass to stage scripts. --force is accepted by
+    # every stage script, so it goes in the common set; --min-dwell is
+    # stage-5 (segment_transcript)-specific -- every other stage's argparse
+    # rejects an unrecognized flag and exits 2, so it must only be added to
+    # that one stage's own argv, not forwarded to every stage indiscriminately.
     extra_args = []
     if args.force:
         extra_args.append("--force")
+    min_dwell_args = []
     if args.min_dwell is not None:
-        extra_args.extend(["--min-dwell", str(args.min_dwell)])
+        min_dwell_args = ["--min-dwell", str(args.min_dwell)]
 
     # Run stages for each lecture
     failed_lectures = []
@@ -137,7 +142,8 @@ Examples:
         print(f"{'#' * 60}")
 
         for stage in range(args.from_stage, args.to_stage + 1):
-            success = run_stage(stage, lecture_id, extra_args)
+            stage_args = extra_args + (min_dwell_args if stage == 5 else [])
+            success = run_stage(stage, lecture_id, stage_args)
             if not success:
                 print(f"Error: stage {stage} failed for {lecture_id}", file=sys.stderr)
                 failed_lectures.append((lecture_id, stage))
