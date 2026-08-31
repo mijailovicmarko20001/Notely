@@ -29,6 +29,7 @@ _PROJECT_ROOT_FOR_IMPORT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
+from notely.cli import require_lecture_id_or_all  # noqa: E402
 from notely.io import load_json  # noqa: E402
 from notely.paths import PROJECT_ROOT  # noqa: E402
 
@@ -111,6 +112,7 @@ Examples:
     parser.add_argument("--min-dwell", type=float, help="Pass --min-dwell to stage 5 (segment_transcript)")
 
     args = parser.parse_args()
+    require_lecture_id_or_all(parser, args)
 
     project_root = get_project_root()
 
@@ -120,9 +122,6 @@ Examples:
         if lecture_ids is None:
             sys.exit(1)
     else:
-        if not args.lecture_id:
-            parser.print_help()
-            sys.exit(1)
         lecture_ids = [args.lecture_id]
 
     # Validate stage range

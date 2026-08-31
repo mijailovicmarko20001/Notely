@@ -14,6 +14,7 @@ from conftest import load_stage
 
 s02 = load_stage("02_extract_slides.py")
 s05 = load_stage("05_segment_transcript.py")
+rp = load_stage("run_pipeline.py")
 
 
 def test_stage02_main_rejects_lecture_id_and_all_together(tmp_path, monkeypatch):
@@ -38,4 +39,16 @@ def test_stage05_main_rejects_lecture_id_and_all_together(tmp_path, monkeypatch)
 
     with pytest.raises(SystemExit) as exc_info:
         s05.main()
+    assert exc_info.value.code != 0
+
+
+def test_run_pipeline_main_rejects_lecture_id_and_all_together(tmp_path, monkeypatch):
+    (tmp_path / "input").mkdir()
+    (tmp_path / "input" / "video_urls.json").write_text('{"lecture01": "https://youtu.be/x"}')
+    monkeypatch.setattr(rp, "get_project_root", lambda: tmp_path)
+    monkeypatch.setattr(rp, "run_stage", lambda stage_num, lecture_id=None, extra_args=None: True)
+    monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "lecture01", "--all"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        rp.main()
     assert exc_info.value.code != 0
