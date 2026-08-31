@@ -37,7 +37,7 @@ def get_project_root():
 
 def load_json(path):
     """Load JSON from file."""
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -47,8 +47,8 @@ def save_json(path, data):
     exists()-and-nonempty skip check would wrongly trust as done."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.tmp{os.getpid()}")
-    with open(tmp, "w") as f:
-        json.dump(data, f, indent=2)
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
     tmp.replace(path)
 
 

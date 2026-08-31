@@ -44,7 +44,7 @@ def load_dotenv_if_available() -> None:
 
 def load_json(path):
     """Load JSON from file."""
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -73,7 +73,7 @@ def read_lecture_notes(path):
     annotations). The assembled guide lives one level up in output/, where
     both are one directory shallower.
     """
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         text = f.read()
     text = text.replace("](../slides_extracted/", "](slides_extracted/")
     text = text.replace("](../frame_events/", "](frame_events/")
@@ -229,7 +229,7 @@ def assemble_guide(force=False, topic_index=False):
     # exists()-and-nonempty skip check would wrongly trust as done.
     output_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_output = output_path.with_name(f"{output_path.name}.tmp{os.getpid()}")
-    with open(tmp_output, "w") as f:
+    with open(tmp_output, "w", encoding="utf-8") as f:
         f.write(full_guide)
     tmp_output.replace(output_path)
 
