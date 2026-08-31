@@ -163,12 +163,20 @@ def test_different_lanes_run_concurrently(project):
 
     manager = jobs.JobManager()
     tasks = [("lecture01", 0, []), ("lecture02", 6, [])]
-    started = time.time()
     manager.start_job(tasks)
     assert wait_for_job_done(manager, timeout=5)
-    elapsed = time.time() - started
 
-    assert elapsed < 0.55, f"lanes ran serially instead of concurrently ({elapsed:.2f}s)"
+    # assert on the recorded start/end windows instead of total wall-clock
+    # elapsed -- a wall-clock threshold has to leave slack for subprocess
+    # spawn overhead, which made this flaky under load; the two lanes'
+    # windows overlapping is what "ran concurrently" actually means.
+    rows = read_log(log)
+    starts = {st: ts for ts, ev, st, _ in rows if ev == "start"}
+    ends = {st: ts for ts, ev, st, _ in rows if ev == "end"}
+    assert starts[0] < ends[6] and starts[6] < ends[0], (
+        f"lanes ran serially instead of concurrently: "
+        f"stage0={starts[0]:.3f}-{ends[0]:.3f} stage6={starts[6]:.3f}-{ends[6]:.3f}"
+    )
     assert manager.job["status"] == "done"
 
 
@@ -181,12 +189,19 @@ def test_same_lane_tasks_run_one_at_a_time(project):
 
     manager = jobs.JobManager()
     tasks = [("lecture01", 1, []), ("lecture02", 1, [])]
-    started = time.time()
     manager.start_job(tasks)
     assert wait_for_job_done(manager, timeout=5)
-    elapsed = time.time() - started
 
-    assert elapsed >= 0.4, f"same-lane tasks overlapped ({elapsed:.2f}s)"
+    # same reasoning as test_different_lanes_run_concurrently above: check
+    # the recorded windows don't overlap, rather than inferring
+    # non-overlap from a minimum total wall-clock elapsed.
+    rows = read_log(log)
+    starts = {lec: ts for ts, ev, st, lec in rows if ev == "start"}
+    ends = {lec: ts for ts, ev, st, lec in rows if ev == "end"}
+    assert ends["lecture01"] <= starts["lecture02"] or ends["lecture02"] <= starts["lecture01"], (
+        f"same-lane tasks overlapped: lecture01={starts['lecture01']:.3f}-{ends['lecture01']:.3f} "
+        f"lecture02={starts['lecture02']:.3f}-{ends['lecture02']:.3f}"
+    )
 
 
 # --- dependency ordering per lecture -----------------------------------------
