@@ -7,16 +7,33 @@ root (the parent of this package), so the working directory never matters.
 import json
 import os
 import re
+import sys
 from pathlib import Path
 
 from dotenv import dotenv_values, set_key
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SCRIPTS_DIR = PROJECT_ROOT / "scripts"
-INPUT_DIR = PROJECT_ROOT / "input"
-OUTPUT_DIR = PROJECT_ROOT / "output"
-VIDEOS_DIR = INPUT_DIR / "videos"
-SLIDES_DIR = INPUT_DIR / "slides"
+# Only needed to bootstrap the `from notely...` import below (finding
+# notely/ on sys.path) -- notely.paths.PROJECT_ROOT is the same value and
+# is what the rest of this file uses. Not guaranteed to already be on
+# sys.path depending on how the server was launched (uvicorn
+# webui.main:app vs. python -m webui.main vs. an IDE run config).
+_PROJECT_ROOT_FOR_IMPORT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
+
+# SCRIPTS_DIR/SLIDES_DIR/VIDEOS_DIR aren't referenced in this file, only
+# re-exported for other webui/ modules that do `from .config import
+# SCRIPTS_DIR` etc. (see tests/webui/conftest.py's docstring for the full
+# list) -- noqa since ruff can't see that cross-module usage.
+from notely.paths import (  # noqa: E402, F401
+    INPUT_DIR,
+    OUTPUT_DIR,
+    PROJECT_ROOT,
+    SCRIPTS_DIR,
+    SLIDES_DIR,
+    VIDEOS_DIR,
+)
+
 LOGS_DIR = OUTPUT_DIR / "logs"
 # In Docker, /app/.env is a symlink into the persistent volume — but
 # python-dotenv's set_key replaces the file atomically (temp file + rename),

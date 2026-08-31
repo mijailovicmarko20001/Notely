@@ -18,19 +18,22 @@ import os
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Only needed to bootstrap the `from notely...` import below (finding
+# notely/ on sys.path) -- notely.paths.PROJECT_ROOT is the same value and
+# is what the rest of this file uses.
+_PROJECT_ROOT_FOR_IMPORT = Path(__file__).resolve().parent.parent
 
-# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
-# project root, not on sys.path by default when this file is run directly
-# (python scripts/02_extract_slides.py) -- same fix tests/conftest.py
-# applies for test discovery. Must happen before the `from notely...`
-# import below.
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+# notely/ (ports, adapters, paths) lives alongside scripts/ and webui/ at
+# the project root, not on sys.path by default when this file is run
+# directly (python scripts/02_extract_slides.py) -- same fix
+# tests/conftest.py applies for test discovery. Must happen before the
+# `from notely...` import below.
+if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
 from notely.adapters.libreoffice_doc_converter import LibreOfficeDocConverter  # noqa: E402
+from notely.paths import PROJECT_ROOT, SLIDES_DIR  # noqa: E402
 
-SLIDES_DIR = PROJECT_ROOT / "input" / "slides"
 OUTPUT_DIR = PROJECT_ROOT / "output" / "slides_extracted"
 
 

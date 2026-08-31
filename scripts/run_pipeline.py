@@ -18,10 +18,24 @@ import subprocess
 import argparse
 from pathlib import Path
 
+# Only needed to bootstrap the `from notely...` import below (finding
+# notely/ on sys.path) -- notely.paths.PROJECT_ROOT is the same value and
+# is what get_project_root() below returns.
+_PROJECT_ROOT_FOR_IMPORT = Path(__file__).resolve().parent.parent
+
+# notely/ (paths) lives alongside scripts/ and webui/ at the project root,
+# not on sys.path by default when this file is run directly (python
+# scripts/run_pipeline.py) -- same fix tests/conftest.py applies for test
+# discovery. Must happen before the `from notely...` import below.
+if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
+
+from notely.paths import PROJECT_ROOT  # noqa: E402
+
 
 def get_project_root():
     """Return the project root directory (parent of scripts/)."""
-    return Path(__file__).parent.parent
+    return PROJECT_ROOT
 
 
 def load_json(path):

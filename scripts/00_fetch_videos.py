@@ -17,20 +17,23 @@ import os
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+# Only needed to bootstrap the `from notely...` import below (finding
+# notely/ on sys.path) -- notely.paths.PROJECT_ROOT is the same value and
+# is what the rest of this file (and every other stage script) uses.
+_PROJECT_ROOT_FOR_IMPORT = Path(__file__).resolve().parent.parent
 
-# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
-# project root, not on sys.path by default when this file is run directly
-# (python scripts/00_fetch_videos.py) -- same fix tests/conftest.py applies
-# for test discovery. Must happen before the `from notely...` import below.
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+# notely/ (ports, adapters, paths) lives alongside scripts/ and webui/ at
+# the project root, not on sys.path by default when this file is run
+# directly (python scripts/00_fetch_videos.py) -- same fix
+# tests/conftest.py applies for test discovery. Must happen before the
+# `from notely...` import below.
+if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
 from notely.adapters.ffprobe_media_probe import FfprobeMediaProbe  # noqa: E402
 from notely.adapters.ytdlp_video_fetcher import YtDlpVideoFetcher  # noqa: E402
+from notely.paths import PROJECT_ROOT, VIDEO_URLS_PATH, VIDEOS_DIR  # noqa: E402
 
-VIDEO_URLS_PATH = ROOT / "input" / "video_urls.json"
-VIDEOS_DIR = ROOT / "input" / "videos"
 FORMAT = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]"
 # Sidecar recording which URL produced <lecture_id>.mp4. Without it the
 # download cache is keyed on the output filename alone, so re-pointing a
@@ -43,7 +46,7 @@ SOURCE_SUFFIX = ".source.json"
 try:
     from dotenv import load_dotenv
 
-    load_dotenv(ROOT / ".env")
+    load_dotenv(PROJECT_ROOT / ".env")
 except ImportError:
     pass
 

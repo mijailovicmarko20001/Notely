@@ -41,24 +41,28 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Project root = parent of scripts/
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Only needed to bootstrap the `from notely...` import below (finding
+# notely/ on sys.path) -- notely.paths.PROJECT_ROOT is the same value and
+# is what the rest of this file uses.
+_PROJECT_ROOT_FOR_IMPORT = Path(__file__).resolve().parent.parent
 
-# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
-# project root, not on sys.path by default when this file is run directly
-# (python scripts/01_transcribe.py) -- same fix tests/conftest.py applies
-# for test discovery. Must happen before the `from notely...` import below.
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+# notely/ (ports, adapters, paths) lives alongside scripts/ and webui/ at
+# the project root, not on sys.path by default when this file is run
+# directly (python scripts/01_transcribe.py) -- same fix
+# tests/conftest.py applies for test discovery. Must happen before the
+# `from notely...` import below.
+if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
 from notely.adapters.faster_whisper_transcriber import FasterWhisperTranscriber  # noqa: E402
 from notely.adapters.ffmpeg_audio_extractor import FfmpegAudioExtractor  # noqa: E402
 from notely.adapters.mlx_transcriber import MlxTranscriber  # noqa: E402
+from notely.paths import PROJECT_ROOT  # noqa: E402
+from notely.paths import SLIDES_DIR as INPUT_SLIDES_DIR  # noqa: E402
+from notely.paths import VIDEOS_DIR as INPUT_VIDEOS_DIR  # noqa: E402
 
-INPUT_VIDEOS_DIR = PROJECT_ROOT / "input" / "videos"
 OUTPUT_TRANSCRIPTS_DIR = PROJECT_ROOT / "output" / "transcripts"
 SLIDES_EXTRACTED_DIR = PROJECT_ROOT / "output" / "slides_extracted"
-INPUT_SLIDES_DIR = PROJECT_ROOT / "input" / "slides"
 
 # Whisper's initial_prompt is capped at ~224 tokens; stay safely under it.
 VOCAB_PROMPT_MAX_CHARS = 700

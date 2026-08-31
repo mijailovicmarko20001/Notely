@@ -65,18 +65,21 @@ import re
 import sys
 from pathlib import Path
 
-# Project root = parent of scripts/
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Only needed to bootstrap the `from notely...` import below (finding
+# notely/ on sys.path) -- notely.paths.PROJECT_ROOT is the same value and
+# is what the rest of this file uses.
+_PROJECT_ROOT_FOR_IMPORT = Path(__file__).resolve().parent.parent
 
-# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
+# notely/ (ports, paths) lives alongside scripts/ and webui/ at the
 # project root, not on sys.path by default when this file is run directly
 # (python scripts/06_generate_notes.py) -- same fix tests/conftest.py
 # applies for test discovery. Must happen before the `from notely...`
 # import below.
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
 from notely.ports import LlmApiError  # noqa: E402
+from notely.paths import PROJECT_ROOT  # noqa: E402
 
 INPUT_SEGMENTED_DIR = PROJECT_ROOT / "output" / "segmented_transcripts"
 OUTPUT_NOTES_DIR = PROJECT_ROOT / "output" / "notes"

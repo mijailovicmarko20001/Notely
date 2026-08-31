@@ -33,11 +33,12 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
 from notely.ports import LlmApiError  # noqa: E402
+from notely.paths import PROJECT_ROOT  # noqa: E402
 
 
 def get_project_root():
     """Return the project root directory (parent of scripts/)."""
-    return Path(__file__).parent.parent
+    return PROJECT_ROOT
 
 
 def load_dotenv_if_available() -> None:

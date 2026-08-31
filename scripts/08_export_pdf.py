@@ -16,18 +16,21 @@ import sys
 import tempfile
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Only needed to bootstrap the `from notely...` import below (finding
+# notely/ on sys.path) -- notely.paths.PROJECT_ROOT is the same value and
+# is what the rest of this file uses.
+_PROJECT_ROOT_FOR_IMPORT = Path(__file__).resolve().parent.parent
 
-# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
-# project root, not on sys.path by default when this file is run directly
-# (python scripts/08_export_pdf.py) -- same fix tests/conftest.py applies
-# for test discovery. Must happen before the `from notely...` import below.
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+# notely/ (ports, adapters, paths) lives alongside scripts/ and webui/ at
+# the project root, not on sys.path by default when this file is run
+# directly (python scripts/08_export_pdf.py) -- same fix
+# tests/conftest.py applies for test discovery. Must happen before the
+# `from notely...` import below.
+if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
 from notely.adapters.chrome_html_to_pdf import ChromeHtmlToPdf  # noqa: E402
-
-OUTPUT_DIR = PROJECT_ROOT / "output"
+from notely.paths import OUTPUT_DIR  # noqa: E402
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html>

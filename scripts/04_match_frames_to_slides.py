@@ -68,19 +68,23 @@ import sys
 import unicodedata
 from pathlib import Path
 
-# Project root = parent of scripts/
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Only needed to bootstrap the `from notely...` import below (finding
+# notely/ on sys.path) -- notely.paths.PROJECT_ROOT is the same value and
+# is what the rest of this file uses.
+_PROJECT_ROOT_FOR_IMPORT = Path(__file__).resolve().parent.parent
 
-# notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
-# project root, not on sys.path by default when this file is run directly
-# (python scripts/04_match_frames_to_slides.py) -- same fix
+# notely/ (ports, adapters, paths) lives alongside scripts/ and webui/ at
+# the project root, not on sys.path by default when this file is run
+# directly (python scripts/04_match_frames_to_slides.py) -- same fix
 # tests/conftest.py applies for test discovery. Must happen before the
 # `from notely...` import below.
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT_FOR_IMPORT))
 
 from notely.adapters.ffprobe_media_probe import FfprobeMediaProbe  # noqa: E402
 from notely.adapters.tesseract_ocr import TesseractOcr  # noqa: E402
+from notely.paths import PROJECT_ROOT  # noqa: E402
+from notely.paths import VIDEOS_DIR as INPUT_VIDEOS_DIR  # noqa: E402
 
 # Best-effort .env loading (same pattern as stages 00/01/06), so OCR_LANG
 # set in .env actually reaches the --ocr-lang default below.
@@ -93,7 +97,6 @@ except ImportError:
 FRAME_EVENTS_DIR = PROJECT_ROOT / "output" / "frame_events"
 SLIDES_EXTRACTED_DIR = PROJECT_ROOT / "output" / "slides_extracted"
 OUTPUT_DIR = PROJECT_ROOT / "output" / "slide_timelines"
-INPUT_VIDEOS_DIR = PROJECT_ROOT / "input" / "videos"
 
 # --- Tuning knobs for the sequential-order constraint (see
 # match_events_to_slides for how they're used) ---
