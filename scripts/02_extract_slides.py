@@ -171,7 +171,7 @@ def process_lecture(lecture_id: str, force: bool) -> bool:
     # truncated-but-non-empty artifact that a later run's exists()-and-
     # nonempty skip check would wrongly trust as done.
     tmp_json = out_json.with_name(f"{out_json.name}.tmp{os.getpid()}")
-    tmp_json.write_text(json.dumps(slides, indent=2))
+    tmp_json.write_text(json.dumps(slides, indent=2, ensure_ascii=False), encoding="utf-8")
     tmp_json.replace(out_json)
     print(f"[{lecture_id}] wrote {len(slides)} slides -> {out_json}")
     return True
