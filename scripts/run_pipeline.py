@@ -136,6 +136,12 @@ Examples:
         "content for lectures that don't use the deck",
     )
     stage4.add_argument(
+        "--auto-visual-threshold",
+        type=float,
+        default=None,
+        help="deck mode: low-confidence share that triggers an automatic switch to visual (0 disables)",
+    )
+    stage4.add_argument(
         "--visual-threshold", type=float, default=None, help="visual mode: new-segment similarity cutoff"
     )
     stage4.add_argument(
@@ -187,6 +193,7 @@ Examples:
         "threshold": args.threshold,
         "interval": args.interval,
         "mode": args.mode,
+        "auto_visual_threshold": args.auto_visual_threshold,
         "visual_threshold": args.visual_threshold,
         "visual_min_seconds": args.visual_min_seconds,
         "ocr_lang": args.ocr_lang,

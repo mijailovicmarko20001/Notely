@@ -86,6 +86,7 @@ from notely.pipeline.example_detect import (  # noqa: E402
     ocr_text_overlap,
 )
 from notely.pipeline.matching import (  # noqa: E402
+    DEFAULT_AUTO_VISUAL_THRESHOLD,
     DEFAULT_BACKWARD_JUMP_MARGIN,
     DEFAULT_CONFIDENCE_THRESHOLD,
     DEFAULT_MIN_FORWARD_SCORE,
@@ -119,6 +120,7 @@ except ImportError:
     pass
 
 __all__ = [
+    "DEFAULT_AUTO_VISUAL_THRESHOLD",
     "DEFAULT_BACKWARD_JUMP_MARGIN",
     "DEFAULT_CONFIDENCE_THRESHOLD",
     "DEFAULT_MIN_FORWARD_SCORE",
@@ -220,6 +222,18 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--auto-visual-threshold",
+        type=float,
+        default=DEFAULT_AUTO_VISUAL_THRESHOLD,
+        help=(
+            "--mode deck only: if this fraction or more of the matches score below "
+            f"--confidence-threshold, the deck is judged not to be on screen and the "
+            f"timeline is rebuilt by visual segmentation instead (default: "
+            f"{DEFAULT_AUTO_VISUAL_THRESHOLD}). The switch is printed and recorded in "
+            "the timeline's notes. Set to 0 to disable and always keep the slide matching"
+        ),
+    )
+    parser.add_argument(
         "--visual-threshold",
         type=float,
         default=DEFAULT_SIMILARITY_THRESHOLD,
@@ -313,6 +327,7 @@ def main() -> None:
             example_ink_text_overlap_min=args.example_ink_text_overlap_min,
             example_ink_novel_word_min=args.example_ink_novel_word_min,
             mode=args.mode,
+            auto_visual_threshold=args.auto_visual_threshold,
             visual_threshold=args.visual_threshold,
             visual_min_seconds=args.visual_min_seconds,
         )
