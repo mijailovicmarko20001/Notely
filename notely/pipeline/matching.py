@@ -9,6 +9,7 @@ CLAUDE.md's "[4] Frame-to-slide matching" for the full method.
 Worked-example candidate detection lives in notely.pipeline.example_detect.
 """
 
+import os
 import sys
 
 from ..adapters.ffprobe_media_probe import FfprobeMediaProbe
@@ -28,6 +29,21 @@ from .example_detect import (
     group_runs,
     hamming_distance,
 )
+from .visual_segment import (
+    DEFAULT_MIN_SEGMENT_SECONDS,
+    DEFAULT_SIMILARITY_THRESHOLD,
+    build_visual_timeline,
+)
+
+# Stage 4 has two ways to build a timeline. "deck" is the original: OCR each
+# frame, match it to a slide number by text similarity, constrained by the
+# sequential-order assumption. "visual" ignores the deck entirely and groups
+# frames by what's on screen -- for lectures that don't present slides, where
+# deck mode silently collapses the whole lecture into one or two runs (see
+# notely.pipeline.visual_segment's module docstring for the measured failure).
+MODE_DECK = "deck"
+MODE_VISUAL = "visual"
+MODES = (MODE_DECK, MODE_VISUAL)
 
 FRAME_EVENTS_DIR = PROJECT_ROOT / "output" / "frame_events"
 SLIDES_EXTRACTED_DIR = PROJECT_ROOT / "output" / "slides_extracted"
@@ -39,6 +55,106 @@ DEFAULT_BACKWARD_JUMP_MARGIN = 0.15
 DEFAULT_STAY_MARGIN = 0.05
 DEFAULT_CONFIDENCE_THRESHOLD = 0.25
 DEFAULT_MIN_FORWARD_SCORE = 0.05
+
+
+def _ocr_concurrency() -> int:
+    """Worker count for the OCR pass. Threads (not processes) because the
+    work happens outside the GIL either way: pytesseract shells out to the
+    tesseract binary, and PIL's decode/resize releases it too.
+
+    Defaults to the machine's core count, capped at 8 -- past that, tesseract
+    processes contend for memory bandwidth more than they gain from
+    parallelism. OCR_CONCURRENCY overrides, same convention as
+    NOTES_CONCURRENCY."""
+    configured = os.environ.get("OCR_CONCURRENCY")
+    if configured:
+        try:
+            return max(1, int(configured))
+        except ValueError:
+            pass
+    return max(1, min(8, os.cpu_count() or 4))
+
+
+def plan_ocr(hashes: dict[int, int], n_events: int) -> list[int]:
+    """Decide which event index each event takes its OCR text from.
+
+    Returns `owner`, where owner[i] == i means "OCR this frame" and
+    owner[i] < i means "reuse the text already produced for that earlier
+    frame". An event whose frame is near-identical to the *immediately
+    preceding* event's (dHash within DHASH_DEDUP_THRESHOLD) inherits that
+    event's owner, so a run of near-duplicates all resolve to the single
+    frame at the head of the run -- which is exactly what the original
+    sequential loop did by carrying `prev_ocr_text` forward.
+
+    Kept as its own pure function so the dedup rule stays readable and
+    testable independently of the concurrency around it: this is the part
+    that must remain strictly sequential (each decision depends on its
+    predecessor), while the OCR calls it schedules are independent.
+    """
+    owner = [0] * n_events
+    for i in range(n_events):
+        prev, cur = hashes.get(i - 1), hashes.get(i)
+        near_duplicate = (
+            i > 0
+            and prev is not None
+            and cur is not None
+            and hamming_distance(cur, prev) <= DHASH_DEDUP_THRESHOLD
+        )
+        owner[i] = owner[i - 1] if near_duplicate else i
+    return owner
+
+
+def ocr_events(events: list[dict], hashes: dict[int, int], ocr, ocr_lang: str) -> int:
+    """Fill each event's "ocr_text", skipping frames that duplicate their
+    predecessor. Populates `hashes` (event index -> dHash) in place and
+    returns how many OCR calls were skipped.
+
+    Three phases: hash every frame, decide which frames actually need OCR
+    (plan_ocr -- sequential by nature), then run those OCR calls
+    concurrently. OCR is this stage's long pole by a wide margin (measured:
+    445 frames at ~1.7s each, ~12 minutes, on one core of an otherwise idle
+    machine), and the calls are independent once the dedup plan is fixed --
+    the same reasoning that already makes stage 6 issue its per-slide API
+    calls from a thread pool. Results are collected by index, so the
+    resulting texts are identical to the sequential version regardless of
+    completion order.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    n = len(events)
+    workers = _ocr_concurrency()
+    paths = [PROJECT_ROOT / e["frame_image_path"] for e in events]
+
+    # Phase 1: hash every frame, regardless of whether it will be OCR'd --
+    # example detection measures ink drift frame-to-frame, not
+    # OCR-call-to-OCR-call, so it needs a hash for every event.
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for i, h in enumerate(pool.map(frame_hash, paths)):
+            hashes[i] = h
+
+    # Phase 2: the sequential part -- who copies whose text.
+    owner = plan_ocr(hashes, n)
+    to_ocr = [i for i in range(n) if owner[i] == i]
+
+    # Phase 3: the expensive part, in parallel.
+    print(f"  OCR: {len(to_ocr)}/{n} frame(s) need a call, {workers} worker(s)", flush=True)
+    done = 0
+
+    def run(i):
+        nonlocal done
+        text = ocr.image_to_text(paths[i], ocr_lang)
+        done += 1  # only ever incremented under the GIL by CPython; a rough
+        # progress counter, not a synchronisation point
+        print(f"  [ocr {done}/{len(to_ocr)}] {paths[i].name}", flush=True)
+        return text
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        texts = dict(zip(to_ocr, pool.map(run, to_ocr), strict=True))
+
+    for i, event in enumerate(events):
+        event["ocr_text"] = texts[owner[i]]
+
+    return n - len(to_ocr)
 
 
 def build_slide_reference_texts(slides: list[dict]) -> dict[int, str]:
@@ -367,15 +483,30 @@ def process_lecture(
     example_ink_delta: int = DEFAULT_EXAMPLE_INK_DELTA,
     example_ink_text_overlap_min: float = DEFAULT_EXAMPLE_INK_TEXT_OVERLAP_MIN,
     example_ink_novel_word_min: float = DEFAULT_EXAMPLE_INK_NOVEL_WORD_MIN,
+    mode: str = MODE_DECK,
+    visual_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
+    visual_min_seconds: float = DEFAULT_MIN_SEGMENT_SECONDS,
 ) -> bool:
-    """Returns False only when required input (frame events or extracted
-    slides) was missing (the caller should treat that as a failure); an
-    already-done skip and a real successful run both return True.
+    """Returns False only when required input (frame events, and in deck mode
+    the extracted slides) was missing (the caller should treat that as a
+    failure); an already-done skip and a real successful run both return True.
+
+    mode: MODE_DECK (default) matches frames to slide numbers. MODE_VISUAL
+    ignores the deck and segments the lecture by what's on screen -- for
+    recordings that don't present slides; see notely.pipeline.visual_segment.
+    In visual mode the slide deck is optional (a lecture with no deck at all
+    is the whole point), needs_review is empty (there is no match to doubt),
+    and worked-example detection is skipped: its heuristics classify anything
+    that doesn't resemble the deck as a "whiteboard" candidate, which in a
+    deckless lecture is every single frame -- the segments themselves are
+    already the extraction that feature was approximating.
 
     ocr: an Ocr (see notely.ports), defaults to the real pytesseract-backed
     adapter. media_probe: a MediaProbe, defaults to the real ffprobe-backed
     adapter. Both default to their real adapter; tests inject a fake
     instead of needing tesseract/ffprobe installed."""
+    if mode not in MODES:
+        raise ValueError(f"unknown mode {mode!r}, expected one of {MODES}")
     if ocr is None:
         ocr = TesseractOcr()
     if media_probe is None:
@@ -389,7 +520,9 @@ def process_lecture(
     if not events_path.exists():
         print(f"[skip] {lecture_id}: no frame events found at {events_path}", file=sys.stderr)
         return False
-    if not slides_path.exists():
+    # Visual mode never consults the deck, so a missing one is fine there --
+    # that's the case it exists for.
+    if not slides_path.exists() and mode == MODE_DECK:
         print(f"[skip] {lecture_id}: no extracted slides found at {slides_path}", file=sys.stderr)
         return False
 
@@ -398,7 +531,7 @@ def process_lecture(
         return True
 
     events = load_json(events_path)
-    slides = load_json(slides_path)
+    slides = load_json(slides_path) if slides_path.exists() else []
 
     hashes: dict[int, int] = {}
 
@@ -408,31 +541,35 @@ def process_lecture(
         matches = []
     else:
         print(f"[{lecture_id}] OCR'ing {len(events)} event frames (lang={ocr_lang})...")
-        prev_hash, prev_ocr_text, n_deduped = None, "", 0
-        for i, event in enumerate(events):
-            frame_path = PROJECT_ROOT / event["frame_image_path"]
-            # per-frame progress marker — OCR is this stage's long pole
-            h = frame_hash(frame_path)
-            hashes[i] = h
-            if prev_hash is not None and hamming_distance(h, prev_hash) <= DHASH_DEDUP_THRESHOLD:
-                # Near-identical to the immediately preceding event's frame
-                # (e.g. a cursor-triggered false slide-change, or an
-                # animation frame stage 3 also flagged) -- reuse its OCR
-                # text instead of spending a second OCR call on the same
-                # content.
-                event["ocr_text"] = prev_ocr_text
-                n_deduped += 1
-                print(
-                    f"  [ocr {i + 1}/{len(events)}] {frame_path.name} (near-duplicate, OCR skipped)",
-                    flush=True,
-                )
-            else:
-                print(f"  [ocr {i + 1}/{len(events)}] {frame_path.name}", flush=True)
-                event["ocr_text"] = ocr.image_to_text(frame_path, ocr_lang)
-            prev_hash, prev_ocr_text = h, event["ocr_text"]
+        n_deduped = ocr_events(events, hashes, ocr, ocr_lang)
         if n_deduped:
             print(f"[{lecture_id}] skipped OCR for {n_deduped}/{len(events)} near-duplicate frame(s)")
 
+        video_duration = media_probe.get_duration(INPUT_VIDEOS_DIR / f"{lecture_id}.mp4")
+
+    if events and mode == MODE_VISUAL:
+        # Visual mode: the OCR pass above is all the input we need. No deck
+        # comparison, no sequential-order constraint -- group the frames by
+        # what's actually on screen and let each run become a note.
+        print(f"[{lecture_id}] segmenting by on-screen content (no deck)...")
+        timeline, notes = build_visual_timeline(
+            events,
+            [e["ocr_text"] for e in events],
+            video_duration,
+            threshold=visual_threshold,
+            min_seconds=visual_min_seconds,
+        )
+        matches = []
+        for entry in timeline:
+            # Built outside the f-string: a nested same-quote f-string needs
+            # PEP 701 (Python 3.12+), and this project supports 3.11.
+            end_text = "?" if entry["end"] is None else f"{entry['end']:8.2f}s"
+            keywords = " ".join(entry["segment_keywords"][:6])
+            print(
+                f"  segment {entry['slide_number']:03d} {entry['start']:8.2f}s -> {end_text} "
+                f"(coherence={entry['confidence']:.3f}) {keywords}"
+            )
+    elif events:
         slide_numbers = sorted(s["slide_number"] for s in slides)
         slide_refs = build_slide_reference_texts(slides)
         event_texts = [e["ocr_text"] for e in events]
@@ -458,12 +595,20 @@ def process_lecture(
                 f"slide {m['slide_number']} (score={m['score']:.3f}){jump_tag}{stay_tag}"
             )
 
-        video_duration = media_probe.get_duration(INPUT_VIDEOS_DIR / f"{lecture_id}.mp4")
         timeline, notes = collapse_to_timeline(matches, video_duration)
 
-    needs_review = build_needs_review(matches, timeline, slides, confidence_threshold)
+    # Visual mode has no per-frame slide match, so there is nothing to doubt:
+    # every needs_review bucket is about a matching decision that wasn't made
+    # here. (A segment's own coherence is already reported as its confidence.)
+    if mode == MODE_VISUAL:
+        needs_review = {"low_confidence_matches": [], "unmatched_slides": [], "backward_jumps": []}
+    else:
+        needs_review = build_needs_review(matches, timeline, slides, confidence_threshold)
 
-    if detect_examples:
+    # Worked-example detection is deck-relative (it asks "does this frame look
+    # unlike the deck?"), which is meaningless when there is no deck -- see
+    # process_lecture's docstring.
+    if detect_examples and mode == MODE_DECK:
         example_candidates = detect_example_candidates(
             matches,
             slides,
@@ -477,7 +622,13 @@ def process_lecture(
         example_candidates = []
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    save_json(output_json, {"timeline": timeline, "notes": notes})
+    # "mode" is recorded so stage 5 can tell a visual timeline from a deck one:
+    # its duplicate-slide canonicalization (build_canonical_slide_map) remaps
+    # slide numbers through the deck's own text, which would corrupt visual
+    # mode's segment indices -- they aren't deck pages and must not be remapped.
+    # Absent means deck mode, so timelines written before this existed still read
+    # correctly.
+    save_json(output_json, {"mode": mode, "timeline": timeline, "notes": notes})
     save_json(needs_review_json, needs_review)
     save_json(examples_json, {"candidates": example_candidates})
 
@@ -486,8 +637,9 @@ def process_lecture(
         + len(needs_review["unmatched_slides"])
         + len(needs_review["backward_jumps"])
     )
+    unit = "segment" if mode == MODE_VISUAL else "slide"
     print(
-        f"[done] {lecture_id}: {len(timeline)} slide(s) in timeline -> {output_json} "
+        f"[done] {lecture_id}: {len(timeline)} {unit}(s) in timeline -> {output_json} "
         f"({n_flags} item(s) flagged -> {needs_review_json}, "
         f"{len(example_candidates)} example candidate(s) -> {examples_json})"
     )

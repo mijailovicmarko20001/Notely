@@ -128,6 +128,19 @@ Examples:
     stage3.add_argument("--interval", type=float, default=None, help="seconds between sampled frames")
 
     stage4 = parser.add_argument_group("stage 4 (match frames to slides)")
+    stage4.add_argument(
+        "--mode",
+        choices=("deck", "visual"),
+        default=None,
+        help="'deck' (default) matches frames to slides; 'visual' segments by on-screen "
+        "content for lectures that don't use the deck",
+    )
+    stage4.add_argument(
+        "--visual-threshold", type=float, default=None, help="visual mode: new-segment similarity cutoff"
+    )
+    stage4.add_argument(
+        "--visual-min-seconds", type=float, default=None, help="visual mode: minimum segment length"
+    )
     stage4.add_argument("--ocr-lang", default=None, help="tesseract language(s)")
     stage4.add_argument("--margin", type=float, default=None, help="backward-jump similarity margin")
     stage4.add_argument("--stay-margin", type=float, default=None, help="in-order stickiness margin")
@@ -173,6 +186,9 @@ Examples:
         "crop": args.crop,
         "threshold": args.threshold,
         "interval": args.interval,
+        "mode": args.mode,
+        "visual_threshold": args.visual_threshold,
+        "visual_min_seconds": args.visual_min_seconds,
         "ocr_lang": args.ocr_lang,
         "margin": args.margin,
         "stay_margin": args.stay_margin,

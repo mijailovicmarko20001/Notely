@@ -386,10 +386,25 @@ def segment_transcript(lecture_id, min_dwell=5.0, force=False):
     try:
         timeline_data = load_json(timeline_path)
         transcript_data = load_json(transcript_path)
-        slides_data = load_json(slides_path)
     except FileNotFoundError as e:
         print(f"Error: missing input file: {e}", file=sys.stderr)
         return False
+
+    # Stage 4 records which kind of timeline it produced. "visual" means the
+    # entries are on-screen-content segments, not deck pages (see
+    # notely.pipeline.visual_segment) -- the deck is then optional, and must
+    # not be used to remap segment indices below. Absent means deck mode, so
+    # timelines written before visual mode existed still read correctly.
+    visual_mode = timeline_data.get("mode") == "visual"
+
+    try:
+        slides_data = load_json(slides_path)
+    except FileNotFoundError as e:
+        if not visual_mode:
+            print(f"Error: missing input file: {e}", file=sys.stderr)
+            return False
+        # A deckless lecture is exactly what visual mode is for.
+        slides_data = []
 
     # Example candidates are optional: absent for timelines produced before
     # this feature landed, or when stage 4 was run with --no-examples.
@@ -407,15 +422,23 @@ def segment_transcript(lecture_id, min_dwell=5.0, force=False):
     # 936-page merged deck), and the matcher may smear one lecture across
     # several copies. Remap every slide number to the first copy with the
     # same normalized text, so consolidation below merges their transcripts.
-    canonical = build_canonical_slide_map(slides_data)
-    remapped = 0
-    for entry in timeline:
-        canon = canonical.get(entry["slide_number"], entry["slide_number"])
-        if canon != entry["slide_number"]:
-            entry["slide_number"] = canon
-            remapped += 1
-    if remapped:
-        print(f"[{lecture_id}] canonicalized {remapped} timeline entr(ies) pointing at duplicate slides")
+    #
+    # Skipped entirely in visual mode: those slide_numbers are segment indices
+    # with no relationship to deck pages, so remapping them through the deck's
+    # text would collapse unrelated segments together wherever an index
+    # happened to collide with a duplicated deck page.
+    if visual_mode:
+        canonical = {}
+    else:
+        canonical = build_canonical_slide_map(slides_data)
+        remapped = 0
+        for entry in timeline:
+            canon = canonical.get(entry["slide_number"], entry["slide_number"])
+            if canon != entry["slide_number"]:
+                entry["slide_number"] = canon
+                remapped += 1
+        if remapped:
+            print(f"[{lecture_id}] canonicalized {remapped} timeline entr(ies) pointing at duplicate slides")
 
     # Build slide data map for quick lookup
     slide_data_map = {slide["slide_number"]: slide for slide in slides_data}
@@ -439,6 +462,11 @@ def segment_transcript(lecture_id, min_dwell=5.0, force=False):
         output.append(
             {
                 "slide_number": slide_num,
+                # Carried per-entry rather than as a file-level key because
+                # this stage's artifact is a JSON *list*, with nowhere to put
+                # one. Stage 6 reads it off the first entry to pick between
+                # its slide-oriented and video-oriented note prompts.
+                "mode": "visual" if visual_mode else "deck",
                 "slide_text": build_slide_text(slide_data),
                 "notes_text": slide_data.get("notes_text", ""),
                 "transcript_text": entry["transcript_text"],

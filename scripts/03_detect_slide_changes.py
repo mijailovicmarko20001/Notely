@@ -84,7 +84,16 @@ def main() -> None:
         "--force", action="store_true", help="re-run even if output/frame_events/<lecture_id>.json exists"
     )
     parser.add_argument(
-        "--interval", type=float, default=1.5, help="seconds between sampled frames (default: 1.5)"
+        "--interval",
+        type=float,
+        default=1.5,
+        help=(
+            "seconds between sampled frames (default: 1.5, sized so a quick slide "
+            "flip isn't missed). If you intend to run stage 4 with --mode visual, "
+            "pass a larger value (~4): that mode won't emit a segment shorter than "
+            "45s anyway, so 1.5s oversamples by ~3x and stage 4's OCR pays for every "
+            "extra frame"
+        ),
     )
     parser.add_argument(
         "--threshold",

@@ -536,14 +536,22 @@ async function refreshState() {
 }
 
 /* ---------- run ---------- */
+// Kept so the mode toggle can retune the sampling interval without refetching.
+let stageDefaults = null;
+
 async function loadDefaults() {
   const s = await api("/settings");
   const d = s.stage_defaults;
+  stageDefaults = d;
   $("#opt-crop").value = d.crop;
   $("#opt-threshold").value = d.threshold;
   $("#opt-interval").value = d.interval;
   $("#opt-ocr_lang").value = d.ocr_lang;
   $("#opt-min_dwell").value = d.min_dwell;
+  $("#opt-mode").value = d.mode;
+  $("#opt-visual_threshold").value = d.visual_threshold;
+  $("#opt-visual_min_seconds").value = d.visual_min_seconds;
+  syncModeOptions();
   // Stage chips, from the backend's stage registry (Phase 7 of the
   // cleanup plan) instead of a hardcoded list in index.html that had
   // drifted from it (e.g. "Match frames" vs "Match frames to slides").
@@ -552,13 +560,35 @@ async function loadDefaults() {
     .join("");
   renderStagesSummary();
 }
+// The visual-mode knobs only mean anything in visual mode; hide them in deck
+// mode rather than showing inputs that are silently ignored.
+function syncModeOptions() {
+  $("#visual-opts").hidden = $("#opt-mode").value !== "visual";
+}
+// Switching mode also retunes stage 3's sampling interval, because the two
+// modes want genuinely different resolutions: deck mode samples finely so a
+// quick slide flip isn't missed, while visual mode won't emit a segment
+// shorter than 45s and so pays for ~3x more OCR than it can use. Written into
+// the visible field rather than applied invisibly at submit time, so it stays
+// an editable default rather than magic.
+function syncIntervalForMode(defaults) {
+  const visual = $("#opt-mode").value === "visual";
+  $("#opt-interval").value = visual ? defaults.visual_interval : defaults.interval;
+}
+$("#opt-mode").addEventListener("change", () => {
+  syncModeOptions();
+  if (stageDefaults) syncIntervalForMode(stageDefaults);
+});
+
 onClickBusy($("#btn-start"), async () => {
   const lecture_ids = [...document.querySelectorAll("#run-lectures input:checked")].map((c) => c.value);
   const stages = [...document.querySelectorAll("#run-stages input:checked")].map((c) => +c.value);
   const options = {
     crop: $("#opt-crop").value, threshold: $("#opt-threshold").value,
     interval: $("#opt-interval").value, ocr_lang: $("#opt-ocr_lang").value,
-    min_dwell: $("#opt-min_dwell").value,
+    min_dwell: $("#opt-min_dwell").value, mode: $("#opt-mode").value,
+    visual_threshold: $("#opt-visual_threshold").value,
+    visual_min_seconds: $("#opt-visual_min_seconds").value,
   };
   $("#run-status").textContent = "";
   try {

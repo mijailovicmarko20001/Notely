@@ -91,6 +91,9 @@ from notely.pipeline.matching import (  # noqa: E402
     DEFAULT_MIN_FORWARD_SCORE,
     DEFAULT_STAY_MARGIN,
     FRAME_EVENTS_DIR,
+    MODE_DECK,
+    MODE_VISUAL,
+    MODES,
     SLIDES_EXTRACTED_DIR,
     OUTPUT_DIR,
     build_needs_review,
@@ -99,6 +102,11 @@ from notely.pipeline.matching import (  # noqa: E402
     compute_similarity_matrix,
     match_events_to_slides,
     process_lecture,
+)
+from notely.pipeline.visual_segment import (  # noqa: E402
+    DEFAULT_MIN_SEGMENT_SECONDS,
+    DEFAULT_SIMILARITY_THRESHOLD,
+    build_visual_timeline,
 )
 
 # Best-effort .env loading (same pattern as stages 00/01/06), so OCR_LANG
@@ -136,6 +144,12 @@ __all__ = [
     "hamming_distance",
     "ocr_novel_word_ratio",
     "ocr_text_overlap",
+    "MODE_DECK",
+    "MODE_VISUAL",
+    "MODES",
+    "DEFAULT_MIN_SEGMENT_SECONDS",
+    "DEFAULT_SIMILARITY_THRESHOLD",
+    "build_visual_timeline",
     "main",
 ]
 
@@ -192,6 +206,37 @@ def main() -> None:
         "--ocr-lang",
         default=env_str("OCR_LANG", DEFAULT_OCR_LANG),
         help='tesseract language(s) (default: env OCR_LANG or "srp_latn+eng", matching webui/config.py)',
+    )
+    parser.add_argument(
+        "--mode",
+        choices=MODES,
+        default=MODE_DECK,
+        help=(
+            f"how to build the timeline. '{MODE_DECK}' (default) matches each frame to a "
+            f"slide number in the deck. '{MODE_VISUAL}' ignores the deck entirely and "
+            "segments the lecture by what's on screen -- for recordings that don't "
+            "present slides, where deck mode silently collapses the whole lecture into "
+            "one or two runs"
+        ),
+    )
+    parser.add_argument(
+        "--visual-threshold",
+        type=float,
+        default=DEFAULT_SIMILARITY_THRESHOLD,
+        help=(
+            "--mode visual only: cosine similarity between consecutive frames' OCR text "
+            f"below which a new segment starts (default: {DEFAULT_SIMILARITY_THRESHOLD}). "
+            "Lower it for fewer, longer segments; raise it for more, shorter ones"
+        ),
+    )
+    parser.add_argument(
+        "--visual-min-seconds",
+        type=float,
+        default=DEFAULT_MIN_SEGMENT_SECONDS,
+        help=(
+            "--mode visual only: segments shorter than this are merged into the previous "
+            f"one, absorbing single-frame OCR noise (default: {DEFAULT_MIN_SEGMENT_SECONDS})"
+        ),
     )
     parser.add_argument(
         "--no-examples",
@@ -267,6 +312,9 @@ def main() -> None:
             example_ink_delta=args.example_ink_delta,
             example_ink_text_overlap_min=args.example_ink_text_overlap_min,
             example_ink_novel_word_min=args.example_ink_novel_word_min,
+            mode=args.mode,
+            visual_threshold=args.visual_threshold,
+            visual_min_seconds=args.visual_min_seconds,
         )
         if not ok:
             failures.append(lecture_id)

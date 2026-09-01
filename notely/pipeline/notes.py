@@ -61,6 +61,30 @@ Your job:
 - LaTeX hygiene: every `$`/`$$` delimiter must be balanced and the expression inside must be valid, compilable LaTeX. Never nest `$` inside `$$`, never leave a lone `$`, and never mix unicode math symbols into a LaTeX expression."""
 
 
+VIDEO_SYSTEM_PROMPT = r"""You are generating condensed study notes for one segment of a recorded university lecture that does NOT use a slide deck — a screencast of the instructor working live: writing code, running it, drawing diagrams, working through problems on screen, or talking over what they are doing.
+
+For each segment you are given:
+- the segment's position and time range in the lecture
+- a transcript of what the instructor said during that segment
+- keywords automatically extracted from the text visible on screen during the segment (raw OCR output — noisy, possibly including window titles, browser tabs, or misread characters; treat them as weak hints about the topic, never as quotable content)
+- SOMETIMES an image: an actual screen capture from the end of this segment, which is when whatever was being built up (code, a diagram, a result, a derivation) is most complete. If you receive it, it is your best evidence for WHAT was on screen — read it and describe what is actually being demonstrated. Never refer to "the image" or "the screenshot" as a thing in your note; write about the content itself, as if describing what the instructor did.
+
+Your job:
+- Capture what a student would need to reconstruct this part of the lecture: the problem being solved, the approach taken, the concrete steps, the result, and any conclusion drawn from it.
+- Preserve specifics over generalities. Actual function/library names, actual parameter values, actual numbers, the actual dataset or example being used. "They loaded the data and computed some metrics" is a useless note; "loaded the Lichess chess dataset with pandas, built a directed graph in NetworkX where an edge means player A beat player B, then computed PageRank to rank players" is a useful one.
+- Keep definitions and formulas exact. Every formula, without exception, must be proper LaTeX math: `$...$` inline, `$$...$$` on its own line for a standalone equation. Never plain text or unicode math symbols in place of LaTeX commands (no bare "x_a(t)" outside math delimiters, no "∫ from −∞ to +∞", no unicode sub/superscripts) — always real LaTeX (`\int`, `\sum`, `\infty`, `_{...}`, `^{...}`, etc.).
+- Code matters here in a way it doesn't for slide lectures. When specific code is written or run on screen, reproduce the meaningful part of it in a fenced code block with the right language tag. Reproduce what was actually written — don't invent plausible-looking code to fill the gap, and don't pad a short snippet out into a full program.
+- The transcript is automatic speech-recognition output and will mangle technical terms, library names, and function names. When a transcript word is clearly a garbled version of something visible in the on-screen text or keywords, use the on-screen spelling. Never carry an obvious ASR artifact into the note.
+- Output structured markdown:
+  - A `##` heading naming what this segment is about — a real topic, not "Segment 3". Derive it from the content.
+  - A short bullet list of the key points, steps, or results.
+  - A `**Instructor's notes:**` subsection for anything said that isn't evident from the on-screen work itself: motivation, warnings, "this is a common mistake", exam hints, asides, corrections. Omit this subsection entirely if there was nothing of the kind.
+- Some segments are genuinely low-content: setup, waiting for something to run, administrative talk, a tangent, technical difficulties. For those the entire note body is one line: "*No substantive content in this segment.*" — do not pad it out. A short note is doing its job.
+- Be concise. This is a study aid meant to be read in minutes, not a transcript.
+- LANGUAGE: write the entire note in the same language the instructor is speaking (per the transcript). Never translate it and never mix languages within a note — if the lecture is in Serbian, every sentence you write is in Serbian (LaTeX, code, standard abbreviations, and the literal subsection label "Instructor's notes:" are the only exceptions).
+- LaTeX hygiene: every `$`/`$$` delimiter must be balanced and the expression inside must be valid, compilable LaTeX. Never nest `$` inside `$$`, never leave a lone `$`."""
+
+
 def load_dotenv_if_available() -> None:
     """Best-effort .env loading; never fatal if python-dotenv isn't installed."""
     try:
@@ -80,7 +104,7 @@ _write_json_atomic = save_json
 _write_text_atomic = write_text_atomic
 
 
-def add_slide_number_to_heading(note_text: str, slide_number) -> str:
+def add_slide_number_to_heading(note_text: str, slide_number, label: str = "Slide") -> str:
     """
     Deterministically prefix the note's first `##` heading with its slide
     number (e.g. "## Slide 19: Odabiranje signala...").
@@ -101,11 +125,34 @@ def add_slide_number_to_heading(note_text: str, slide_number) -> str:
         return note_text  # model didn't follow the heading format; leave as-is
 
     title = heading[3:].strip()
-    if re.match(rf"^Slide\s+{re.escape(str(slide_number))}\b", title):
-        return note_text  # model already included this exact slide number
+    if re.match(rf"^{re.escape(label)}\s+{re.escape(str(slide_number))}\b", title):
+        return note_text  # model already included this exact number
 
-    new_heading = f"## Slide {slide_number}: {title}"
+    new_heading = f"## {label} {slide_number}: {title}"
     return new_heading + ("\n" + rest if rest else "")
+
+
+def build_video_user_prompt(segment: dict, position: int) -> str:
+    """Per-segment user turn for visual (deckless) mode -- see
+    VIDEO_SYSTEM_PROMPT. Carries the time range and the on-screen keywords
+    stage 4's visual segmentation recorded, in place of the slide text a
+    deck lecture would have."""
+    start = segment.get("start")
+    end = segment.get("end")
+    keywords = segment.get("segment_keywords") or []
+    transcript_text = (segment.get("transcript_text") or "").strip()
+
+    when = f"{fmt_ts(start)}" if start is not None else "?"
+    if end is not None:
+        when += f" - {fmt_ts(end)}"
+
+    return (
+        f"Segment {position} of the recording ({when})\n\n"
+        f"Keywords OCR'd from the screen during this segment (noisy hints, not quotable):\n"
+        f"{', '.join(keywords) if keywords else '(none)'}\n\n"
+        f"Transcript (what the instructor said during this segment):\n"
+        f"{transcript_text or '(none)'}"
+    )
 
 
 def build_user_prompt(slide: dict, confirmed_examples: list[dict] | None = None) -> str:
@@ -154,17 +201,27 @@ def generate_slide_note(
     raw_dir,
     send_frame_image: bool = False,
     confirmed_examples: list[dict] | None = None,
+    visual_mode: bool = False,
 ) -> dict:
-    """Generate notes for a single slide. Returns a result dict; never raises."""
+    """Generate notes for a single slide (or, in visual_mode, one on-screen
+    segment). Returns a result dict; never raises."""
     slide_number = slide.get("slide_number", index)
     slide_text = (slide.get("slide_text") or "").strip()
     transcript_text = (slide.get("transcript_text") or "").strip()
 
-    if not slide_text and not transcript_text:
-        print(f"  [{index}/{total}] slide {slide_number}: skipped (no slide text or transcript)")
+    # In visual mode there is no slide text by construction, so the transcript
+    # alone decides whether there's anything to write about.
+    if not transcript_text and (visual_mode or not slide_text):
+        what = "segment" if visual_mode else "slide"
+        print(f"  [{index}/{total}] {what} {slide_number}: skipped (nothing to summarize)")
         return {"skipped": True, "error": False, "slide_number": slide_number}
 
-    user_prompt = build_user_prompt(slide, confirmed_examples)
+    if visual_mode:
+        user_prompt = build_video_user_prompt(slide, index)
+        system_prompt = VIDEO_SYSTEM_PROMPT
+    else:
+        user_prompt = build_user_prompt(slide, confirmed_examples)
+        system_prompt = SYSTEM_PROMPT
 
     # NOTES_SEND_FRAME_IMAGE (opt-in, off by default -- real added cost):
     # attach the actual on-screen capture of this slide, not just its
@@ -198,7 +255,7 @@ def generate_slide_note(
         # exact token count -- the API silently skips caching (no error)
         # for blocks under its minimum cacheable size rather than
         # rejecting the request.
-        "system": [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+        "system": [{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
         "messages": [{"role": "user", "content": content}],
     }
 
@@ -305,6 +362,15 @@ def process_lecture(llm_client, lecture_id: str, force: bool = False) -> bool:
         print(f"[error] {lecture_id}: failed to read {input_path}: {e}", file=sys.stderr)
         return False
 
+    # Stage 5 stamps every entry with the timeline kind it came from (see
+    # scripts/05_segment_transcript.py). "visual" means these are on-screen
+    # segments of a deckless recording, not deck pages: different note prompt,
+    # different heading label, and the captured frame is the only visual there
+    # is. Absent means deck mode, so transcripts segmented before visual mode
+    # existed still read correctly.
+    visual_mode = bool(slides) and slides[0].get("mode") == "visual"
+    label = "Segment" if visual_mode else "Slide"
+
     model = os.environ.get("NOTES_MODEL", DEFAULT_MODEL)
     client = llm_client
 
@@ -316,7 +382,10 @@ def process_lecture(llm_client, lecture_id: str, force: bool = False) -> bool:
     # Opt-in, off by default -- same reasoning as NOTES_SEND_FRAME_IMAGE: a
     # real added cost (one vision call per candidate frame), so it doesn't
     # happen silently. See notely.pipeline.examples for the full feature.
-    detect_examples = os.environ.get("NOTES_DETECT_EXAMPLES", "0") == "1"
+    # Worked-example confirmation is deck-relative (stage 4 flags candidates by
+    # how *unlike* the deck a frame looks), so it never produces candidates in
+    # visual mode -- don't announce a phase that has nothing to do.
+    detect_examples = os.environ.get("NOTES_DETECT_EXAMPLES", "0") == "1" and not visual_mode
     examples_model = os.environ.get("NOTES_EXAMPLES_MODEL", DEFAULT_EXAMPLES_MODEL)
     examples_max = max(0, int(os.environ.get("NOTES_EXAMPLES_MAX", str(DEFAULT_EXAMPLES_MAX_PER_LECTURE))))
     examples_cache_path = OUTPUT_NOTES_DIR / f"{lecture_id}_examples.json"
@@ -402,6 +471,7 @@ def process_lecture(llm_client, lecture_id: str, force: bool = False) -> bool:
                 raw_dir,
                 send_frame_image=send_frame_image,
                 confirmed_examples=confirmed_by_slide_number.get(slide.get("slide_number")),
+                visual_mode=visual_mode,
             )
             for i, slide in enumerate(slides, start=1)
         ]
@@ -418,7 +488,9 @@ def process_lecture(llm_client, lecture_id: str, force: bool = False) -> bool:
         deck_number = slide.get("slide_number", position)
 
         image_line = ""
-        if embed_images:
+        # No deck render exists in visual mode -- the captured frame below is
+        # the only visual this segment has.
+        if embed_images and not visual_mode:
             image_path = images_dir / f"slide_{deck_number:03d}.png"
             if image_path.exists():
                 image_line += (
@@ -433,26 +505,33 @@ def process_lecture(llm_client, lecture_id: str, force: bool = False) -> bool:
         # "output/frame_events/<id>_frames/event_NNN.png"); notes live one
         # level under output/, same as the slides_extracted embed above, so
         # strip the leading "output/" and point one directory up.
-        if send_frame_image:
+        # In visual mode the frame is embedded unconditionally: it's the only
+        # picture of what this segment was, and embedding an already-captured
+        # file costs nothing (NOTES_SEND_FRAME_IMAGE governs paying to send it
+        # to the model, which is a separate decision).
+        if send_frame_image or visual_mode:
             frame_rel = slide.get("frame_image_path")
             if frame_rel and (PROJECT_ROOT / frame_rel).exists():
-                image_line += (
-                    f"\n![slide {position} as shown during the lecture]({frame_md_path(frame_rel)})\n"
+                alt = (
+                    f"segment {position} on screen"
+                    if visual_mode
+                    else f"slide {position} as shown during the lecture"
                 )
+                image_line += f"\n![{alt}]({frame_md_path(frame_rel)})\n"
 
         examples_md = build_examples_markdown(confirmed_by_slide_number.get(deck_number, []))
 
         if result["skipped"]:
             md_parts.append(
-                f"## Slide {position}\n{image_line}\n*(No slide text or transcript available — skipped.)*\n{examples_md}"
+                f"## {label} {position}\n{image_line}\n*(Nothing to summarize here — skipped.)*\n{examples_md}"
             )
             continue
 
         if result["error"]:
             failed_slides.append(deck_number)
             md_parts.append(
-                f"## Slide {position}\n{image_line}\n"
-                f"*(Note generation failed for this slide: {result['message']})*\n{examples_md}"
+                f"## {label} {position}\n{image_line}\n"
+                f"*(Note generation failed here: {result['message']})*\n{examples_md}"
             )
             continue
 
@@ -463,7 +542,7 @@ def process_lecture(llm_client, lecture_id: str, force: bool = False) -> bool:
         total_cache_read_tokens += usage.get("cache_read_input_tokens", 0)
         if result.get("frame_image_attached"):
             frames_attached += 1
-        note = add_slide_number_to_heading(result["text"], position)
+        note = add_slide_number_to_heading(result["text"], position, label)
         if image_line:
             # image goes directly under the slide's heading line
             heading, _, rest = note.partition("\n")
