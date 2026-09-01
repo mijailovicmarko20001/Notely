@@ -30,6 +30,7 @@ from notely.env import (  # noqa: E402
     DEFAULT_WHISPER_MODEL,
 )
 from notely.io import load_json_or_default  # noqa: E402
+from notely.pipeline.visual_segment import DEFAULT_VISUAL_INTERVAL  # noqa: E402
 from notely.paths import (  # noqa: E402, F401
     INPUT_DIR,
     OUTPUT_DIR,
@@ -80,6 +81,16 @@ DEFAULT_STAGE_OPTIONS = {
     "crop": "0.12,0.06,0.63,0.88",  # stage 03 — Zoom capture of PDF viewer
     "threshold": DEFAULT_STAGE3_THRESHOLD,  # stage 03 -- D1, see notely.env
     "interval": 1.5,  # stage 03
+    # stage 04 -- "deck" matches frames to slide numbers; "visual" ignores the
+    # deck and segments by what's on screen, for recordings that don't present
+    # slides (see notely.pipeline.visual_segment).
+    "mode": "deck",
+    "visual_threshold": 0.35,  # stage 04 -- visual mode only
+    "visual_min_seconds": 45.0,  # stage 04 -- visual mode only
+    # Stage 03's interval when visual mode is selected. Not a separate stage-3
+    # flag: the UI writes it into the same `interval` field (see app.js's
+    # syncIntervalForMode) so what runs is always what's shown.
+    "visual_interval": DEFAULT_VISUAL_INTERVAL,
     "ocr_lang": DEFAULT_OCR_LANG,  # stage 04 -- D3, see notely.env
     "margin": 0.15,  # stage 04
     "stay_margin": 0.05,  # stage 04

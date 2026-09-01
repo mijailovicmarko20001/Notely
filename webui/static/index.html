@@ -126,6 +126,23 @@
       <details><summary>Advanced (per-stage tuning)</summary>
         <div class="stack gap-top">
           <div>
+            <label>Lecture style (stage 4 — how the timeline is built)</label>
+            <div class="row wrap">
+              <select id="opt-mode">
+                <option value="deck">Slide-based — the lecturer presents a deck</option>
+                <option value="visual">Video-only — no slides, or barely used</option>
+              </select>
+            </div>
+            <p class="hint">Slide-based matches each captured frame to a page of the uploaded deck.
+              Pick <strong>Video-only</strong> for screencasts, live coding, or whiteboard sessions:
+              it ignores the deck and splits the lecture by what's actually on screen. Without it,
+              a lecture that never shows its slides collapses into one or two giant notes.</p>
+            <div class="row wrap" id="visual-opts" hidden>
+              <label>New-segment cutoff <input id="opt-visual_threshold" class="input-xs"></label>
+              <label>Min segment s <input id="opt-visual_min_seconds" class="input-xs"></label>
+            </div>
+          </div>
+          <div>
             <label>Crop region (stage 3 — which part of the frame is the slide)</label>
             <div class="row wrap">
               <select id="crop-lecture-pick"></select>

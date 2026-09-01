@@ -1,6 +1,7 @@
 [
   {
     "slide_number": 1,
+    "mode": "deck",
     "slide_text": "Introduction\nOverview",
     "notes_text": "",
     "transcript_text": "Welcome to the lecture.",
@@ -18,6 +19,7 @@
   },
   {
     "slide_number": 3,
+    "mode": "deck",
     "slide_text": "Summary\nKey takeaways",
     "notes_text": "",
     "transcript_text": "Quick aside here.\nNow let's cover the summary.",
