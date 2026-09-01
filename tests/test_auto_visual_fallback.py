@@ -178,9 +178,7 @@ def test_explicit_visual_mode_is_not_reported_as_a_fallback(tmp_path, monkeypatc
     there automatically, and shouldn't look like it in the artifact."""
     ocr = _stage4_fixture(tmp_path, monkeypatch, ["some screen text here"] * 6)
 
-    matching.process_lecture(
-        "lecture01", 0.15, 0.25, force=True, ocr=ocr, media_probe=None, mode="visual"
-    )
+    matching.process_lecture("lecture01", 0.15, 0.25, force=True, ocr=ocr, media_probe=None, mode="visual")
 
     written = json.loads((tmp_path / "slide_timelines" / "lecture01.json").read_text())
     assert written["mode"] == "visual"
