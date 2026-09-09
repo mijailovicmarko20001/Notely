@@ -43,6 +43,11 @@ _RE_NOTES = re.compile(r"\[(\d+)/(\d+)\]\s+slide")
 # progress-line shape but a different noun -- see
 # scripts/06_generate_notes.py::confirm_example.
 _RE_EXAMPLE = re.compile(r"\[(\d+)/(\d+)\]\s+example")
+# Stage 9 (notely/pipeline/essentials.py::process_lecture_essentials) --
+# not currently reachable via the web UI (stage 9 is standalone, outside
+# MAX_PIPELINE_STAGE), but kept here so a future wiring gets a progress
+# bar for free instead of the indeterminate spinner stages 2/5/7 get.
+_RE_ESSENTIALS = re.compile(r"\[(\d+)/(\d+)\]\s+lecture")
 
 
 def parse_line(stage: int, line: str, ctx: dict):
@@ -70,6 +75,10 @@ def parse_line(stage: int, line: str, ctx: dict):
             return int(m.group(1)) / int(m.group(2))
     elif stage == 6:
         m = _RE_NOTES.search(line) or _RE_EXAMPLE.search(line)
+        if m:
+            return int(m.group(1)) / int(m.group(2))
+    elif stage == 9:
+        m = _RE_ESSENTIALS.search(line)
         if m:
             return int(m.group(1)) / int(m.group(2))
     return None  # stages 2/5/7 are quick: indeterminate spinner

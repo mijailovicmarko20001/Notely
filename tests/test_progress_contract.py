@@ -77,3 +77,11 @@ def test_stage6_example_confirmation_progress_line():
     index, total = 2, 5
     line = f"  [{index}/{total}] example @00:12: confirmed (whiteboard)"
     assert progress.parse_line(6, line, {}) == 2 / 5
+
+
+def test_stage9_lecture_essentials_progress_line():
+    # notely/pipeline/essentials.py::process_lecture_essentials --
+    # f"  [{index}/{total}] lecture {lecture_id}: ok (input=... output=... tokens)"
+    index, total, lecture_id = 1, 3, "lecture01"
+    line = f"  [{index}/{total}] lecture {lecture_id}: ok (input=400 output=120 tokens)"
+    assert progress.parse_line(9, line, {}) == 1 / 3

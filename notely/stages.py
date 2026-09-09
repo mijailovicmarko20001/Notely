@@ -69,6 +69,29 @@ STAGES = [
     Stage(6, "Generate notes", "06_generate_notes.py", True, lambda i, o, lec: o / "notes" / f"{lec}.md"),
     Stage(7, "Assemble study guide", "07_assemble.py", False, lambda i, o, lec: o / "study_guide.md"),
     Stage(8, "Export PDF", "08_export_pdf.py", False, None),
+    # Stages 9-10 distill a condensed "must-know" artifact on top of the
+    # study guide (notely.pipeline.essentials). Standalone like stage 8:
+    # invoked via run_pipeline.py's --essentials flag or the scripts
+    # directly, never through the orchestrated 0-MAX_PIPELINE_STAGE sweep
+    # -- see MAX_PIPELINE_STAGE's docstring below. per_lecture=False on
+    # stage 9 despite it taking a lecture_id, same reasoning as stage 8:
+    # it's excluded from PER_LECTURE_STAGES on purpose (that list is what
+    # webui/routes/state.py's per-lecture status dict iterates today, and
+    # stage 9 isn't wired into that yet).
+    Stage(
+        9,
+        "Distill lecture essentials",
+        "09_lecture_essentials.py",
+        False,
+        lambda i, o, lec: o / "essentials" / f"{lec}.md",
+    ),
+    Stage(
+        10,
+        "Distill course essentials",
+        "10_course_essentials.py",
+        False,
+        lambda i, o, lec: o / "essentials.md",
+    ),
 ]
 
 STAGES_BY_NUMBER = {s.number: s for s in STAGES}

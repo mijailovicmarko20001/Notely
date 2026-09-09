@@ -15,6 +15,7 @@ Usage:
   python scripts/run_pipeline.py --all                  # Run stages 0-6 for all lectures
   python scripts/run_pipeline.py <lecture_id> --from 3 --to 5  # Run stages 3-5
   python scripts/run_pipeline.py --all --assemble       # Run all, then assemble final guide
+  python scripts/run_pipeline.py --all --assemble --essentials  # ...then distill essentials
 """
 
 import argparse
@@ -115,6 +116,13 @@ Examples:
     parser.add_argument("--to", type=int, dest="to_stage", default=6, help="End at stage N (default: 6)")
     parser.add_argument(
         "--assemble", action="store_true", help="After processing all lectures, run stage 7 (assembly)"
+    )
+    parser.add_argument(
+        "--essentials",
+        action="store_true",
+        help="After processing (and assembly, if requested), distill essentials: stage 9 "
+        "per lecture, then stage 10 (course-level) -- both standalone, outside --from/--to's "
+        "range, run directly the same way --assemble runs stage 7",
     )
     parser.add_argument("--force", action="store_true", help="Pass --force to each stage script")
 
@@ -234,6 +242,32 @@ Examples:
                 failed_lectures.add(lecture_id)
             else:
                 print(f"Error: assembly (stage {stage}) failed", file=sys.stderr)
+                sys.exit(1)
+
+    # Essentials (stages 9-10): standalone, like --assemble's stage 7 --
+    # skipped entirely if an earlier lecture already failed, same as
+    # assembly above. Stage 9 runs per lecture first (failures there are
+    # collected, not fatal to other lectures); stage 10 only runs if every
+    # stage-9 call succeeded, since it aggregates all of them.
+    if args.essentials and not failed_lectures:
+        essentials_extra = ["--force"] if args.force else []
+        essentials_failed_lectures = []
+        for lecture_id in lecture_ids:
+            print(f"\n{'#' * 60}\n# Essentials: {lecture_id}\n{'#' * 60}")
+            if not run_stage(9, lecture_id, essentials_extra):
+                print(f"Error: stage 9 (lecture essentials) failed for {lecture_id}", file=sys.stderr)
+                failed.append((lecture_id, 9))
+                essentials_failed_lectures.append(lecture_id)
+
+        if essentials_failed_lectures:
+            print(
+                f"Skipping stage 10 (course essentials): failed for {', '.join(essentials_failed_lectures)}",
+                file=sys.stderr,
+            )
+        else:
+            print(f"\n{'#' * 60}\n# Essentials: course-level\n{'#' * 60}")
+            if not run_stage(10, None, essentials_extra):
+                print("Error: stage 10 (course essentials) failed", file=sys.stderr)
                 sys.exit(1)
 
     # Summary
