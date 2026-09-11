@@ -62,6 +62,15 @@ class JobRequest(BaseModel):
         return v
 
 
+class ExamGenerateRequest(BaseModel):
+    """POST /exams/generate body -- maps to
+    scripts/11_generate_exam.py's --count/--questions/--force flags."""
+
+    count: int = Field(default=1, ge=1, le=20)
+    questions: Optional[int] = Field(default=None, ge=1)
+    force: bool = False
+
+
 class Correction(BaseModel):
     timestamp: float = Field(ge=0)
     slide_number: Optional[int] = None

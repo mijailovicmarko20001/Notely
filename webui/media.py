@@ -23,6 +23,13 @@ log = logging.getLogger("notely.media")
 # requests/threads in this process.
 _guide_pdf_lock = threading.Lock()
 
+# Same reasoning as _guide_pdf_lock, shared across every exam paper/key --
+# coarser than a per-file lock, but exam PDF export is rare/on-demand (not
+# hammered the way the guide preview can be) and this is a single-user
+# local tool (see webui/jobs.py's own docstring), so one lock for all of
+# them is simplicity without a real cost.
+_exam_pdf_lock = threading.Lock()
+
 
 def render_guide_pdf() -> Path:
     """Render the study guide to PDF (headless Chrome + MathJax) if the
@@ -54,6 +61,41 @@ def render_guide_pdf() -> Path:
                 # that lost the staleness race and returned before this
                 # request acquired the lock) never observes a
                 # partially-written file.
+                os.replace(tmp_path, pdf)
+            finally:
+                tmp_path.unlink(missing_ok=True)
+    return pdf
+
+
+def render_exam_pdf(name: str, key: bool = False) -> Path:
+    """Render one generated exam paper (or, if key=True, its answer key)
+    to PDF if the existing one (if any) is stale, and return its path.
+    Same staleness-check + lock + atomic-rename shape as render_guide_pdf,
+    parameterized over which exam and paper-vs-key via
+    scripts/08_export_pdf.py's --exam/--key flags."""
+    suffix = "_key" if key else ""
+    md = config.OUTPUT_EXAMS_DIR / f"{name}{suffix}.md"
+    if not md.exists():
+        what = "answer key" if key else "exam"
+        raise NotFoundError(f"no {what} found for {name} yet — generate it first")
+    pdf = config.OUTPUT_EXAMS_DIR / f"{name}{suffix}.pdf"
+    with _exam_pdf_lock:
+        # Re-check staleness inside the lock, same reasoning as render_guide_pdf.
+        if not pdf.exists() or pdf.stat().st_mtime < md.stat().st_mtime:
+            script = config.SCRIPTS_DIR / STAGES_BY_NUMBER[8].script
+            fd, tmp_name = tempfile.mkstemp(dir=str(config.OUTPUT_EXAMS_DIR), suffix=".pdf.tmp")
+            os.close(fd)
+            tmp_path = Path(tmp_name)
+            argv = [sys.executable, str(script), "--exam", name, "--output", str(tmp_path)]
+            if key:
+                argv.append("--key")
+            try:
+                r = subprocess.run(argv, capture_output=True, text=True, timeout=300)
+                if r.returncode != 0 or not tmp_path.exists() or tmp_path.stat().st_size == 0:
+                    log.error(
+                        "Exam PDF export failed (rc=%s): %s", r.returncode, (r.stderr or r.stdout)[-2000:]
+                    )
+                    raise ServerError("PDF export failed — see server logs")
                 os.replace(tmp_path, pdf)
             finally:
                 tmp_path.unlink(missing_ok=True)

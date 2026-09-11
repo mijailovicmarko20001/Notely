@@ -13,6 +13,8 @@ Usage:
     python scripts/08_export_pdf.py lecture03        # output/notes/lecture03.pdf
     python scripts/08_export_pdf.py --essentials      # output/essentials.pdf
     python scripts/08_export_pdf.py lecture03 --essentials  # output/essentials/lecture03.pdf
+    python scripts/08_export_pdf.py --exam exam_01    # output/exams/exam_01.pdf
+    python scripts/08_export_pdf.py --exam exam_01 --key  # output/exams/exam_01_key.pdf
 """
 
 import argparse
@@ -49,13 +51,34 @@ def main():
         "if a lecture_id is given",
     )
     parser.add_argument(
+        "--exam",
+        metavar="NAME",
+        help="export a generated practice exam (notely.pipeline.exams, stage 11) instead of the "
+        "guide/notes/essentials -- output/exams/<NAME>.md, e.g. --exam exam_01",
+    )
+    parser.add_argument(
+        "--key",
+        action="store_true",
+        help="with --exam, export that exam's answer key instead of the student-facing paper -- "
+        "output/exams/<NAME>_key.md",
+    )
+    parser.add_argument(
         "--output",
         help="write the PDF here instead of the default path "
         "(callers doing their own temp-file + atomic-rename dance, e.g. the web UI, pass this)",
     )
     args = parser.parse_args()
 
-    if args.essentials:
+    if args.key and not args.exam:
+        parser.error("--key only makes sense together with --exam")
+    if args.exam and args.essentials:
+        parser.error("--exam and --essentials are mutually exclusive")
+
+    if args.exam:
+        suffix = "_key" if args.key else ""
+        md_path = OUTPUT_DIR / "exams" / f"{args.exam}{suffix}.md"
+        pdf_path = OUTPUT_DIR / "exams" / f"{args.exam}{suffix}.pdf"
+    elif args.essentials:
         if args.lecture_id:
             md_path = OUTPUT_DIR / "essentials" / f"{args.lecture_id}.md"
             pdf_path = OUTPUT_DIR / "essentials" / f"{args.lecture_id}.pdf"

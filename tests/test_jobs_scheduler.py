@@ -32,6 +32,7 @@ STAGE_ARTIFACT_REL = {
     5: "output/segmented_transcripts/{lec}.json",
     6: "output/notes/{lec}.md",
     7: "output/study_guide.md",
+    11: "output/exams/exam_01.md",
 }
 
 
@@ -191,6 +192,30 @@ def test_same_lane_tasks_run_one_at_a_time(project):
         f"same-lane tasks overlapped: lecture01={starts['lecture01']:.3f}-{ends['lecture01']:.3f} "
         f"lecture02={starts['lecture02']:.3f}-{ends['lecture02']:.3f}"
     )
+
+
+def test_stage11_task_runs_to_completion_on_the_api_lane(project):
+    """Stage 11 (practice exams) is a standalone, course-level stage built
+    outside notely.runner.build_tasks (see webui/routes/exams.py) and
+    handed to MANAGER.start_job() directly -- unlike stages 0-7, it isn't
+    covered by build_tasks/PER_LECTURE_STAGES at all. _run()'s lane
+    construction has to know about it explicitly (added to the "api" lane,
+    alongside stage 6) or a stage-11 task would sit "pending" forever: no
+    lane worker's `stage in lane_stages` check would ever match it, and
+    _lane_settled only looks at each lane's own stage set, so the job
+    would silently report "done" with the task never having run.
+    start_job() itself would also KeyError on progress.STAGE_NAMES[11]
+    before any of that if STAGE_NAMES weren't extended past
+    MAX_PIPELINE_STAGE -- this test covers both."""
+    write_stub(config.SCRIPTS_DIR, 11, name="generate_exam", exit_code=0)
+
+    manager = jobs.JobManager()
+    manager.start_job([(None, 11, [])])
+    assert wait_for_job_done(manager, timeout=5)
+
+    assert manager.job["tasks"][0]["status"] == "done"
+    assert manager.job["status"] == "done"
+    assert (project / "output" / "exams" / "exam_01.md").exists()
 
 
 # --- dependency ordering per lecture -----------------------------------------

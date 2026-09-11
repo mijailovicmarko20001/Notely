@@ -41,6 +41,11 @@ from notely.paths import (  # noqa: E402, F401
 )
 
 LOGS_DIR = OUTPUT_DIR / "logs"
+# Uploaded past exams (format templates for stage 11) and its generated
+# output -- same "constant computed once, test fixture repoints it"
+# convention as SLIDES_DIR/LOGS_DIR above.
+EXAMS_DIR = INPUT_DIR / "exams"
+OUTPUT_EXAMS_DIR = OUTPUT_DIR / "exams"
 # In Docker, /app/.env is a symlink into the persistent volume — but
 # python-dotenv's set_key replaces the file atomically (temp file + rename),
 # which would swap the symlink for a regular file inside the container.

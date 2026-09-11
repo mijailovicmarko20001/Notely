@@ -85,3 +85,11 @@ def test_stage9_lecture_essentials_progress_line():
     index, total, lecture_id = 1, 3, "lecture01"
     line = f"  [{index}/{total}] lecture {lecture_id}: ok (input=400 output=120 tokens)"
     assert progress.parse_line(9, line, {}) == 1 / 3
+
+
+def test_stage11_exam_generation_progress_line():
+    # notely/pipeline/exams.py::generate_one_exam --
+    # f"  [{paper_number}/{count}] exam: ok (input=... output=... tokens)"
+    paper_number, count = 2, 3
+    line = f"  [{paper_number}/{count}] exam: ok (input=4000 output=5000 tokens)"
+    assert progress.parse_line(11, line, {}) == 2 / 3

@@ -7,10 +7,17 @@ the expected artifact existing on disk (STAGE_ARTIFACTS).
 
 import re
 
-from notely.stages import MAX_PIPELINE_STAGE, STAGES_BY_NUMBER
+from notely.stages import STAGES, STAGES_BY_NUMBER
 from . import config
 
-STAGE_NAMES = {n: STAGES_BY_NUMBER[n].name for n in range(MAX_PIPELINE_STAGE + 1)}
+# Derived from the full registry (not just range(MAX_PIPELINE_STAGE + 1))
+# so standalone stages invoked outside the orchestrated 0-7 sweep --
+# stage 8 (PDF export, never job-scheduled) and stage 11 (practice exams,
+# which IS job-scheduled -- see webui/routes/exams.py building its own
+# task list for MANAGER.start_job) -- get a name too. start_job() would
+# otherwise KeyError building its task snapshot the moment a stage-11
+# task reached it.
+STAGE_NAMES = {s.number: s.name for s in STAGES}
 
 
 def stage_artifact(stage: int, lecture_id: str = None):
@@ -48,6 +55,10 @@ _RE_EXAMPLE = re.compile(r"\[(\d+)/(\d+)\]\s+example")
 # MAX_PIPELINE_STAGE), but kept here so a future wiring gets a progress
 # bar for free instead of the indeterminate spinner stages 2/5/7 get.
 _RE_ESSENTIALS = re.compile(r"\[(\d+)/(\d+)\]\s+lecture")
+# Stage 11 (notely/pipeline/exams.py::generate_one_exam) -- reachable via
+# the web UI (webui/routes/exams.py starts it through the job scheduler,
+# unlike stages 9/10).
+_RE_EXAM = re.compile(r"\[(\d+)/(\d+)\]\s+exam")
 
 
 def parse_line(stage: int, line: str, ctx: dict):
@@ -79,6 +90,10 @@ def parse_line(stage: int, line: str, ctx: dict):
             return int(m.group(1)) / int(m.group(2))
     elif stage == 9:
         m = _RE_ESSENTIALS.search(line)
+        if m:
+            return int(m.group(1)) / int(m.group(2))
+    elif stage == 11:
+        m = _RE_EXAM.search(line)
         if m:
             return int(m.group(1)) / int(m.group(2))
     return None  # stages 2/5/7 are quick: indeterminate spinner

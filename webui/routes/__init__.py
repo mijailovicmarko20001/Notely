@@ -8,7 +8,7 @@ output) -- see each module's own docstring."""
 
 from fastapi import APIRouter
 
-from . import guide, jobs, review, settings, slides, state
+from . import exams, guide, jobs, review, settings, slides, state
 
 router = APIRouter(prefix="/api")
 router.include_router(settings.router)
@@ -17,3 +17,4 @@ router.include_router(state.router)
 router.include_router(jobs.router)
 router.include_router(guide.router)
 router.include_router(review.router)
+router.include_router(exams.router)
