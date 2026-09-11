@@ -120,8 +120,9 @@ class AudioExtractor(Protocol):
 
     def extract_compressed(self, video_path: Path, out_path: Path, bitrate: str = "24k") -> None:
         """Extract mono 16kHz Opus/Ogg audio from video_path to out_path --
-        for backends with an upload size cap (see scripts/01_transcribe.py's
-        transcribe_with_groq). Raises AudioExtractorError on failure."""
+        for backends with an upload size cap (see CloudTranscriber's
+        implementations, notely/adapters/groq_transcriber.py and
+        openai_transcriber.py). Raises AudioExtractorError on failure."""
         ...
 
 
@@ -206,10 +207,49 @@ class Transcriber(Protocol):
         Covers the two local whisper backends (faster-whisper, mlx), which
         already share this exact call shape (per-lecture logging aside,
         this port mainly gives them a common interface to be selected and
-        faked through). WHISPER_BACKEND=groq stays a separate function
-        (transcribe_with_groq) rather than a third implementation of this
-        Protocol -- it works from the original video (not an
-        already-extracted wav_path) and does its own compressed audio
-        extraction internally via AudioExtractor, a genuinely different
-        shape, not just a different backend."""
+        faked through). Cloud backends (Groq, OpenAI) implement
+        CloudTranscriber instead, below -- they work from the original
+        video, not an already-extracted wav_path, and do their own
+        (usually compressed) audio extraction internally via
+        AudioExtractor, a genuinely different shape, not just a different
+        backend."""
+        ...
+
+
+class CloudTranscriberError(TranscriberError):
+    """Raised by a CloudTranscriber implementation when the request fails
+    (auth, network, an unparseable response, or a request too large to
+    fit even after chunking) after any internal retry is exhausted.
+    Subclasses TranscriberError so callers that only care "did
+    transcription fail" (e.g. scripts/01_transcribe.py's failure
+    collection) can catch one exception type regardless of which kind of
+    backend was in use."""
+
+
+@runtime_checkable
+class CloudTranscriber(Protocol):
+    def transcribe_video(
+        self,
+        lecture_id: str,
+        video_path: Path,
+        forced_language: str | None,
+        vocab_prompt: str,
+        audio_extractor: AudioExtractor,
+    ) -> dict:
+        """Transcribe by sending audio extracted from video_path to a
+        cloud API -- not a pre-extracted wav_path the way Transcriber
+        takes one, since a cloud backend does its own extraction
+        (typically compressed, to stay under an upload-size cap) via the
+        given AudioExtractor rather than the uncompressed WAV the local
+        backends use. Implementations that exceed the provider's
+        single-request size cap must transparently chunk the audio and
+        stitch per-chunk transcripts back into one correctly-offset
+        timeline (see notely.pipeline.transcribe_chunks) rather than
+        failing outright.
+
+        Same return shape as Transcriber: {"language": str, "segments":
+        [{"start": float, "end": float, "text": str}, ...]}. Raises
+        CloudTranscriberError on failure -- including a missing API key,
+        which is a configuration error the caller should surface clearly
+        rather than let escape as a raw SDK/auth exception."""
         ...
