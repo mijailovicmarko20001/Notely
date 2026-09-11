@@ -402,7 +402,7 @@ tuning your own course's `.env`, not values to copy verbatim:
 |---|---|---|
 | `WHISPER_MODEL` | `large-v3-turbo` beat `medium`/`small` on this course's audio | benchmark winner — see §3's transcription table |
 | `WHISPER_LANGUAGE` | auto-detect misfired to "bs" (Bosnian) on this course's Serbian | pin it once you know the lecture's language; leave unset to auto-detect otherwise |
-| `WHISPER_BACKEND` | `mlx` (Apple GPU) was ~4x faster than CPU on this course's audio | `faster-whisper` (default) works anywhere; `groq` is a third, opt-in cloud option (§5.1) |
+| `WHISPER_BACKEND` | `mlx` (Apple GPU) was ~4x faster than CPU on this course's audio | `faster-whisper` (default) works anywhere; `groq`/`openai` are opt-in cloud options (§5.1), configurable in the web UI Setup tab or via `.env` |
 | `OCR_LANG` | `srp_latn+eng` for this course's Serbian-Latin slides | needs the matching tesseract traineddata installed |
 | Stage-03 crop | `0.12,0.06,0.63,0.88` excluded this course's Zoom webcam-tile region | UI "Advanced" field / visual picker; every recording's layout differs, so this one genuinely needs re-tuning per course |
 | Stage-03 threshold | `0.02` (not the naive-looking `0.08`) actually detected slide changes on real recordings | see §3's "How we got here" if your course's default detects almost nothing too |
@@ -421,7 +421,7 @@ and where to get a key; nothing course-specific to explain here.
 | Audio extraction params | `01_transcribe.py::extract_audio` | 16 kHz mono PCM WAV |
 | Vocabulary-prompt budget | `01_transcribe.py` | `VOCAB_PROMPT_MAX_CHARS = 700` |
 | CPU whisper threads/compute defaults | `01_transcribe.py` | 4 / `auto` (env-overridable) |
-| Groq upload cap / compressed-audio bitrate | `01_transcribe.py::GROQ_MAX_UPLOAD_MB` / `extract_audio_compressed` | 25 MB / 24kbps Opus (~16MB for a 90-min lecture) |
+| Cloud-backend upload cap / compressed-audio bitrate | `groq_transcriber.py::GROQ_MAX_UPLOAD_MB` / `openai_transcriber.py::OPENAI_MAX_UPLOAD_MB` / `extract_audio_compressed` | 25 MB (both providers) / 24kbps Opus (~16MB for a 90-min lecture); audio over the cap is chunked automatically (§5.1) rather than failing |
 | Slide render DPI | `02_extract_slides.py` | 150 |
 | Frame sample interval | `03` default | 1.5 s |
 | Matcher margins | `04` defaults | backward 0.15, stay 0.05, confidence 0.25, min-forward-score 0.05 |
@@ -467,39 +467,90 @@ and where to get a key; nothing course-specific to explain here.
 
 ### 5.1 External transcription services
 
-The transcription backend is already an internal seam — stage 1 dispatches
-on `WHISPER_BACKEND` to `transcribe_with_mlx`, `transcribe_with_faster_whisper`,
-or (added 2026-08-11) `transcribe_with_groq`, all returning the same shape:
+Transcription backends sit behind two ports in `notely/ports.py`, split by
+call shape rather than lumped into one interface:
 
 ```python
 {"language": str, "segments": [{"start": float, "end": float, "text": str}]}
 ```
 
-**Groq backend: implemented, needs a live-account smoke test before
-trusting it.** `WHISPER_BACKEND=groq` + `GROQ_API_KEY`. Sends a compressed
-Opus/Ogg encode of the audio (not the uncompressed WAV the local backends
-use — Groq's free tier caps uploads around 25MB, which the raw WAV blows
-past for anything over ~15 minutes) to Groq's hosted Whisper API. The
-request construction and response parsing were checked against the
-installed `groq` SDK directly — its `transcriptions.create()` signature
-matches what's called, and feeding its response model a synthetic
-verbose_json payload confirmed `.language` comes back via plain attribute
-access while `.segments` comes back as a list of **plain dicts** (Pydantic
-`extra="allow"` doesn't recursively type nested extra fields) — which is
-exactly what the dict-or-attribute `_groq_field` helper is built to
-handle. What's still genuinely unverified is the live network round-trip:
-auth, rate limits, the model name being currently valid, and real audio
-producing the same response shape as the synthetic test. Chunking for
-lectures whose compressed audio still exceeds the upload cap is not
-implemented — it fails with a clear error telling you to use a local
-backend for that lecture instead, rather than a half-tested attempt at
-re-stitching timestamps across chunks.
+is the shared return shape both ports produce, but how they get there
+differs enough to matter:
+
+- **`Transcriber`** — the two local backends (`faster-whisper`,
+  `mlx`). Takes an already-extracted `wav_path`; both share that exact
+  call shape, so one Protocol covers them.
+- **`CloudTranscriber`** — the two cloud backends (`groq`, `openai`).
+  Takes the original `video_path` plus an `AudioExtractor` instead of a
+  pre-extracted WAV, because a cloud adapter does its own (compressed)
+  extraction internally to stay under the provider's upload cap. Forcing
+  that into `Transcriber`'s signature would have been a lying interface;
+  `CloudTranscriber` gives it an honest one instead.
+
+`scripts/01_transcribe.py` selects an implementation via `WHISPER_BACKEND`
+through two small registries (`LOCAL_TRANSCRIBER_BACKENDS`,
+`CLOUD_TRANSCRIBER_BACKENDS`) rather than an if/elif chain; an unrecognized
+value now raises `TranscriberError` instead of silently falling back to
+`faster-whisper`.
+
+**Groq and OpenAI: both implemented as real `CloudTranscriber` adapters
+(`notely/adapters/groq_transcriber.py`, `openai_transcriber.py`), sharing
+chunking/retry logic in `notely/pipeline/transcribe_chunks.py`.** Both send
+a compressed Opus/Ogg encode of the audio (not the uncompressed WAV the
+local backends use — both providers cap a single upload around 25MB, which
+the raw WAV blows past for anything over ~15 minutes) via `WHISPER_BACKEND=groq`
++ `GROQ_API_KEY` or `WHISPER_BACKEND=openai` + `OPENAI_API_KEY`.
+
+- **Chunking is automatic once a lecture's compressed audio exceeds the
+  25MB cap** (roughly a 2-hour lecture) — previously this hard-failed with
+  a message telling you to use a local backend instead. `ffmpeg`'s segment
+  muxer splits the compressed audio (stream-copy, no re-encode) into
+  pieces sized from the audio's own real bytes-per-second with headroom
+  under the cap, each transcribed separately and stitched back into one
+  correctly-offset timeline. Offsets come from each chunk's *real, probed*
+  duration rather than the nominal chunk length — ffmpeg's segment muxer
+  splits near the requested time, not exactly on it, so trusting nominal
+  spacing would drift timestamps by chunk 3+ on a long lecture, and
+  timestamps are load-bearing for stage 5's slide-window alignment. This
+  was the highest-risk piece of the feature and got the most test
+  coverage.
+- **Transient failures retry with linear backoff** (`call_with_retry`,
+  429/5xx, up to 3 attempts) before raising `CloudTranscriberError`; a
+  non-retryable failure (400 malformed request, 401/403 auth) propagates
+  immediately instead of wasting the retry budget.
+- **OpenAI is pinned to `whisper-1`**, not the newer
+  `gpt-4o-transcribe`/`gpt-4o-mini-transcribe` models — those don't support
+  `response_format="verbose_json"` or segment-level timestamps at all, and
+  a model that can't provide them would silently break the pipeline's
+  slide-alignment join rather than just producing lower-quality notes.
+  Chosen as the second provider over Deepgram for this course's Serbian
+  audio, where Whisper-lineage models have better-proven coverage.
+- Both SDKs' response objects were checked against synthetic payloads:
+  `.language` comes back via plain attribute access while `.segments`
+  comes back as a list of **plain dicts** (Pydantic `extra="allow"` doesn't
+  recursively type nested extra fields) — handled by the shared
+  dict-or-attribute `sdk_field` helper. **What's still genuinely
+  unverified for both providers is the live network round-trip**: auth,
+  rate limits, the pinned model names being currently valid, and real
+  audio producing the same response shape as the synthetic test — no
+  `GROQ_API_KEY`/`OPENAI_API_KEY` has been exercised against a live
+  account yet in this project.
+
+**Web UI:** the Setup tab's transcription section now has a
+`WHISPER_BACKEND` selector (faster-whisper / mlx / groq / openai) next to
+the local-model picker. Picking a cloud backend swaps in that provider's
+API-key field (masked on read/re-save, like the Anthropic key already
+was) and a "test key" button (`POST /settings/test-key` now takes a
+`provider` param instead of being hardcoded to Anthropic); preflight
+checks key presence for the selected cloud backend instead of scanning
+the local Whisper model cache; and stage 1 moves to the scheduler's `net`
+lane (network-bound) rather than `cpu` when a cloud backend is selected,
+so it doesn't serialize against the CPU-bound stages.
 
 Other options worth considering the same way:
 
 | Service | Draw | Watch out |
 |---|---|---|
-| OpenAI (whisper / gpt-4o-transcribe) | strong quality, simple API | cost per audio-hour; verify Serbian |
 | Deepgram / AssemblyAI | word-level timestamps, diarization | Serbian support varies by tier — test first |
 | ElevenLabs Scribe | high multilingual accuracy | newer, pricing |
 
@@ -515,7 +566,8 @@ Design considerations for any of them:
   ~40–80 MB of audio) — cloud wins mostly for machines *without* a usable
   GPU (i.e., exactly the Docker/student case, which is CPU-bound today).
 - Keep the vocabulary-priming idea: most services accept a prompt/keyword
-  list; feed them the same slide-title prompt stage 1 already builds.
+  list; feed them the same slide-title prompt stage 1 already builds
+  (both Groq and OpenAI adapters already do this).
 
 The same seam-thinking applies to other pipeline organs:
 

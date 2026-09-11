@@ -48,6 +48,15 @@ All your files (videos, notes, settings) live in the `data/` folder next to
   pass any GPU (NVIDIA or Apple's own) through to a Linux container,
   regardless of chip. Use developer mode below with `WHISPER_BACKEND=mlx`
   for GPU acceleration on Apple Silicon instead.
+- **No usable GPU at all** (older laptop, no NVIDIA/Apple Silicon)? Set
+  `WHISPER_BACKEND` to `groq` or `openai` instead of a local backend, and
+  transcription runs on that provider's hosted Whisper API rather than
+  your CPU. Configure it either in the web UI's **Setup** tab (backend
+  selector + the matching provider's API-key field + a "test key" button)
+  or directly in `.env` (`WHISPER_BACKEND=groq` + `GROQ_API_KEY`, or
+  `WHISPER_BACKEND=openai` + `OPENAI_API_KEY`). This is opt-in and never
+  the default: unlike every local backend, it sends your lecture audio to
+  a third party, so only turn it on if you're fine with that trade-off.
 - Downloading YouTube videos technically runs against YouTube's ToS; keep the
   downloads and generated notes for personal study only — don't redistribute.
 
