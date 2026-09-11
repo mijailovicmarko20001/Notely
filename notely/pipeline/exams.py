@@ -339,16 +339,20 @@ def build_exam_user_prompt(blueprint: dict, course_material: str, paper_number: 
 
 
 def split_exam_and_key(text: str) -> tuple[str, str | None]:
-    """Split a generation response into (paper, key) on ANSWER_KEY_MARKER
-    (tolerating surrounding whitespace differences the model might
-    introduce around the literal line). Returns key=None if the marker is
-    missing -- the caller treats that as a degraded-but-not-fatal result:
-    the paper is still usable, just without a key."""
+    """Split a generation response into (paper, key) on ANSWER_KEY_MARKER,
+    tolerating any amount of surrounding blank-line whitespace the model
+    might put around the literal marker line (observed live: the model put
+    it on its own paragraph, i.e. a full blank line on each side, not just
+    ANSWER_KEY_MARKER's own single newline) -- both returned parts are
+    stripped, so neither carries a stray leading/trailing blank line.
+    Returns key=None if the marker is missing -- the caller treats that as
+    a degraded-but-not-fatal result: the paper is still usable, just
+    without a key."""
     marker = ANSWER_KEY_MARKER.strip()
-    parts = re.split(rf"\n?{re.escape(marker)}\n?", text, maxsplit=1)
+    parts = re.split(rf"\n*{re.escape(marker)}\n*", text, maxsplit=1)
     if len(parts) != 2:
         return text, None
-    return parts[0], parts[1]
+    return parts[0].strip(), parts[1].strip()
 
 
 def generate_one_exam(

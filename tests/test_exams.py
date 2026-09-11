@@ -211,14 +211,25 @@ def test_load_format_blueprint_picks_up_uploaded_exam_pdfs(tmp_path, monkeypatch
 def test_split_exam_and_key_splits_on_marker():
     text = f"# Exam\n\nQ1...{m11.ANSWER_KEY_MARKER}# Answer Key\n\nA1..."
     paper, key = m11.split_exam_and_key(text)
-    assert paper.strip() == "# Exam\n\nQ1..."
-    assert key.strip() == "# Answer Key\n\nA1..."
+    assert paper == "# Exam\n\nQ1..."
+    assert key == "# Answer Key\n\nA1..."
 
 
 def test_split_exam_and_key_missing_marker_returns_none_key():
     paper, key = m11.split_exam_and_key("# Exam\n\nQ1... (no marker)")
     assert paper == "# Exam\n\nQ1... (no marker)"
     assert key is None
+
+
+def test_split_exam_and_key_strips_extra_blank_lines_around_the_marker():
+    # A real live response put the marker on its own paragraph (blank line
+    # on both sides, not just the single newline ANSWER_KEY_MARKER itself
+    # has) -- the split must not leave a stray leading blank line glued to
+    # the key (or a trailing one glued to the paper).
+    text = "# Exam\n\nQ1...\n\n<<<ANSWER_KEY>>>\n\n# Answer Key\n\nA1..."
+    paper, key = m11.split_exam_and_key(text)
+    assert paper == "# Exam\n\nQ1..."
+    assert key == "# Answer Key\n\nA1..."
 
 
 def test_generate_one_exam_writes_paper_and_key_never_raises_on_success(tmp_path):
@@ -231,8 +242,8 @@ def test_generate_one_exam_writes_paper_and_key_never_raises_on_success(tmp_path
     )
 
     assert result["error"] is False
-    assert result["paper_text"].strip() == "# Exam\n\nQ1: ..."
-    assert result["key_text"].strip() == "# Key\n\nA1: ..."
+    assert result["paper_text"] == "# Exam\n\nQ1: ..."
+    assert result["key_text"] == "# Key\n\nA1: ..."
     sent = fake.calls[0]["messages"][0]["content"]
     assert "course material" in sent
     assert json.dumps(blueprint)[:20] in sent or "total_questions" in sent
