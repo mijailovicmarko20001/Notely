@@ -79,7 +79,7 @@ from notely.adapters.groq_transcriber import GroqTranscriber  # noqa: E402
 from notely.adapters.mlx_transcriber import MlxTranscriber  # noqa: E402
 from notely.adapters.openai_transcriber import OpenAiTranscriber  # noqa: E402
 from notely.cli import require_lecture_id_or_all  # noqa: E402
-from notely.env import DEFAULT_WHISPER_MODEL, env_str  # noqa: E402
+from notely.env import DEFAULT_WHISPER_BACKEND, DEFAULT_WHISPER_MODEL, env_str  # noqa: E402
 from notely.io import load_json, save_json  # noqa: E402
 from notely.paths import PROJECT_ROOT  # noqa: E402
 from notely.paths import SLIDES_DIR as INPUT_SLIDES_DIR  # noqa: E402
@@ -183,7 +183,7 @@ def transcribe_lecture(
     # groq_transcriber.py and openai_transcriber.py. Default remains
     # faster-whisper — mlx only exists on Apple Silicon, the cloud backends
     # need an API key and send lecture audio off-machine.
-    backend = os.environ.get("WHISPER_BACKEND", "faster-whisper").lower()
+    backend = os.environ.get("WHISPER_BACKEND", DEFAULT_WHISPER_BACKEND).lower()
 
     tmp_wav_path = None
     try:

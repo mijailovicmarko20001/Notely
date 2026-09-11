@@ -44,15 +44,52 @@
         <small>Needed only for note generation (stage 6). Everything else runs without it.
           Get one at console.anthropic.com — a full lecture costs a few cents.</small>
       </label>
-      <label>Whisper model
-        <select id="set-whisper">
-          <option value="small">small (faster, lower quality)</option>
-          <option value="medium" selected>medium (recommended)</option>
-          <option value="large-v3">large-v3 (slowest, best)</option>
-          <option value="large-v3-turbo">large-v3-turbo (large accuracy, near-medium speed on GPU)</option>
+      <label>Transcription backend
+        <select id="set-whisper-backend">
+          <option value="faster-whisper" selected>faster-whisper (local, any CPU)</option>
+          <option value="mlx">mlx (local, Apple Silicon GPU)</option>
+          <option value="groq">groq (cloud — sends lecture audio to Groq)</option>
+          <option value="openai">openai (cloud — sends lecture audio to OpenAI)</option>
         </select>
-        <small>First use downloads the model (~1.5 GB for medium).</small>
+        <small>Cloud backends are opt-in, never the default — mainly useful on machines without a
+          usable local GPU. Local backends never send audio anywhere.</small>
       </label>
+      <div id="whisper-local-opts">
+        <label>Whisper model
+          <select id="set-whisper">
+            <option value="small">small (faster, lower quality)</option>
+            <option value="medium" selected>medium (recommended)</option>
+            <option value="large-v3">large-v3 (slowest, best)</option>
+            <option value="large-v3-turbo">large-v3-turbo (large accuracy, near-medium speed on GPU)</option>
+          </select>
+          <small>First use downloads the model (~1.5 GB for medium).</small>
+        </label>
+      </div>
+      <div id="whisper-groq-opts" hidden>
+        <label>Groq API key
+          <div class="row">
+            <input type="password" id="set-groq-key" placeholder="gsk_…">
+            <button id="btn-test-groq-key" type="button">Test key</button>
+          </div>
+          <small>Get one at console.groq.com/keys.</small>
+        </label>
+        <label>Groq model
+          <input type="text" id="set-groq-model" placeholder="whisper-large-v3-turbo">
+        </label>
+      </div>
+      <div id="whisper-openai-opts" hidden>
+        <label>OpenAI API key
+          <div class="row">
+            <input type="password" id="set-openai-key" placeholder="sk-…">
+            <button id="btn-test-openai-key" type="button">Test key</button>
+          </div>
+          <small>Get one at platform.openai.com/api-keys.</small>
+        </label>
+        <label>OpenAI model
+          <input type="text" id="set-openai-model" placeholder="whisper-1">
+          <small>Must support segment timestamps — gpt-4o-transcribe/gpt-4o-mini-transcribe don't.</small>
+        </label>
+      </div>
       <label>OCR language(s)
         <input type="text" id="set-ocr" placeholder="srp_latn+eng">
         <small>Tesseract language codes joined by “+”, matching the slide language.</small>

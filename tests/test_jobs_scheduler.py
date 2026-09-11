@@ -60,6 +60,20 @@ def project(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "VIDEOS_DIR", root / "input" / "videos")
     monkeypatch.setattr(config, "ENV_PATH", root / ".env")
 
+    # Real-process leak guard: scripts/04_match_frames_to_slides.py calls
+    # load_dotenv(PROJECT_ROOT / ".env") at *module import time* (so its
+    # --ocr-lang default picks up .env), not inside a function -- merely
+    # importing it (e.g. via conftest.load_stage in another test module's
+    # own module-level code, which several files in this suite do) loads
+    # the real repo's .env into the real os.environ for the rest of the
+    # pytest process, regardless of which specific test triggered the
+    # import. This project's real .env has WHISPER_BACKEND=mlx, which
+    # config.stage_env() (real os.environ + dotenv_values(ENV_PATH)) would
+    # otherwise pick straight up here, since nothing in this fixture ever
+    # writes a project/.env for these tests to override it with. Delete
+    # it explicitly rather than relying on it happening to be unset.
+    monkeypatch.delenv("WHISPER_BACKEND", raising=False)
+
     return root
 
 

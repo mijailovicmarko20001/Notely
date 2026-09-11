@@ -262,12 +262,31 @@ async function loadSetup() {
   whisperSel.value = wantedModel;
   $("#set-ocr").value = s.settings.OCR_LANG || "";
   $("#set-key").placeholder = s.settings.has_api_key ? "saved (" + s.settings.ANTHROPIC_API_KEY + ")" : "sk-ant-…";
+
+  $("#set-whisper-backend").value = s.settings.WHISPER_BACKEND || "faster-whisper";
+  syncWhisperBackendOptions();
+  $("#set-groq-key").placeholder = s.settings.has_groq_key ? "saved (" + s.settings.GROQ_API_KEY + ")" : "gsk_…";
+  $("#set-groq-model").value = s.settings.GROQ_WHISPER_MODEL || "";
+  $("#set-openai-key").placeholder = s.settings.has_openai_key
+    ? "saved (" + s.settings.OPENAI_API_KEY + ")"
+    : "sk-…";
+  $("#set-openai-model").value = s.settings.OPENAI_TRANSCRIBE_MODEL || "";
 }
 onClickBusy($("#btn-save-settings"), async () => {
-  const body = { WHISPER_MODEL: $("#set-whisper").value, OCR_LANG: $("#set-ocr").value };
+  const body = {
+    WHISPER_MODEL: $("#set-whisper").value,
+    OCR_LANG: $("#set-ocr").value,
+    WHISPER_BACKEND: $("#set-whisper-backend").value,
+    GROQ_WHISPER_MODEL: $("#set-groq-model").value,
+    OPENAI_TRANSCRIBE_MODEL: $("#set-openai-model").value,
+  };
   if ($("#set-key").value.trim()) body.ANTHROPIC_API_KEY = $("#set-key").value.trim();
+  if ($("#set-groq-key").value.trim()) body.GROQ_API_KEY = $("#set-groq-key").value.trim();
+  if ($("#set-openai-key").value.trim()) body.OPENAI_API_KEY = $("#set-openai-key").value.trim();
   await api("/settings", { method: "PUT", body });
   $("#set-key").value = "";
+  $("#set-groq-key").value = "";
+  $("#set-openai-key").value = "";
   $("#settings-status").textContent = "Saved ✓";
   await loadSetup();
 });
@@ -276,6 +295,28 @@ onClickBusy($("#btn-test-key"), async () => {
   const r = await api("/settings/test-key", { method: "POST" }).catch((e) => ({ ok: false, error: e.message }));
   $("#settings-status").textContent = r.ok ? "Key works ✓" : "Key failed: " + (r.error || "");
 });
+
+// Only one of the local-model picker / groq fields / openai fields is
+// relevant at a time, depending on the selected backend -- same
+// show-the-relevant-block-only pattern as the Run tab's syncModeOptions.
+function syncWhisperBackendOptions() {
+  const backend = $("#set-whisper-backend").value;
+  $("#whisper-local-opts").hidden = backend === "groq" || backend === "openai";
+  $("#whisper-groq-opts").hidden = backend !== "groq";
+  $("#whisper-openai-opts").hidden = backend !== "openai";
+}
+$("#set-whisper-backend").addEventListener("change", syncWhisperBackendOptions);
+
+async function testProviderKey(provider, statusEl) {
+  statusEl.innerHTML = statusLine("Testing…");
+  const r = await api(`/settings/test-key?provider=${provider}`, { method: "POST" }).catch((e) => ({
+    ok: false,
+    error: e.message,
+  }));
+  statusEl.textContent = r.ok ? "Key works ✓" : "Key failed: " + (r.error || "");
+}
+onClickBusy($("#btn-test-groq-key"), () => testProviderKey("groq", $("#settings-status")));
+onClickBusy($("#btn-test-openai-key"), () => testProviderKey("openai", $("#settings-status")));
 
 /* ---------- sources ---------- */
 let pendingEntries = [];

@@ -24,6 +24,11 @@ class SettingsUpdate(BaseModel):
     WHISPER_MODEL: Optional[str] = None
     NOTES_MODEL: Optional[str] = None
     OCR_LANG: Optional[str] = None
+    WHISPER_BACKEND: Optional[str] = None
+    GROQ_API_KEY: Optional[str] = None
+    GROQ_WHISPER_MODEL: Optional[str] = None
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_TRANSCRIBE_MODEL: Optional[str] = None
 
     def to_updates(self) -> dict:
         return self.model_dump(exclude_none=True)

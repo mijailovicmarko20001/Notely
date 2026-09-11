@@ -5,15 +5,21 @@ One job at a time (single-user local tool), but within a job, tasks run on
 own lane construction for the exact set, which depends on WHISPER_BACKEND):
 
   net lane — stage 0 (video download): bandwidth-bound, runs ahead of
-             everything else.
+             everything else. Stage 1 (transcribe) joins this lane
+             instead of its usual cpu one when WHISPER_BACKEND is a cloud
+             backend (groq/openai) -- it's network-bound then, not
+             CPU-bound, and leaving it in the cpu lane would needlessly
+             serialize it against real CPU work for other lectures.
   cpu lane — stages 1-5 (transcribe/extract/detect/OCR/segment): these
              saturate cores, so only one runs at a time. Stage 1
-             (transcribe) moves to its own gpu lane instead when
-             WHISPER_BACKEND=mlx, since it no longer contends with the CPU
-             lane's other stages for the same resource.
-  api lane — stage 6 (note generation via the Anthropic API):
-             network-bound, near-zero CPU; trails behind as each lecture's
-             stage 5 lands.
+             (transcribe) moves out of this lane instead -- to its own
+             gpu lane under WHISPER_BACKEND=mlx, or to the net lane under
+             a cloud backend -- since it no longer contends with the CPU
+             lane's other stages for the same resource either way.
+  api lane — stage 6 (note generation) and stage 11 (practice exams, run
+             through this scheduler via webui/routes/exams.py building
+             its own task list): both Anthropic API calls, network-bound,
+             near-zero CPU.
   gpu lane — stage 1 (transcribe) only when WHISPER_BACKEND=mlx.
 
 Within a lecture, stages remain strictly sequential (stage k needs k-1's
@@ -319,10 +325,17 @@ class JobManager:
         #   gpu — transcription (stage 1) when WHISPER_BACKEND=mlx.
         #   cpu — extraction/detection/OCR/segmentation (2-5), plus
         #         transcription on the CPU backend.
-        gpu_transcribe = config.stage_env().get("WHISPER_BACKEND", "").lower() == "mlx"
+        whisper_backend = config.stage_env().get("WHISPER_BACKEND", "").lower()
+        gpu_transcribe = whisper_backend == "mlx"
+        # Cloud transcription (groq/openai) is network-bound like stage 0's
+        # downloads, not CPU-bound like the rest of stages 1-5 -- leaving
+        # it in the cpu lane would needlessly serialize a waiting-on-the-
+        # network stage 1 against real CPU work (stage 2-5 for other
+        # lectures) that could otherwise run alongside it.
+        cloud_transcribe = whisper_backend in ("groq", "openai")
         lanes = [
-            ("net", {0}),
-            ("cpu", {2, 3, 4, 5} if gpu_transcribe else {1, 2, 3, 4, 5}),
+            ("net", {0, 1} if cloud_transcribe else {0}),
+            ("cpu", {2, 3, 4, 5} if (gpu_transcribe or cloud_transcribe) else {1, 2, 3, 4, 5}),
             # Stage 11 (practice exams) is network-bound like stage 6, and
             # -- unlike stages 9/10 -- IS started through this scheduler
             # (webui/routes/exams.py builds its own [(None, 11, argv)]

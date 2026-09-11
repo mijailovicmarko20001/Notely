@@ -27,6 +27,7 @@ if str(_PROJECT_ROOT_FOR_IMPORT) not in sys.path:
 from notely.env import (  # noqa: E402
     DEFAULT_OCR_LANG,
     DEFAULT_STAGE3_THRESHOLD,
+    DEFAULT_WHISPER_BACKEND,
     DEFAULT_WHISPER_MODEL,
 )
 from notely.io import load_json_or_default  # noqa: E402
@@ -80,7 +81,24 @@ def validate_lecture_id(lecture_id: str, must_exist: bool = True) -> str:
 
 # Settings the UI exposes, with defaults. Course-specific defaults come from
 # the validated lecture01 run (see CLAUDE.md / memory).
-SETTING_KEYS = ("ANTHROPIC_API_KEY", "WHISPER_MODEL", "NOTES_MODEL", "OCR_LANG")
+SETTING_KEYS = (
+    "ANTHROPIC_API_KEY",
+    "WHISPER_MODEL",
+    "NOTES_MODEL",
+    "OCR_LANG",
+    "WHISPER_BACKEND",
+    "GROQ_API_KEY",
+    "GROQ_WHISPER_MODEL",
+    "OPENAI_API_KEY",
+    "OPENAI_TRANSCRIBE_MODEL",
+)
+
+# Settings that are a credential, not a tuning knob -- masked on read
+# (read_settings) and never persisted if the masked placeholder itself
+# round-trips back on an unrelated save (write_settings). Was hardcoded
+# to ANTHROPIC_API_KEY alone before cloud transcription added two more
+# provider keys that need the exact same treatment.
+SECRET_KEYS = ("ANTHROPIC_API_KEY", "GROQ_API_KEY", "OPENAI_API_KEY")
 
 DEFAULT_STAGE_OPTIONS = {
     "crop": "0.12,0.06,0.63,0.88",  # stage 03 — Zoom capture of PDF viewer
@@ -112,17 +130,23 @@ DEFAULT_ENV = {
     "WHISPER_MODEL": DEFAULT_WHISPER_MODEL,  # D2, see notely.env
     "NOTES_MODEL": "claude-sonnet-5",
     "OCR_LANG": DEFAULT_OCR_LANG,  # D3, see notely.env
+    "WHISPER_BACKEND": DEFAULT_WHISPER_BACKEND,  # see notely.env's own D1-D3-style comment
 }
 
 
 def read_settings(mask_key: bool = True) -> dict:
-    """Current settings: .env values over defaults. API key masked for display."""
+    """Current settings: .env values over defaults. Every SECRET_KEYS
+    entry masked for display, each with its own has_*_key boolean so the
+    UI can show "configured" without ever re-displaying the raw value."""
     values = {k: v for k, v in dotenv_values(ENV_PATH).items() if v is not None}
     settings = {**DEFAULT_ENV, **{k: v for k, v in values.items() if k in SETTING_KEYS}}
-    key = settings.get("ANTHROPIC_API_KEY", "")
-    settings["has_api_key"] = bool(key)
+    settings["has_api_key"] = bool(settings.get("ANTHROPIC_API_KEY", ""))
+    settings["has_groq_key"] = bool(settings.get("GROQ_API_KEY", ""))
+    settings["has_openai_key"] = bool(settings.get("OPENAI_API_KEY", ""))
     if mask_key:
-        settings["ANTHROPIC_API_KEY"] = (key[:10] + "…") if key else ""
+        for secret_key in SECRET_KEYS:
+            v = settings.get(secret_key, "")
+            settings[secret_key] = (v[:10] + "…") if v else ""
     return settings
 
 
@@ -150,7 +174,7 @@ def write_settings(updates: dict) -> None:
     for k, v in updates.items():
         if k not in SETTING_KEYS or v is None:
             continue
-        if k == "ANTHROPIC_API_KEY" and (not v or v.endswith("…")):
+        if k in SECRET_KEYS and (not v or v.endswith("…")):
             continue  # empty or masked value round-tripped from the UI
         v = str(v)
         if len(v) > MAX_SETTING_LENGTH:
@@ -160,8 +184,15 @@ def write_settings(updates: dict) -> None:
         set_key(str(ENV_PATH), k, v, quote_mode="always")
 
 
+def get_secret(key: str) -> str:
+    """Read a credential the same way get_api_key() always has for
+    ANTHROPIC_API_KEY: .env first, falling back to a real environment
+    variable (e.g. already exported in Docker/CI)."""
+    return dotenv_values(ENV_PATH).get(key) or os.environ.get(key, "")
+
+
 def get_api_key() -> str:
-    return dotenv_values(ENV_PATH).get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY", "")
+    return get_secret("ANTHROPIC_API_KEY")
 
 
 def stage_env() -> dict:
