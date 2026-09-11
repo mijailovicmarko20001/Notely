@@ -1,14 +1,15 @@
 """Contract test for notely.stages, written before the implementation
 (Phase 4, "new structure").
 
-One Stage record per pipeline stage (0-10) is the single source for stage
+One Stage record per pipeline stage (0-11) is the single source for stage
 names, script filenames, and per-lecture output artifact paths --
 collapsing ~25 previously hardcoded copies of this same information
 across webui/progress.py, webui/jobs.py, webui/media.py, webui/models.py,
 webui/routes/jobs.py, and run_pipeline.py. Frontend consumption
-(index.html/app.js) is deferred to Phase 7. Stages 9-10 (essentials
-distillation) followed the same registry-first pattern established here,
-staying outside MAX_PIPELINE_STAGE like stage 8 -- see notely/stages.py."""
+(index.html/app.js) is deferred to Phase 7. Stages 9-11 (essentials
+distillation, practice exams) followed the same registry-first pattern
+established here, staying outside MAX_PIPELINE_STAGE like stage 8 -- see
+notely/stages.py."""
 
 from pathlib import Path
 
@@ -18,8 +19,8 @@ INPUT_DIR = Path("/tmp/notely-test-input")
 OUTPUT_DIR = Path("/tmp/notely-test-output")
 
 
-def test_stages_cover_0_through_10_in_order():
-    assert [s.number for s in STAGES] == list(range(11))
+def test_stages_cover_0_through_11_in_order():
+    assert [s.number for s in STAGES] == list(range(12))
 
 
 def test_stages_by_number_matches_stages():
@@ -92,3 +93,14 @@ def test_stage10_artifact_path_ignores_lecture_id():
     stage10 = STAGES_BY_NUMBER[10]
     path = stage10.artifact_path(INPUT_DIR, OUTPUT_DIR, None)
     assert path == OUTPUT_DIR / "essentials.md"
+
+
+def test_stage11_is_not_per_lecture():
+    # Practice exams are course-level, like stage 7 -- no lecture_id at all.
+    assert STAGES_BY_NUMBER[11].per_lecture is False
+
+
+def test_stage11_artifact_path_is_the_first_exam_paper():
+    stage11 = STAGES_BY_NUMBER[11]
+    path = stage11.artifact_path(INPUT_DIR, OUTPUT_DIR, None)
+    assert path == OUTPUT_DIR / "exams" / "exam_01.md"

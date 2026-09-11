@@ -92,6 +92,19 @@ STAGES = [
         False,
         lambda i, o, lec: o / "essentials.md",
     ),
+    # Stage 11 (practice exams, notely.pipeline.exams) is course-level like
+    # stage 7 -- no lecture_id at all -- and standalone like stages 8-10:
+    # invoked directly (scripts/11_generate_exam.py), never through the
+    # orchestrated sweep. artifact_path tracks the first generated paper
+    # only; a multi-paper run (--count > 1) isn't representable by a
+    # single tracked artifact, same limitation stage 8 already has.
+    Stage(
+        11,
+        "Generate practice exam",
+        "11_generate_exam.py",
+        False,
+        lambda i, o, lec: o / "exams" / "exam_01.md",
+    ),
 ]
 
 STAGES_BY_NUMBER = {s.number: s for s in STAGES}
