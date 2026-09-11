@@ -183,6 +183,7 @@ function showTab(name) {
   if (name === "run") { refreshState(); pollJob(); }
   if (name === "review") populateReviewLectures();
   if (name === "guide") loadGuide();
+  if (name === "exams") loadExams();
 }
 
 /* ---------- nav progress indicators (FRONTEND_TODO.md P1: the app is a
@@ -972,6 +973,134 @@ async function loadGuide() {
     console.warn("MathJax typesetting failed (offline? CDN blocked?):", e);
   }
 }
+
+/* ---------- exams ---------- */
+// Uploads and generation are simpler than the Sources tab's deck flow: no
+// per-lecture mapping needed (past exams aren't tied to a lecture), and
+// uploads are additive (see webui/exams.py::save_exam_uploads) rather
+// than the pool's whole-set replace, so a plain "select -> upload
+// immediately" flow is enough.
+const examDropzone = $("#exam-dropzone");
+["dragenter", "dragover"].forEach((evt) =>
+  examDropzone.addEventListener(evt, (e) => { e.preventDefault(); examDropzone.classList.add("drag-over"); })
+);
+["dragleave", "drop"].forEach((evt) =>
+  examDropzone.addEventListener(evt, (e) => { e.preventDefault(); examDropzone.classList.remove("drag-over"); })
+);
+examDropzone.addEventListener("drop", (e) => {
+  const dropped = e.dataTransfer && e.dataTransfer.files;
+  if (dropped && dropped.length) {
+    $("#exam-file").files = dropped;
+    $("#exam-file").dispatchEvent(new Event("change"));
+  }
+});
+
+$("#exam-file").addEventListener("change", async () => {
+  const files = [...$("#exam-file").files];
+  if (!files.length) return;
+  const fd = new FormData();
+  files.forEach((f) => fd.append("files", f));
+  $("#exam-upload-status").innerHTML = statusLine(`Uploading ${files.length} file${files.length === 1 ? "" : "s"}…`);
+  try {
+    const r = await api("/exams/upload", { method: "POST", body: fd });
+    $("#exam-upload-status").innerHTML = okBanner(`Uploaded ${r.saved.length} file(s).`);
+    $("#exam-file").value = "";
+    $("#exam-dropzone-label").textContent = "Drag past exams here, or click to browse";
+    await loadExams();
+  } catch (e) {
+    $("#exam-upload-status").innerHTML = errorBanner(e.message);
+  }
+});
+
+onClickBusy($("#btn-generate-exam"), async () => {
+  const count = Math.max(1, +$("#exam-count").value || 1);
+  const questionsRaw = $("#exam-questions").value.trim();
+  const body = { count, force: $("#exam-force").checked };
+  if (questionsRaw) body.questions = +questionsRaw;
+  $("#exam-generate-status").innerHTML = "";
+  try {
+    await api("/exams/generate", { method: "POST", body });
+    // Runs through the same job scheduler as pipeline stages (stage 11)
+    // -- same "start it, then show the Run tab" pattern the Review tab's
+    // own re-run button uses.
+    showTab("run");
+    connectSSE();
+    pollJob();
+  } catch (e) {
+    $("#exam-generate-status").innerHTML = errorBanner(e.message);
+  }
+});
+
+async function loadExams() {
+  let state;
+  try {
+    state = await api("/exams");
+  } catch (e) {
+    $("#exam-list").innerHTML = errorBanner("Failed to load exams: " + e.message);
+    return;
+  }
+  $("#exam-uploaded-list").innerHTML = state.uploaded.length
+    ? `<div class="tag-list">${state.uploaded.map((n) => `<span class="tag">${n}</span>`).join("")}</div>`
+    : emptyState("inbox", "No past exams uploaded yet — optional, Notely infers a format without them.");
+
+  $("#exam-list").innerHTML = state.generated.length
+    ? state.generated.map(examRowHtml).join("")
+    : emptyState("inbox", "No practice exams generated yet.");
+}
+
+function examRowHtml(e) {
+  return `<details class="card exam-row" data-name="${e.name}">
+    <summary><strong>${e.name}</strong>
+      <a class="button" href="/files/exams/${e.name}.md" download>MD</a>
+      <a class="button" href="/api/exams/${e.name}/pdf">PDF</a>
+    </summary>
+    <article class="exam-paper-body markdown-body">${statusLine("Loading…")}</article>
+    ${e.has_key
+      ? `<details class="exam-key">
+          <summary>Show answers</summary>
+          <article class="exam-key-body markdown-body">${statusLine("Loading…")}</article>
+          <div class="row gap-top">
+            <a class="button" href="/files/exams/${e.name}_key.md" download>Key MD</a>
+            <a class="button" href="/api/exams/${e.name}/key/pdf">Key PDF</a>
+          </div>
+        </details>`
+      : `<p class="hint">No answer key was generated for this paper.</p>`}
+  </details>`;
+}
+
+// Lazy-load each paper/key's rendered HTML the first time its <details>
+// is opened -- the answer key in particular must never be fetched (let
+// alone rendered into the DOM) until the user explicitly asks for it.
+// "toggle" doesn't bubble, so this needs the capture phase to catch it at
+// the document level instead of wiring a listener per row.
+document.addEventListener(
+  "toggle",
+  async (e) => {
+    const target = e.target;
+    if (!(target instanceof HTMLDetailsElement) || !target.open) return;
+    const row = target.closest(".exam-row");
+    if (!row) return;
+    const isKey = target.classList.contains("exam-key");
+    if (!isKey && target !== row) return; // some other nested <details>, not ours
+
+    const body = isKey ? target.querySelector(".exam-key-body") : row.querySelector(".exam-paper-body");
+    if (!body || body.dataset.loaded) return;
+    const path = "/exams/" + row.dataset.name + (isKey ? "/key" : "");
+    try {
+      const r = await api(path);
+      body.innerHTML = r.exists ? r.html : `<p class="hint">Not generated yet.</p>`;
+    } catch (err) {
+      body.innerHTML = errorBanner(err.message);
+    }
+    body.dataset.loaded = "1";
+    try {
+      await window.MathJax?.typesetPromise?.([body]);
+    } catch (err) {
+      console.warn("MathJax typesetting failed (offline? CDN blocked?):", err);
+    }
+  },
+  true
+);
 
 /* ---------- boot ---------- */
 (async function boot() {

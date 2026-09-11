@@ -25,6 +25,7 @@
     <button data-tab="run"><span class="tab-step" id="step-run" data-step="3">3</span>Run</button>
     <button data-tab="review"><span class="tab-step" id="step-review" data-step="4">4</span>Review<span class="tab-badge" id="review-badge" hidden></span></button>
     <button data-tab="guide"><span class="tab-step" id="step-guide" data-step="5">5</span>Study Guide</button>
+    <button data-tab="exams">Exams</button>
   </nav>
   <button id="theme-toggle" class="theme-toggle" type="button" title="Switch color theme"></button>
 </header>
@@ -205,6 +206,40 @@
       <button id="btn-refresh-guide">Refresh</button>
     </div>
     <article id="guide-body" class="card">Nothing assembled yet — run the pipeline first.</article>
+  </section>
+
+  <!-- EXAMS -->
+  <section id="tab-exams" class="tab">
+    <h2>Practice exams</h2>
+    <div class="card">
+      <p>Upload past exams (PDF) so Notely can match their <strong>format</strong> — question types,
+        structure, point distribution. Their actual questions are never reused; every generated
+        question is drawn from your study guide/essentials. Optional — without any, Notely infers a
+        sensible format from the course material alone.</p>
+      <label class="dropzone" id="exam-dropzone">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 16V4M12 4l-5 5M12 4l5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+        <strong id="exam-dropzone-label">Drag past exams here, or click to browse</strong>
+        <span class="hint">PDF, one or more files</span>
+        <input type="file" id="exam-file" accept=".pdf" multiple>
+      </label>
+      <div id="exam-upload-status" class="status-line" aria-live="polite"></div>
+      <div id="exam-uploaded-list"></div>
+    </div>
+    <div class="card">
+      <div class="row wrap">
+        <label>Papers <input type="number" min="1" max="20" id="exam-count" class="input-xs" value="1"></label>
+        <label>Questions (optional) <input type="number" min="1" id="exam-questions" class="input-xs" placeholder="auto"></label>
+        <label class="chip"><input type="checkbox" id="exam-force"> Regenerate format &amp; existing papers</label>
+      </div>
+      <div class="row">
+        <button id="btn-generate-exam" class="primary">Generate</button>
+        <span id="exam-generate-status" class="status-line" aria-live="polite"></span>
+      </div>
+      <p class="hint">Runs as a tracked job, same as the pipeline — you'll be taken to the Run tab
+        to watch progress.</p>
+    </div>
+    <h2>Generated papers</h2>
+    <div id="exam-list" aria-live="polite"></div>
   </section>
 </main>
 
