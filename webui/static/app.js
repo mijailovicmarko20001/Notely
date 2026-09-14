@@ -183,6 +183,7 @@ function showTab(name) {
   if (name === "run") { refreshState(); pollJob(); }
   if (name === "review") populateReviewLectures();
   if (name === "guide") loadGuide();
+  if (name === "essentials") loadEssentials();
   if (name === "exams") loadExams();
 }
 
@@ -1014,6 +1015,95 @@ async function loadGuide() {
     console.warn("MathJax typesetting failed (offline? CDN blocked?):", e);
   }
 }
+
+/* ---------- essentials ---------- */
+onClickBusy($("#btn-generate-essentials"), async () => {
+  const body = { force: $("#essentials-force").checked };
+  $("#essentials-generate-status").innerHTML = "";
+  try {
+    await api("/essentials/generate", { method: "POST", body });
+    // Runs through the same job scheduler as pipeline stages (stages
+    // 9/10) -- same "start it, then show the Run tab" pattern the Exams
+    // tab's own generate button uses.
+    showTab("run");
+    connectSSE();
+    pollJob();
+  } catch (e) {
+    $("#essentials-generate-status").innerHTML = errorBanner(e.message);
+  }
+});
+
+async function loadEssentials() {
+  let state;
+  try {
+    state = await api("/essentials");
+  } catch (e) {
+    $("#essentials-list").innerHTML = errorBanner("Failed to load essentials: " + e.message);
+    return;
+  }
+  $("#essentials-course-row").innerHTML = state.course_essentials
+    ? essentialsRowHtml({
+        path: "course",
+        label: "Course essentials",
+        mdHref: "/files/essentials.md",
+        pdfHref: "/api/essentials/course/pdf",
+      })
+    : emptyState("inbox", "No course-level essentials yet — generate lecture sheets first.");
+
+  $("#essentials-list").innerHTML = state.lectures.length
+    ? state.lectures.map(essentialsLectureRowHtml).join("")
+    : emptyState("inbox", "No lectures yet.");
+}
+
+function essentialsRowHtml({ path, label, mdHref, pdfHref }) {
+  return `<details class="card essentials-row" data-path="${path}">
+    <summary><strong>${label}</strong>
+      <a class="button" href="${mdHref}" download>MD</a>
+      <a class="button" href="${pdfHref}">PDF</a>
+    </summary>
+    <article class="essentials-body markdown-body">${statusLine("Loading…")}</article>
+  </details>`;
+}
+
+function essentialsLectureRowHtml(lec) {
+  if (lec.has_essentials) {
+    return essentialsRowHtml({
+      path: lec.id,
+      label: lec.id,
+      mdHref: `/files/essentials/${lec.id}.md`,
+      pdfHref: `/api/essentials/${lec.id}/pdf`,
+    });
+  }
+  const status = lec.has_notes ? "notes ready — not generated yet" : "no notes yet (run stage 6 first)";
+  return `<div class="card row"><strong>${lec.id}</strong><span class="hint">${status}</span></div>`;
+}
+
+// Lazy-load each sheet's rendered HTML the first time its <details> is
+// opened -- same pattern (and same "toggle" doesn't bubble, needs the
+// capture phase" reasoning) as the Exams tab's paper/key lazy-load below.
+document.addEventListener(
+  "toggle",
+  async (e) => {
+    const target = e.target;
+    if (!(target instanceof HTMLDetailsElement) || !target.open) return;
+    if (!target.classList.contains("essentials-row")) return;
+    const body = target.querySelector(".essentials-body");
+    if (!body || body.dataset.loaded) return;
+    try {
+      const r = await api("/essentials/" + target.dataset.path);
+      body.innerHTML = r.exists ? r.html : `<p class="hint">Not generated yet.</p>`;
+    } catch (err) {
+      body.innerHTML = errorBanner(err.message);
+    }
+    body.dataset.loaded = "1";
+    try {
+      await window.MathJax?.typesetPromise?.([body]);
+    } catch (err) {
+      console.warn("MathJax typesetting failed (offline? CDN blocked?):", err);
+    }
+  },
+  true
+);
 
 /* ---------- exams ---------- */
 // Uploads and generation are simpler than the Sources tab's deck flow: no

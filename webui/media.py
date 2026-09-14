@@ -30,6 +30,10 @@ _guide_pdf_lock = threading.Lock()
 # them is simplicity without a real cost.
 _exam_pdf_lock = threading.Lock()
 
+# Same reasoning again, shared across the course sheet and every
+# per-lecture sheet.
+_essentials_pdf_lock = threading.Lock()
+
 
 def render_guide_pdf() -> Path:
     """Render the study guide to PDF (headless Chrome + MathJax) if the
@@ -94,6 +98,49 @@ def render_exam_pdf(name: str, key: bool = False) -> Path:
                 if r.returncode != 0 or not tmp_path.exists() or tmp_path.stat().st_size == 0:
                     log.error(
                         "Exam PDF export failed (rc=%s): %s", r.returncode, (r.stderr or r.stdout)[-2000:]
+                    )
+                    raise ServerError("PDF export failed — see server logs")
+                os.replace(tmp_path, pdf)
+            finally:
+                tmp_path.unlink(missing_ok=True)
+    return pdf
+
+
+def render_essentials_pdf(lecture_id: str | None) -> Path:
+    """Render the course-level essentials sheet (lecture_id=None) or one
+    lecture's sheet to PDF if the existing one (if any) is stale, and
+    return its path. Same staleness-check + lock + atomic-rename shape as
+    render_exam_pdf, parameterized over course vs lecture via
+    scripts/08_export_pdf.py's --essentials flag (with or without a
+    trailing lecture_id positional)."""
+    if lecture_id:
+        md = config.OUTPUT_ESSENTIALS_DIR / f"{lecture_id}.md"
+        pdf = config.OUTPUT_ESSENTIALS_DIR / f"{lecture_id}.pdf"
+        pdf_dir = config.OUTPUT_ESSENTIALS_DIR
+    else:
+        md = config.COURSE_ESSENTIALS_PATH
+        pdf = config.OUTPUT_DIR / "essentials.pdf"
+        pdf_dir = config.OUTPUT_DIR
+    if not md.exists():
+        what = f"essentials for {lecture_id}" if lecture_id else "course essentials"
+        raise NotFoundError(f"no {what} found yet — generate it first")
+    with _essentials_pdf_lock:
+        # Re-check staleness inside the lock, same reasoning as render_guide_pdf.
+        if not pdf.exists() or pdf.stat().st_mtime < md.stat().st_mtime:
+            script = config.SCRIPTS_DIR / STAGES_BY_NUMBER[8].script
+            fd, tmp_name = tempfile.mkstemp(dir=str(pdf_dir), suffix=".pdf.tmp")
+            os.close(fd)
+            tmp_path = Path(tmp_name)
+            argv = [sys.executable, str(script), "--essentials", "--output", str(tmp_path)]
+            if lecture_id:
+                argv.insert(2, lecture_id)
+            try:
+                r = subprocess.run(argv, capture_output=True, text=True, timeout=300)
+                if r.returncode != 0 or not tmp_path.exists() or tmp_path.stat().st_size == 0:
+                    log.error(
+                        "Essentials PDF export failed (rc=%s): %s",
+                        r.returncode,
+                        (r.stderr or r.stdout)[-2000:],
                     )
                     raise ServerError("PDF export failed — see server logs")
                 os.replace(tmp_path, pdf)

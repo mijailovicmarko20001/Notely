@@ -25,6 +25,7 @@
     <button data-tab="run"><span class="tab-step" id="step-run" data-step="3">3</span>Run</button>
     <button data-tab="review"><span class="tab-step" id="step-review" data-step="4">4</span>Review<span class="tab-badge" id="review-badge" hidden></span></button>
     <button data-tab="guide"><span class="tab-step" id="step-guide" data-step="5">5</span>Study Guide</button>
+    <button data-tab="essentials">Essentials</button>
     <button data-tab="exams">Exams</button>
   </nav>
   <button id="theme-toggle" class="theme-toggle" type="button" title="Switch color theme"></button>
@@ -243,6 +244,30 @@
       <button id="btn-refresh-guide">Refresh</button>
     </div>
     <article id="guide-body" class="card">Nothing assembled yet — run the pipeline first.</article>
+  </section>
+
+  <!-- ESSENTIALS -->
+  <section id="tab-essentials" class="tab">
+    <h2>Essentials</h2>
+    <p class="hint">A condensed "must-know" sheet per lecture, plus one for the whole course —
+      definitions and formulas kept exact, restated slide bullets dropped. Distilled from your
+      already-finished notes (stage 6), not the raw transcript.</p>
+    <div class="card">
+      <div class="row wrap">
+        <label class="chip"><input type="checkbox" id="essentials-force"> Regenerate existing sheets</label>
+      </div>
+      <div class="row">
+        <button id="btn-generate-essentials" class="primary">Generate</button>
+        <span id="essentials-generate-status" class="status-line" aria-live="polite"></span>
+      </div>
+      <p class="hint">Runs as a tracked job, same as the pipeline — you'll be taken to the Run tab
+        to watch progress. Only lectures with finished notes are included; the course-level sheet
+        runs once, after every included lecture's sheet is done.</p>
+    </div>
+    <h2>Course essentials</h2>
+    <div id="essentials-course-row" aria-live="polite"></div>
+    <h2>Per-lecture sheets</h2>
+    <div id="essentials-list" aria-live="polite"></div>
   </section>
 
   <!-- EXAMS -->

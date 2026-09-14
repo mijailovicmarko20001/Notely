@@ -47,6 +47,10 @@ LOGS_DIR = OUTPUT_DIR / "logs"
 # convention as SLIDES_DIR/LOGS_DIR above.
 EXAMS_DIR = INPUT_DIR / "exams"
 OUTPUT_EXAMS_DIR = OUTPUT_DIR / "exams"
+# Stage 9/10 output (notely.pipeline.essentials) -- same "constant computed
+# once, test fixture repoints it" convention as EXAMS_DIR above.
+OUTPUT_ESSENTIALS_DIR = OUTPUT_DIR / "essentials"
+COURSE_ESSENTIALS_PATH = OUTPUT_DIR / "essentials.md"
 # In Docker, /app/.env is a symlink into the persistent volume — but
 # python-dotenv's set_key replaces the file atomically (temp file + rename),
 # which would swap the symlink for a regular file inside the container.

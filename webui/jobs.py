@@ -16,10 +16,15 @@ own lane construction for the exact set, which depends on WHISPER_BACKEND):
              gpu lane under WHISPER_BACKEND=mlx, or to the net lane under
              a cloud backend -- since it no longer contends with the CPU
              lane's other stages for the same resource either way.
-  api lane — stage 6 (note generation) and stage 11 (practice exams, run
-             through this scheduler via webui/routes/exams.py building
-             its own task list): both Anthropic API calls, network-bound,
-             near-zero CPU.
+  api lane — stage 6 (note generation), stages 9/10 (essentials, run
+             through this scheduler via webui/routes/essentials.py
+             building its own task list), and stage 11 (practice exams,
+             same via webui/routes/exams.py): all Anthropic API calls,
+             network-bound, near-zero CPU. A single worker per lane means
+             list order is execution order within it -- essentials'
+             stage-9 tasks (one per lecture) always run to completion
+             before its trailing stage-10 task, since routes/essentials.py
+             appends stage 10 last.
   gpu lane — stage 1 (transcribe) only when WHISPER_BACKEND=mlx.
 
 Within a lecture, stages remain strictly sequential (stage k needs k-1's
@@ -336,14 +341,15 @@ class JobManager:
         lanes = [
             ("net", {0, 1} if cloud_transcribe else {0}),
             ("cpu", {2, 3, 4, 5} if (gpu_transcribe or cloud_transcribe) else {1, 2, 3, 4, 5}),
-            # Stage 11 (practice exams) is network-bound like stage 6, and
-            # -- unlike stages 9/10 -- IS started through this scheduler
-            # (webui/routes/exams.py builds its own [(None, 11, argv)]
-            # task list directly, bypassing notely.runner.build_tasks,
-            # which doesn't know about stages past MAX_PIPELINE_STAGE).
-            # Without this, a stage-11 task would match no lane's
-            # `stage in lane_stages` check and sit "pending" forever.
-            ("api", {6, 11}),
+            # Stages 9-11 (essentials, practice exams) are network-bound
+            # like stage 6, and are all started through this scheduler
+            # (webui/routes/essentials.py and webui/routes/exams.py each
+            # build their own task list directly, bypassing
+            # notely.runner.build_tasks, which doesn't know about stages
+            # past MAX_PIPELINE_STAGE). Without this, those tasks would
+            # match no lane's `stage in lane_stages` check and sit
+            # "pending" forever.
+            ("api", {6, 9, 10, 11}),
         ]
         if gpu_transcribe:
             lanes.append(("gpu", {1}))

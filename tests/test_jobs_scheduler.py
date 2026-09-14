@@ -32,6 +32,8 @@ STAGE_ARTIFACT_REL = {
     5: "output/segmented_transcripts/{lec}.json",
     6: "output/notes/{lec}.md",
     7: "output/study_guide.md",
+    9: "output/essentials/{lec}.md",
+    10: "output/essentials.md",
     11: "output/exams/exam_01.md",
 }
 
@@ -230,6 +232,47 @@ def test_stage11_task_runs_to_completion_on_the_api_lane(project):
     assert manager.job["tasks"][0]["status"] == "done"
     assert manager.job["status"] == "done"
     assert (project / "output" / "exams" / "exam_01.md").exists()
+
+
+def test_stage9_and_10_tasks_run_to_completion_on_the_api_lane(project):
+    """Same reasoning as test_stage11_task_runs_to_completion_on_the_api_lane
+    above, now for stages 9/10 (essentials): webui/routes/essentials.py
+    builds its own [(lec, 9, ...), ..., (None, 10, ...)] task list outside
+    build_tasks/PER_LECTURE_STAGES, so _run()'s lane construction has to
+    know about both explicitly or they'd sit "pending" forever."""
+    write_stub(config.SCRIPTS_DIR, 9, name="lecture_essentials", exit_code=0)
+    write_stub(config.SCRIPTS_DIR, 10, name="course_essentials", exit_code=0)
+
+    manager = jobs.JobManager()
+    tasks = [("lecture01", 9, []), ("lecture02", 9, []), (None, 10, [])]
+    manager.start_job(tasks)
+    assert wait_for_job_done(manager, timeout=5)
+
+    assert manager.job["status"] == "done"
+    assert all(t["status"] == "done" for t in manager.job["tasks"])
+
+
+def test_stage10_runs_after_every_stage9_task_completes(project):
+    # stage 10 (course essentials) aggregates every stage-9 sheet -- if it
+    # started before the stage-9 tasks ahead of it in the list finished,
+    # it could read a partial/missing set of sheets. Both stages share the
+    # "api" lane (single worker, one task at a time), so list order alone
+    # should guarantee this -- verify it isn't a coincidence.
+    log = project / "order.log"
+    write_stub(config.SCRIPTS_DIR, 9, name="lecture_essentials", sleep=0.1, log_path=log)
+    write_stub(config.SCRIPTS_DIR, 10, name="course_essentials", log_path=log)
+
+    manager = jobs.JobManager()
+    tasks = [("lecture01", 9, []), ("lecture02", 9, []), (None, 10, [])]
+    manager.start_job(tasks)
+    assert wait_for_job_done(manager, timeout=5)
+
+    rows = read_log(log)
+    stage9_ends = [ts for ts, ev, st, _lec in rows if ev == "end" and st == 9]
+    stage10_starts = [ts for ts, ev, st, _lec in rows if ev == "start" and st == 10]
+    assert len(stage9_ends) == 2 and len(stage10_starts) == 1
+    assert max(stage9_ends) <= stage10_starts[0]
+    assert manager.job["status"] == "done"
 
 
 # --- dependency ordering per lecture -----------------------------------------

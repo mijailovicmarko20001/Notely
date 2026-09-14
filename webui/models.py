@@ -76,6 +76,16 @@ class ExamGenerateRequest(BaseModel):
     force: bool = False
 
 
+class EssentialsGenerateRequest(BaseModel):
+    """POST /essentials/generate body -- maps to scripts/09_lecture_
+    essentials.py's and scripts/10_course_essentials.py's shared --force
+    flag. Which lectures get a stage-9 task is derived server-side
+    (webui/essentials.py::lectures_ready_for_essentials) from whichever
+    already have finished notes, not taken from this body."""
+
+    force: bool = False
+
+
 class Correction(BaseModel):
     timestamp: float = Field(ge=0)
     slide_number: Optional[int] = None
