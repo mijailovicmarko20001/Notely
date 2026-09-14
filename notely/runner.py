@@ -44,6 +44,7 @@ def build_tasks(lecture_ids, stages, options, force, has_api_key):
             elif s == 4:
                 extra += (
                     flag("--mode", "mode")
+                    + flag("--auto-visual-threshold", "auto_visual_threshold")
                     + flag("--visual-threshold", "visual_threshold")
                     + flag("--visual-min-seconds", "visual_min_seconds")
                     + flag("--ocr-lang", "ocr_lang")
