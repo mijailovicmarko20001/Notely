@@ -56,6 +56,27 @@ DEFAULT_STAY_MARGIN = 0.05
 DEFAULT_CONFIDENCE_THRESHOLD = 0.25
 DEFAULT_MIN_FORWARD_SCORE = 0.05
 
+# Fraction of a deck-mode run's matches that may fall below
+# confidence_threshold before the deck is judged to be absent from the screen
+# and the timeline is rebuilt with visual segmentation instead (see
+# should_fall_back_to_visual).
+#
+# A lecture that never shows its deck doesn't fail loudly -- every match still
+# gets *a* slide number, just a meaningless one. Measured on a real deckless
+# lecture: 445 events, every match below this threshold, timeline collapsed to
+# 3 runs across 104 minutes. So "almost everything is low-confidence" is the
+# available signal.
+#
+# 0.60 is a deliberate, and deliberately *reversible*, choice rather than a
+# calibrated one: there was no known-good deck-using lecture on hand to verify
+# the detector doesn't also fire on one (a legitimately-matched but
+# OCR-hostile lecture -- formula-heavy slides Tesseract mangles -- can carry a
+# lot of low-confidence matches too). The failure it risks is bounded: a false
+# positive yields visual-mode notes, which are useful, not wrong, and the
+# switch is announced on stdout and recorded in the timeline's own notes. Rerun
+# with an explicit --mode deck --force to override. Set to 0 to disable.
+DEFAULT_AUTO_VISUAL_THRESHOLD = 0.60
+
 
 def _ocr_concurrency() -> int:
     """Worker count for the OCR pass. Threads (not processes) because the
@@ -420,6 +441,35 @@ def collapse_to_timeline(matches: list[dict], video_duration: float | None) -> t
     return timeline, notes
 
 
+def low_confidence_ratio(matches: list[dict], confidence_threshold: float) -> float:
+    """Fraction of matches scoring below confidence_threshold, in [0, 1].
+    Returns 0.0 for an empty match list -- no evidence of failure is not
+    evidence of failure."""
+    if not matches:
+        return 0.0
+    return sum(1 for m in matches if m["score"] < confidence_threshold) / len(matches)
+
+
+def should_fall_back_to_visual(
+    matches: list[dict], confidence_threshold: float, auto_visual_threshold: float
+) -> bool:
+    """Whether a deck-mode run matched so poorly that the deck almost
+    certainly wasn't on screen, and the timeline should be rebuilt by visual
+    segmentation instead.
+
+    Deliberately a single, legible condition -- the share of matches below
+    confidence_threshold -- rather than a compound score. This decision
+    silently changes what the whole lecture's notes are built from, so it
+    needs to be something a human can check by eye against the numbers stage 4
+    already prints, and reproduce from needs_review.json afterwards.
+
+    auto_visual_threshold <= 0 disables the check entirely.
+    """
+    if auto_visual_threshold <= 0 or not matches:
+        return False
+    return low_confidence_ratio(matches, confidence_threshold) >= auto_visual_threshold
+
+
 def build_needs_review(
     matches: list[dict],
     timeline: list[dict],
@@ -484,6 +534,7 @@ def process_lecture(
     example_ink_text_overlap_min: float = DEFAULT_EXAMPLE_INK_TEXT_OVERLAP_MIN,
     example_ink_novel_word_min: float = DEFAULT_EXAMPLE_INK_NOVEL_WORD_MIN,
     mode: str = MODE_DECK,
+    auto_visual_threshold: float = DEFAULT_AUTO_VISUAL_THRESHOLD,
     visual_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
     visual_min_seconds: float = DEFAULT_MIN_SEGMENT_SECONDS,
 ) -> bool:
@@ -507,6 +558,9 @@ def process_lecture(
     instead of needing tesseract/ffprobe installed."""
     if mode not in MODES:
         raise ValueError(f"unknown mode {mode!r}, expected one of {MODES}")
+    # May be flipped to visual below if deck matching turns out to be
+    # meaningless; everything after the matching step keys off this, not `mode`.
+    effective_mode = mode
     if ocr is None:
         ocr = TesseractOcr()
     if media_probe is None:
@@ -597,10 +651,41 @@ def process_lecture(
 
         timeline, notes = collapse_to_timeline(matches, video_duration)
 
+        # The deck may simply never have been on screen. Detect that from how
+        # the matching went and rebuild the timeline visually rather than
+        # handing stage 5 windows that don't mean anything -- see
+        # should_fall_back_to_visual, and DEFAULT_AUTO_VISUAL_THRESHOLD for
+        # why this is announced rather than silent.
+        if should_fall_back_to_visual(matches, confidence_threshold, auto_visual_threshold):
+            ratio = low_confidence_ratio(matches, confidence_threshold)
+            reason = (
+                f"{ratio:.0%} of {len(matches)} matches scored below the confidence "
+                f"threshold ({confidence_threshold}), and the timeline collapsed to "
+                f"{len(timeline)} run(s) -- this lecture does not appear to display its "
+                f"slide deck, so the timeline was rebuilt by visual segmentation "
+                f"(auto_visual_threshold={auto_visual_threshold}). Re-run with an "
+                f"explicit --mode deck to keep the slide matching instead."
+            )
+            print(f"\n[{lecture_id}] !! FALLING BACK TO VISUAL MODE: {reason}\n", flush=True)
+            effective_mode = MODE_VISUAL
+            timeline, notes = build_visual_timeline(
+                events,
+                [e["ocr_text"] for e in events],
+                video_duration,
+                threshold=visual_threshold,
+                min_seconds=visual_min_seconds,
+            )
+            # Recorded in the artifact too, not just stdout: whoever reads this
+            # timeline later must be able to see it isn't deck-derived.
+            notes.insert(0, f"AUTOMATIC FALLBACK: {reason}")
+            # Every downstream consumer keys off the effective mode, and the
+            # per-event slide matches no longer describe this timeline.
+            matches = []
+
     # Visual mode has no per-frame slide match, so there is nothing to doubt:
     # every needs_review bucket is about a matching decision that wasn't made
     # here. (A segment's own coherence is already reported as its confidence.)
-    if mode == MODE_VISUAL:
+    if effective_mode == MODE_VISUAL:
         needs_review = {"low_confidence_matches": [], "unmatched_slides": [], "backward_jumps": []}
     else:
         needs_review = build_needs_review(matches, timeline, slides, confidence_threshold)
@@ -608,7 +693,7 @@ def process_lecture(
     # Worked-example detection is deck-relative (it asks "does this frame look
     # unlike the deck?"), which is meaningless when there is no deck -- see
     # process_lecture's docstring.
-    if detect_examples and mode == MODE_DECK:
+    if detect_examples and effective_mode == MODE_DECK:
         example_candidates = detect_example_candidates(
             matches,
             slides,
@@ -628,7 +713,7 @@ def process_lecture(
     # mode's segment indices -- they aren't deck pages and must not be remapped.
     # Absent means deck mode, so timelines written before this existed still read
     # correctly.
-    save_json(output_json, {"mode": mode, "timeline": timeline, "notes": notes})
+    save_json(output_json, {"mode": effective_mode, "timeline": timeline, "notes": notes})
     save_json(needs_review_json, needs_review)
     save_json(examples_json, {"candidates": example_candidates})
 
@@ -637,7 +722,7 @@ def process_lecture(
         + len(needs_review["unmatched_slides"])
         + len(needs_review["backward_jumps"])
     )
-    unit = "segment" if mode == MODE_VISUAL else "slide"
+    unit = "segment" if effective_mode == MODE_VISUAL else "slide"
     print(
         f"[done] {lecture_id}: {len(timeline)} {unit}(s) in timeline -> {output_json} "
         f"({n_flags} item(s) flagged -> {needs_review_json}, "
