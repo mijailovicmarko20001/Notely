@@ -183,6 +183,8 @@ function showTab(name) {
   if (name === "run") { refreshState(); pollJob(); }
   if (name === "review") populateReviewLectures();
   if (name === "guide") loadGuide();
+  if (name === "essentials") loadEssentials();
+  if (name === "exams") loadExams();
 }
 
 /* ---------- nav progress indicators (FRONTEND_TODO.md P1: the app is a
@@ -261,12 +263,31 @@ async function loadSetup() {
   whisperSel.value = wantedModel;
   $("#set-ocr").value = s.settings.OCR_LANG || "";
   $("#set-key").placeholder = s.settings.has_api_key ? "saved (" + s.settings.ANTHROPIC_API_KEY + ")" : "sk-ant-…";
+
+  $("#set-whisper-backend").value = s.settings.WHISPER_BACKEND || "faster-whisper";
+  syncWhisperBackendOptions();
+  $("#set-groq-key").placeholder = s.settings.has_groq_key ? "saved (" + s.settings.GROQ_API_KEY + ")" : "gsk_…";
+  $("#set-groq-model").value = s.settings.GROQ_WHISPER_MODEL || "";
+  $("#set-openai-key").placeholder = s.settings.has_openai_key
+    ? "saved (" + s.settings.OPENAI_API_KEY + ")"
+    : "sk-…";
+  $("#set-openai-model").value = s.settings.OPENAI_TRANSCRIBE_MODEL || "";
 }
 onClickBusy($("#btn-save-settings"), async () => {
-  const body = { WHISPER_MODEL: $("#set-whisper").value, OCR_LANG: $("#set-ocr").value };
+  const body = {
+    WHISPER_MODEL: $("#set-whisper").value,
+    OCR_LANG: $("#set-ocr").value,
+    WHISPER_BACKEND: $("#set-whisper-backend").value,
+    GROQ_WHISPER_MODEL: $("#set-groq-model").value,
+    OPENAI_TRANSCRIBE_MODEL: $("#set-openai-model").value,
+  };
   if ($("#set-key").value.trim()) body.ANTHROPIC_API_KEY = $("#set-key").value.trim();
+  if ($("#set-groq-key").value.trim()) body.GROQ_API_KEY = $("#set-groq-key").value.trim();
+  if ($("#set-openai-key").value.trim()) body.OPENAI_API_KEY = $("#set-openai-key").value.trim();
   await api("/settings", { method: "PUT", body });
   $("#set-key").value = "";
+  $("#set-groq-key").value = "";
+  $("#set-openai-key").value = "";
   $("#settings-status").textContent = "Saved ✓";
   await loadSetup();
 });
@@ -275,6 +296,28 @@ onClickBusy($("#btn-test-key"), async () => {
   const r = await api("/settings/test-key", { method: "POST" }).catch((e) => ({ ok: false, error: e.message }));
   $("#settings-status").textContent = r.ok ? "Key works ✓" : "Key failed: " + (r.error || "");
 });
+
+// Only one of the local-model picker / groq fields / openai fields is
+// relevant at a time, depending on the selected backend -- same
+// show-the-relevant-block-only pattern as the Run tab's syncModeOptions.
+function syncWhisperBackendOptions() {
+  const backend = $("#set-whisper-backend").value;
+  $("#whisper-local-opts").hidden = backend === "groq" || backend === "openai";
+  $("#whisper-groq-opts").hidden = backend !== "groq";
+  $("#whisper-openai-opts").hidden = backend !== "openai";
+}
+$("#set-whisper-backend").addEventListener("change", syncWhisperBackendOptions);
+
+async function testProviderKey(provider, statusEl) {
+  statusEl.innerHTML = statusLine("Testing…");
+  const r = await api(`/settings/test-key?provider=${provider}`, { method: "POST" }).catch((e) => ({
+    ok: false,
+    error: e.message,
+  }));
+  statusEl.textContent = r.ok ? "Key works ✓" : "Key failed: " + (r.error || "");
+}
+onClickBusy($("#btn-test-groq-key"), () => testProviderKey("groq", $("#settings-status")));
+onClickBusy($("#btn-test-openai-key"), () => testProviderKey("openai", $("#settings-status")));
 
 /* ---------- sources ---------- */
 let pendingEntries = [];
@@ -972,6 +1015,223 @@ async function loadGuide() {
     console.warn("MathJax typesetting failed (offline? CDN blocked?):", e);
   }
 }
+
+/* ---------- essentials ---------- */
+onClickBusy($("#btn-generate-essentials"), async () => {
+  const body = { force: $("#essentials-force").checked };
+  $("#essentials-generate-status").innerHTML = "";
+  try {
+    await api("/essentials/generate", { method: "POST", body });
+    // Runs through the same job scheduler as pipeline stages (stages
+    // 9/10) -- same "start it, then show the Run tab" pattern the Exams
+    // tab's own generate button uses.
+    showTab("run");
+    connectSSE();
+    pollJob();
+  } catch (e) {
+    $("#essentials-generate-status").innerHTML = errorBanner(e.message);
+  }
+});
+
+async function loadEssentials() {
+  let state;
+  try {
+    state = await api("/essentials");
+  } catch (e) {
+    $("#essentials-list").innerHTML = errorBanner("Failed to load essentials: " + e.message);
+    return;
+  }
+  $("#essentials-course-row").innerHTML = state.course_essentials
+    ? essentialsRowHtml({
+        path: "course",
+        label: "Course essentials",
+        mdHref: "/files/essentials.md",
+        pdfHref: "/api/essentials/course/pdf",
+      })
+    : emptyState("inbox", "No course-level essentials yet — generate lecture sheets first.");
+
+  $("#essentials-list").innerHTML = state.lectures.length
+    ? state.lectures.map(essentialsLectureRowHtml).join("")
+    : emptyState("inbox", "No lectures yet.");
+}
+
+function essentialsRowHtml({ path, label, mdHref, pdfHref }) {
+  return `<details class="card essentials-row" data-path="${path}">
+    <summary><strong>${label}</strong>
+      <a class="button" href="${mdHref}" download>MD</a>
+      <a class="button" href="${pdfHref}">PDF</a>
+    </summary>
+    <article class="essentials-body markdown-body">${statusLine("Loading…")}</article>
+  </details>`;
+}
+
+function essentialsLectureRowHtml(lec) {
+  if (lec.has_essentials) {
+    return essentialsRowHtml({
+      path: lec.id,
+      label: lec.id,
+      mdHref: `/files/essentials/${lec.id}.md`,
+      pdfHref: `/api/essentials/${lec.id}/pdf`,
+    });
+  }
+  const status = lec.has_notes ? "notes ready — not generated yet" : "no notes yet (run stage 6 first)";
+  return `<div class="card row"><strong>${lec.id}</strong><span class="hint">${status}</span></div>`;
+}
+
+// Lazy-load each sheet's rendered HTML the first time its <details> is
+// opened -- same pattern (and same "toggle" doesn't bubble, needs the
+// capture phase" reasoning) as the Exams tab's paper/key lazy-load below.
+document.addEventListener(
+  "toggle",
+  async (e) => {
+    const target = e.target;
+    if (!(target instanceof HTMLDetailsElement) || !target.open) return;
+    if (!target.classList.contains("essentials-row")) return;
+    const body = target.querySelector(".essentials-body");
+    if (!body || body.dataset.loaded) return;
+    try {
+      const r = await api("/essentials/" + target.dataset.path);
+      body.innerHTML = r.exists ? r.html : `<p class="hint">Not generated yet.</p>`;
+    } catch (err) {
+      body.innerHTML = errorBanner(err.message);
+    }
+    body.dataset.loaded = "1";
+    try {
+      await window.MathJax?.typesetPromise?.([body]);
+    } catch (err) {
+      console.warn("MathJax typesetting failed (offline? CDN blocked?):", err);
+    }
+  },
+  true
+);
+
+/* ---------- exams ---------- */
+// Uploads and generation are simpler than the Sources tab's deck flow: no
+// per-lecture mapping needed (past exams aren't tied to a lecture), and
+// uploads are additive (see webui/exams.py::save_exam_uploads) rather
+// than the pool's whole-set replace, so a plain "select -> upload
+// immediately" flow is enough.
+const examDropzone = $("#exam-dropzone");
+["dragenter", "dragover"].forEach((evt) =>
+  examDropzone.addEventListener(evt, (e) => { e.preventDefault(); examDropzone.classList.add("drag-over"); })
+);
+["dragleave", "drop"].forEach((evt) =>
+  examDropzone.addEventListener(evt, (e) => { e.preventDefault(); examDropzone.classList.remove("drag-over"); })
+);
+examDropzone.addEventListener("drop", (e) => {
+  const dropped = e.dataTransfer && e.dataTransfer.files;
+  if (dropped && dropped.length) {
+    $("#exam-file").files = dropped;
+    $("#exam-file").dispatchEvent(new Event("change"));
+  }
+});
+
+$("#exam-file").addEventListener("change", async () => {
+  const files = [...$("#exam-file").files];
+  if (!files.length) return;
+  const fd = new FormData();
+  files.forEach((f) => fd.append("files", f));
+  $("#exam-upload-status").innerHTML = statusLine(`Uploading ${files.length} file${files.length === 1 ? "" : "s"}…`);
+  try {
+    const r = await api("/exams/upload", { method: "POST", body: fd });
+    $("#exam-upload-status").innerHTML = okBanner(`Uploaded ${r.saved.length} file(s).`);
+    $("#exam-file").value = "";
+    $("#exam-dropzone-label").textContent = "Drag past exams here, or click to browse";
+    await loadExams();
+  } catch (e) {
+    $("#exam-upload-status").innerHTML = errorBanner(e.message);
+  }
+});
+
+onClickBusy($("#btn-generate-exam"), async () => {
+  const count = Math.max(1, +$("#exam-count").value || 1);
+  const questionsRaw = $("#exam-questions").value.trim();
+  const body = { count, force: $("#exam-force").checked };
+  if (questionsRaw) body.questions = +questionsRaw;
+  $("#exam-generate-status").innerHTML = "";
+  try {
+    await api("/exams/generate", { method: "POST", body });
+    // Runs through the same job scheduler as pipeline stages (stage 11)
+    // -- same "start it, then show the Run tab" pattern the Review tab's
+    // own re-run button uses.
+    showTab("run");
+    connectSSE();
+    pollJob();
+  } catch (e) {
+    $("#exam-generate-status").innerHTML = errorBanner(e.message);
+  }
+});
+
+async function loadExams() {
+  let state;
+  try {
+    state = await api("/exams");
+  } catch (e) {
+    $("#exam-list").innerHTML = errorBanner("Failed to load exams: " + e.message);
+    return;
+  }
+  $("#exam-uploaded-list").innerHTML = state.uploaded.length
+    ? `<div class="tag-list">${state.uploaded.map((n) => `<span class="tag">${n}</span>`).join("")}</div>`
+    : emptyState("inbox", "No past exams uploaded yet — optional, Notely infers a format without them.");
+
+  $("#exam-list").innerHTML = state.generated.length
+    ? state.generated.map(examRowHtml).join("")
+    : emptyState("inbox", "No practice exams generated yet.");
+}
+
+function examRowHtml(e) {
+  return `<details class="card exam-row" data-name="${e.name}">
+    <summary><strong>${e.name}</strong>
+      <a class="button" href="/files/exams/${e.name}.md" download>MD</a>
+      <a class="button" href="/api/exams/${e.name}/pdf">PDF</a>
+    </summary>
+    <article class="exam-paper-body markdown-body">${statusLine("Loading…")}</article>
+    ${e.has_key
+      ? `<details class="exam-key">
+          <summary>Show answers</summary>
+          <article class="exam-key-body markdown-body">${statusLine("Loading…")}</article>
+          <div class="row gap-top">
+            <a class="button" href="/files/exams/${e.name}_key.md" download>Key MD</a>
+            <a class="button" href="/api/exams/${e.name}/key/pdf">Key PDF</a>
+          </div>
+        </details>`
+      : `<p class="hint">No answer key was generated for this paper.</p>`}
+  </details>`;
+}
+
+// Lazy-load each paper/key's rendered HTML the first time its <details>
+// is opened -- the answer key in particular must never be fetched (let
+// alone rendered into the DOM) until the user explicitly asks for it.
+// "toggle" doesn't bubble, so this needs the capture phase to catch it at
+// the document level instead of wiring a listener per row.
+document.addEventListener(
+  "toggle",
+  async (e) => {
+    const target = e.target;
+    if (!(target instanceof HTMLDetailsElement) || !target.open) return;
+    const row = target.closest(".exam-row");
+    if (!row) return;
+    const isKey = target.classList.contains("exam-key");
+    if (!isKey && target !== row) return; // some other nested <details>, not ours
+
+    const body = isKey ? target.querySelector(".exam-key-body") : row.querySelector(".exam-paper-body");
+    if (!body || body.dataset.loaded) return;
+    const path = "/exams/" + row.dataset.name + (isKey ? "/key" : "");
+    try {
+      const r = await api(path);
+      body.innerHTML = r.exists ? r.html : `<p class="hint">Not generated yet.</p>`;
+    } catch (err) {
+      body.innerHTML = errorBanner(err.message);
+    }
+    body.dataset.loaded = "1";
+    try {
+      await window.MathJax?.typesetPromise?.([body]);
+    } catch (err) {
+      console.warn("MathJax typesetting failed (offline? CDN blocked?):", err);
+    }
+  },
+  true
+);
 
 /* ---------- boot ---------- */
 (async function boot() {

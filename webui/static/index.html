@@ -25,6 +25,8 @@
     <button data-tab="run"><span class="tab-step" id="step-run" data-step="3">3</span>Run</button>
     <button data-tab="review"><span class="tab-step" id="step-review" data-step="4">4</span>Review<span class="tab-badge" id="review-badge" hidden></span></button>
     <button data-tab="guide"><span class="tab-step" id="step-guide" data-step="5">5</span>Study Guide</button>
+    <button data-tab="essentials">Essentials</button>
+    <button data-tab="exams">Exams</button>
   </nav>
   <button id="theme-toggle" class="theme-toggle" type="button" title="Switch color theme"></button>
 </header>
@@ -43,15 +45,52 @@
         <small>Needed only for note generation (stage 6). Everything else runs without it.
           Get one at console.anthropic.com — a full lecture costs a few cents.</small>
       </label>
-      <label>Whisper model
-        <select id="set-whisper">
-          <option value="small">small (faster, lower quality)</option>
-          <option value="medium" selected>medium (recommended)</option>
-          <option value="large-v3">large-v3 (slowest, best)</option>
-          <option value="large-v3-turbo">large-v3-turbo (large accuracy, near-medium speed on GPU)</option>
+      <label>Transcription backend
+        <select id="set-whisper-backend">
+          <option value="faster-whisper" selected>faster-whisper (local, any CPU)</option>
+          <option value="mlx">mlx (local, Apple Silicon GPU)</option>
+          <option value="groq">groq (cloud — sends lecture audio to Groq)</option>
+          <option value="openai">openai (cloud — sends lecture audio to OpenAI)</option>
         </select>
-        <small>First use downloads the model (~1.5 GB for medium).</small>
+        <small>Cloud backends are opt-in, never the default — mainly useful on machines without a
+          usable local GPU. Local backends never send audio anywhere.</small>
       </label>
+      <div id="whisper-local-opts">
+        <label>Whisper model
+          <select id="set-whisper">
+            <option value="small">small (faster, lower quality)</option>
+            <option value="medium" selected>medium (recommended)</option>
+            <option value="large-v3">large-v3 (slowest, best)</option>
+            <option value="large-v3-turbo">large-v3-turbo (large accuracy, near-medium speed on GPU)</option>
+          </select>
+          <small>First use downloads the model (~1.5 GB for medium).</small>
+        </label>
+      </div>
+      <div id="whisper-groq-opts" hidden>
+        <label>Groq API key
+          <div class="row">
+            <input type="password" id="set-groq-key" placeholder="gsk_…">
+            <button id="btn-test-groq-key" type="button">Test key</button>
+          </div>
+          <small>Get one at console.groq.com/keys.</small>
+        </label>
+        <label>Groq model
+          <input type="text" id="set-groq-model" placeholder="whisper-large-v3-turbo">
+        </label>
+      </div>
+      <div id="whisper-openai-opts" hidden>
+        <label>OpenAI API key
+          <div class="row">
+            <input type="password" id="set-openai-key" placeholder="sk-…">
+            <button id="btn-test-openai-key" type="button">Test key</button>
+          </div>
+          <small>Get one at platform.openai.com/api-keys.</small>
+        </label>
+        <label>OpenAI model
+          <input type="text" id="set-openai-model" placeholder="whisper-1">
+          <small>Must support segment timestamps — gpt-4o-transcribe/gpt-4o-mini-transcribe don't.</small>
+        </label>
+      </div>
       <label>OCR language(s)
         <input type="text" id="set-ocr" placeholder="srp_latn+eng">
         <small>Tesseract language codes joined by “+”, matching the slide language.</small>
@@ -205,6 +244,64 @@
       <button id="btn-refresh-guide">Refresh</button>
     </div>
     <article id="guide-body" class="card">Nothing assembled yet — run the pipeline first.</article>
+  </section>
+
+  <!-- ESSENTIALS -->
+  <section id="tab-essentials" class="tab">
+    <h2>Essentials</h2>
+    <p class="hint">A condensed "must-know" sheet per lecture, plus one for the whole course —
+      definitions and formulas kept exact, restated slide bullets dropped. Distilled from your
+      already-finished notes (stage 6), not the raw transcript.</p>
+    <div class="card">
+      <div class="row wrap">
+        <label class="chip"><input type="checkbox" id="essentials-force"> Regenerate existing sheets</label>
+      </div>
+      <div class="row">
+        <button id="btn-generate-essentials" class="primary">Generate</button>
+        <span id="essentials-generate-status" class="status-line" aria-live="polite"></span>
+      </div>
+      <p class="hint">Runs as a tracked job, same as the pipeline — you'll be taken to the Run tab
+        to watch progress. Only lectures with finished notes are included; the course-level sheet
+        runs once, after every included lecture's sheet is done.</p>
+    </div>
+    <h2>Course essentials</h2>
+    <div id="essentials-course-row" aria-live="polite"></div>
+    <h2>Per-lecture sheets</h2>
+    <div id="essentials-list" aria-live="polite"></div>
+  </section>
+
+  <!-- EXAMS -->
+  <section id="tab-exams" class="tab">
+    <h2>Practice exams</h2>
+    <div class="card">
+      <p>Upload past exams (PDF) so Notely can match their <strong>format</strong> — question types,
+        structure, point distribution. Their actual questions are never reused; every generated
+        question is drawn from your study guide/essentials. Optional — without any, Notely infers a
+        sensible format from the course material alone.</p>
+      <label class="dropzone" id="exam-dropzone">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 16V4M12 4l-5 5M12 4l5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+        <strong id="exam-dropzone-label">Drag past exams here, or click to browse</strong>
+        <span class="hint">PDF, one or more files</span>
+        <input type="file" id="exam-file" accept=".pdf" multiple>
+      </label>
+      <div id="exam-upload-status" class="status-line" aria-live="polite"></div>
+      <div id="exam-uploaded-list"></div>
+    </div>
+    <div class="card">
+      <div class="row wrap">
+        <label>Papers <input type="number" min="1" max="20" id="exam-count" class="input-xs" value="1"></label>
+        <label>Questions (optional) <input type="number" min="1" id="exam-questions" class="input-xs" placeholder="auto"></label>
+        <label class="chip"><input type="checkbox" id="exam-force"> Regenerate format &amp; existing papers</label>
+      </div>
+      <div class="row">
+        <button id="btn-generate-exam" class="primary">Generate</button>
+        <span id="exam-generate-status" class="status-line" aria-live="polite"></span>
+      </div>
+      <p class="hint">Runs as a tracked job, same as the pipeline — you'll be taken to the Run tab
+        to watch progress.</p>
+    </div>
+    <h2>Generated papers</h2>
+    <div id="exam-list" aria-live="polite"></div>
   </section>
 </main>
 

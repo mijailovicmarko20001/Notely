@@ -11,6 +11,10 @@ this script is just the CLI wrapper around it.
 Usage:
     python scripts/08_export_pdf.py                  # output/study_guide.pdf
     python scripts/08_export_pdf.py lecture03        # output/notes/lecture03.pdf
+    python scripts/08_export_pdf.py --essentials      # output/essentials.pdf
+    python scripts/08_export_pdf.py lecture03 --essentials  # output/essentials/lecture03.pdf
+    python scripts/08_export_pdf.py --exam exam_01    # output/exams/exam_01.pdf
+    python scripts/08_export_pdf.py --exam exam_01 --key  # output/exams/exam_01_key.pdf
 """
 
 import argparse
@@ -40,13 +44,48 @@ def main():
     parser = argparse.ArgumentParser(description="Export study guide or lecture notes to PDF.")
     parser.add_argument("lecture_id", nargs="?", help="export one lecture's notes instead of the full guide")
     parser.add_argument(
+        "--essentials",
+        action="store_true",
+        help="export the distilled essentials (notely.pipeline.essentials, stages 9/10) instead of "
+        "the full guide/notes -- output/essentials.md, or output/essentials/<lecture_id>.md "
+        "if a lecture_id is given",
+    )
+    parser.add_argument(
+        "--exam",
+        metavar="NAME",
+        help="export a generated practice exam (notely.pipeline.exams, stage 11) instead of the "
+        "guide/notes/essentials -- output/exams/<NAME>.md, e.g. --exam exam_01",
+    )
+    parser.add_argument(
+        "--key",
+        action="store_true",
+        help="with --exam, export that exam's answer key instead of the student-facing paper -- "
+        "output/exams/<NAME>_key.md",
+    )
+    parser.add_argument(
         "--output",
         help="write the PDF here instead of the default path "
         "(callers doing their own temp-file + atomic-rename dance, e.g. the web UI, pass this)",
     )
     args = parser.parse_args()
 
-    if args.lecture_id:
+    if args.key and not args.exam:
+        parser.error("--key only makes sense together with --exam")
+    if args.exam and args.essentials:
+        parser.error("--exam and --essentials are mutually exclusive")
+
+    if args.exam:
+        suffix = "_key" if args.key else ""
+        md_path = OUTPUT_DIR / "exams" / f"{args.exam}{suffix}.md"
+        pdf_path = OUTPUT_DIR / "exams" / f"{args.exam}{suffix}.pdf"
+    elif args.essentials:
+        if args.lecture_id:
+            md_path = OUTPUT_DIR / "essentials" / f"{args.lecture_id}.md"
+            pdf_path = OUTPUT_DIR / "essentials" / f"{args.lecture_id}.pdf"
+        else:
+            md_path = OUTPUT_DIR / "essentials.md"
+            pdf_path = OUTPUT_DIR / "essentials.pdf"
+    elif args.lecture_id:
         md_path = OUTPUT_DIR / "notes" / f"{args.lecture_id}.md"
         pdf_path = OUTPUT_DIR / "notes" / f"{args.lecture_id}.pdf"
     else:

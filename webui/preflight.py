@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import sys
 
-from .config import PROJECT_ROOT, get_api_key
+from .config import PROJECT_ROOT, get_api_key, get_secret
 
 # notely/ (ports, adapters) lives alongside scripts/ and webui/ at the
 # project root -- not guaranteed to already be on sys.path depending on how
@@ -83,7 +83,29 @@ def check_whisper_model(model_size: str) -> dict:
         return {"ok": False, "detail": f"could not scan HF cache: {e}"}
 
 
-def run_preflight(ocr_lang: str, whisper_model: str) -> dict:
+# Which env var each cloud transcription backend needs, for
+# check_cloud_transcription_key -- WHISPER_BACKEND values that aren't
+# here are local (faster-whisper, mlx), which get check_whisper_model
+# instead; see run_preflight.
+_CLOUD_KEY_ENV_VAR = {"groq": "GROQ_API_KEY", "openai": "OPENAI_API_KEY"}
+
+
+def check_cloud_transcription_key(backend: str) -> dict:
+    """Is the API key this cloud transcription backend needs configured?
+    (informational, same warning-not-blocker status as check_whisper_model
+    -- the check it replaces when WHISPER_BACKEND is a cloud backend, see
+    run_preflight)."""
+    env_var = _CLOUD_KEY_ENV_VAR.get(backend)
+    if env_var is None:
+        return {"ok": False, "detail": f"unknown cloud backend {backend!r}"}
+    key = get_secret(env_var)
+    return {
+        "ok": bool(key),
+        "detail": "set" if key else f"{env_var} not set — transcription (stage 1) will fail",
+    }
+
+
+def run_preflight(ocr_lang: str, whisper_model: str, whisper_backend: str = "faster-whisper") -> dict:
     checks = {
         "ffmpeg": check_binary("ffmpeg"),
         "ffprobe": check_binary("ffprobe"),
@@ -97,13 +119,22 @@ def run_preflight(ocr_lang: str, whisper_model: str) -> dict:
             or shutil.which("node")
             or "no deno/node — YouTube downloads may miss formats (yt-dlp deprecation)",
         },
-        "whisper_model": check_whisper_model(whisper_model),
         "api_key": {
             "ok": bool(get_api_key()),
             "detail": "set" if get_api_key() else "not set — note generation (stage 6) locked",
         },
     }
-    # soffice, whisper cache, and api key are warnings, not blockers
+    # A cloud transcription backend has no local model cache to check --
+    # checking for the key it actually needs is the equivalent signal.
+    # Never both: whisper_model would just be noise under a cloud backend
+    # (it's not what's about to run), same reasoning check_whisper_model's
+    # own HF-cache scan is already known to be wrong under mlx.
+    if whisper_backend in _CLOUD_KEY_ENV_VAR:
+        checks["cloud_transcription_key"] = check_cloud_transcription_key(whisper_backend)
+    else:
+        checks["whisper_model"] = check_whisper_model(whisper_model)
+
+    # soffice, whisper cache/cloud key, and api key are warnings, not blockers
     required = ("ffmpeg", "ffprobe", "tesseract", "tesseract_langs", "yt_dlp")
     checks_ok = all(checks[k]["ok"] for k in required)
     return {"ok": checks_ok, "checks": checks}

@@ -32,6 +32,9 @@ STAGE_ARTIFACT_REL = {
     5: "output/segmented_transcripts/{lec}.json",
     6: "output/notes/{lec}.md",
     7: "output/study_guide.md",
+    9: "output/essentials/{lec}.md",
+    10: "output/essentials.md",
+    11: "output/exams/exam_01.md",
 }
 
 
@@ -58,6 +61,20 @@ def project(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "LOGS_DIR", root / "output" / "logs")
     monkeypatch.setattr(config, "VIDEOS_DIR", root / "input" / "videos")
     monkeypatch.setattr(config, "ENV_PATH", root / ".env")
+
+    # Real-process leak guard: scripts/04_match_frames_to_slides.py calls
+    # load_dotenv(PROJECT_ROOT / ".env") at *module import time* (so its
+    # --ocr-lang default picks up .env), not inside a function -- merely
+    # importing it (e.g. via conftest.load_stage in another test module's
+    # own module-level code, which several files in this suite do) loads
+    # the real repo's .env into the real os.environ for the rest of the
+    # pytest process, regardless of which specific test triggered the
+    # import. This project's real .env has WHISPER_BACKEND=mlx, which
+    # config.stage_env() (real os.environ + dotenv_values(ENV_PATH)) would
+    # otherwise pick straight up here, since nothing in this fixture ever
+    # writes a project/.env for these tests to override it with. Delete
+    # it explicitly rather than relying on it happening to be unset.
+    monkeypatch.delenv("WHISPER_BACKEND", raising=False)
 
     return root
 
@@ -191,6 +208,71 @@ def test_same_lane_tasks_run_one_at_a_time(project):
         f"same-lane tasks overlapped: lecture01={starts['lecture01']:.3f}-{ends['lecture01']:.3f} "
         f"lecture02={starts['lecture02']:.3f}-{ends['lecture02']:.3f}"
     )
+
+
+def test_stage11_task_runs_to_completion_on_the_api_lane(project):
+    """Stage 11 (practice exams) is a standalone, course-level stage built
+    outside notely.runner.build_tasks (see webui/routes/exams.py) and
+    handed to MANAGER.start_job() directly -- unlike stages 0-7, it isn't
+    covered by build_tasks/PER_LECTURE_STAGES at all. _run()'s lane
+    construction has to know about it explicitly (added to the "api" lane,
+    alongside stage 6) or a stage-11 task would sit "pending" forever: no
+    lane worker's `stage in lane_stages` check would ever match it, and
+    _lane_settled only looks at each lane's own stage set, so the job
+    would silently report "done" with the task never having run.
+    start_job() itself would also KeyError on progress.STAGE_NAMES[11]
+    before any of that if STAGE_NAMES weren't extended past
+    MAX_PIPELINE_STAGE -- this test covers both."""
+    write_stub(config.SCRIPTS_DIR, 11, name="generate_exam", exit_code=0)
+
+    manager = jobs.JobManager()
+    manager.start_job([(None, 11, [])])
+    assert wait_for_job_done(manager, timeout=5)
+
+    assert manager.job["tasks"][0]["status"] == "done"
+    assert manager.job["status"] == "done"
+    assert (project / "output" / "exams" / "exam_01.md").exists()
+
+
+def test_stage9_and_10_tasks_run_to_completion_on_the_api_lane(project):
+    """Same reasoning as test_stage11_task_runs_to_completion_on_the_api_lane
+    above, now for stages 9/10 (essentials): webui/routes/essentials.py
+    builds its own [(lec, 9, ...), ..., (None, 10, ...)] task list outside
+    build_tasks/PER_LECTURE_STAGES, so _run()'s lane construction has to
+    know about both explicitly or they'd sit "pending" forever."""
+    write_stub(config.SCRIPTS_DIR, 9, name="lecture_essentials", exit_code=0)
+    write_stub(config.SCRIPTS_DIR, 10, name="course_essentials", exit_code=0)
+
+    manager = jobs.JobManager()
+    tasks = [("lecture01", 9, []), ("lecture02", 9, []), (None, 10, [])]
+    manager.start_job(tasks)
+    assert wait_for_job_done(manager, timeout=5)
+
+    assert manager.job["status"] == "done"
+    assert all(t["status"] == "done" for t in manager.job["tasks"])
+
+
+def test_stage10_runs_after_every_stage9_task_completes(project):
+    # stage 10 (course essentials) aggregates every stage-9 sheet -- if it
+    # started before the stage-9 tasks ahead of it in the list finished,
+    # it could read a partial/missing set of sheets. Both stages share the
+    # "api" lane (single worker, one task at a time), so list order alone
+    # should guarantee this -- verify it isn't a coincidence.
+    log = project / "order.log"
+    write_stub(config.SCRIPTS_DIR, 9, name="lecture_essentials", sleep=0.1, log_path=log)
+    write_stub(config.SCRIPTS_DIR, 10, name="course_essentials", log_path=log)
+
+    manager = jobs.JobManager()
+    tasks = [("lecture01", 9, []), ("lecture02", 9, []), (None, 10, [])]
+    manager.start_job(tasks)
+    assert wait_for_job_done(manager, timeout=5)
+
+    rows = read_log(log)
+    stage9_ends = [ts for ts, ev, st, _lec in rows if ev == "end" and st == 9]
+    stage10_starts = [ts for ts, ev, st, _lec in rows if ev == "start" and st == 10]
+    assert len(stage9_ends) == 2 and len(stage10_starts) == 1
+    assert max(stage9_ends) <= stage10_starts[0]
+    assert manager.job["status"] == "done"
 
 
 # --- dependency ordering per lecture -----------------------------------------

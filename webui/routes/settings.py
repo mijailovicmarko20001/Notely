@@ -19,6 +19,7 @@ def get_preflight():
     return preflight.run_preflight(
         ocr_lang=settings.get("OCR_LANG", "eng"),
         whisper_model=settings.get("WHISPER_MODEL", "medium"),
+        whisper_backend=settings.get("WHISPER_BACKEND", "faster-whisper"),
     )
 
 
@@ -45,21 +46,50 @@ def put_settings(body: SettingsUpdate):
     return {"ok": True, "settings": config.read_settings()}
 
 
-@router.post("/settings/test-key")
-def test_key():
-    key = config.get_api_key()
+def _test_provider_key(provider: str, key: str, ping) -> dict:
+    """Shared shape for every provider below: 400 if no key is saved,
+    otherwise a cheap real call to confirm it actually authenticates --
+    {"ok": True} on success, {"ok": False, "error": ...} (never a raw
+    exception/traceback) on any failure, with specifics only in the
+    server log."""
     if not key:
         raise HTTPException(400, "no API key saved")
     try:
-        import anthropic
-
-        client = anthropic.Anthropic(api_key=key, max_retries=1)
-        client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=8,
-            messages=[{"role": "user", "content": "ping"}],
-        )
+        ping()
         return {"ok": True}
     except Exception:
-        log.exception("API key test failed")
+        log.exception("%s API key test failed", provider)
         return {"ok": False, "error": "key test failed — see server logs"}
+
+
+@router.post("/settings/test-key")
+def test_key(provider: str = "anthropic"):
+    if provider == "anthropic":
+        key = config.get_api_key()
+
+        def ping():
+            import anthropic
+
+            anthropic.Anthropic(api_key=key, max_retries=1).messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=8,
+                messages=[{"role": "user", "content": "ping"}],
+            )
+    elif provider == "groq":
+        key = config.get_secret("GROQ_API_KEY")
+
+        def ping():
+            from groq import Groq
+
+            Groq(api_key=key).models.list()  # cheapest real call that requires valid auth
+    elif provider == "openai":
+        key = config.get_secret("OPENAI_API_KEY")
+
+        def ping():
+            from openai import OpenAI
+
+            OpenAI(api_key=key).models.list()
+    else:
+        raise HTTPException(422, f"unknown provider: {provider!r}")
+
+    return _test_provider_key(provider, key, ping)

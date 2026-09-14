@@ -15,6 +15,7 @@ __pycache__/
 # study use only. Keep the pipeline scripts/config in git, not their output.
 input/videos/
 input/slides/
+input/exams/
 output/
 data/
 

@@ -45,3 +45,10 @@ DEFAULT_WHISPER_MODEL = "medium"
 # D3: plain "eng" misses this course's Serbian-latin slide text/OCR
 # almost entirely; "srp_latn+eng" is the validated default.
 DEFAULT_OCR_LANG = "srp_latn+eng"
+
+# Same "one literal, not a copy in each entry point" reasoning as D1-D3
+# above -- scripts/01_transcribe.py's os.environ.get("WHISPER_BACKEND",
+# ...) and webui/config.py's DEFAULT_ENV both read this, so a change here
+# can't silently drift between the CLI and the web UI the way D1-D3 did
+# before this module existed. Local, no API key, works on any CPU.
+DEFAULT_WHISPER_BACKEND = "faster-whisper"

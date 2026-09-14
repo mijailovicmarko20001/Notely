@@ -38,6 +38,7 @@ if str(ROOT) not in sys.path:
 def _mkdirs(root: Path) -> None:
     (root / "input" / "videos").mkdir(parents=True, exist_ok=True)
     (root / "input" / "slides").mkdir(parents=True, exist_ok=True)
+    (root / "input" / "exams").mkdir(parents=True, exist_ok=True)
     (root / "output" / "logs").mkdir(parents=True, exist_ok=True)
     (root / "scripts").mkdir(parents=True, exist_ok=True)
 
@@ -84,6 +85,10 @@ def _patched_paths(_project_root):
     config.OUTPUT_DIR = root / "output"
     config.VIDEOS_DIR = config.INPUT_DIR / "videos"
     config.SLIDES_DIR = config.INPUT_DIR / "slides"
+    config.EXAMS_DIR = config.INPUT_DIR / "exams"
+    config.OUTPUT_EXAMS_DIR = config.OUTPUT_DIR / "exams"
+    config.OUTPUT_ESSENTIALS_DIR = config.OUTPUT_DIR / "essentials"
+    config.COURSE_ESSENTIALS_PATH = config.OUTPUT_DIR / "essentials.md"
     config.LOGS_DIR = config.OUTPUT_DIR / "logs"
     config.ENV_PATH = root / ".env"
     config.VIDEO_URLS_PATH = config.INPUT_DIR / "video_urls.json"

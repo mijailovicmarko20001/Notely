@@ -185,3 +185,89 @@ def test_run_preflight_not_ok_when_a_required_check_fails(monkeypatch):
     result = preflight.run_preflight("eng", "medium")
     assert result["ok"] is False
     assert result["checks"]["ffmpeg"]["ok"] is False
+
+
+# --- check_cloud_transcription_key (Feature C) ---------------------------------
+
+
+def test_check_cloud_transcription_key_groq_set(monkeypatch):
+    monkeypatch.setattr(preflight, "get_secret", lambda key: "gsk_test" if key == "GROQ_API_KEY" else "")
+    result = preflight.check_cloud_transcription_key("groq")
+    assert result == {"ok": True, "detail": "set"}
+
+
+def test_check_cloud_transcription_key_openai_unset(monkeypatch):
+    monkeypatch.setattr(preflight, "get_secret", lambda key: "")
+    result = preflight.check_cloud_transcription_key("openai")
+    assert result["ok"] is False
+    assert "OPENAI_API_KEY" in result["detail"]
+
+
+def test_check_cloud_transcription_key_reads_the_right_env_var_per_backend(monkeypatch):
+    seen = []
+    monkeypatch.setattr(preflight, "get_secret", lambda key: seen.append(key) or "")
+    preflight.check_cloud_transcription_key("groq")
+    preflight.check_cloud_transcription_key("openai")
+    assert seen == ["GROQ_API_KEY", "OPENAI_API_KEY"]
+
+
+# --- run_preflight is backend-aware (Feature C) --------------------------------
+
+
+def _stub_common_checks(monkeypatch, extra_ok=True):
+    monkeypatch.setattr(preflight, "check_binary", lambda name: {"ok": True, "detail": name})
+    monkeypatch.setattr(preflight, "check_tesseract_lang", lambda spec: {"ok": True, "detail": "ok"})
+    monkeypatch.setattr(preflight, "check_soffice", lambda: {"ok": True, "detail": "found"})
+    monkeypatch.setattr(preflight, "check_yt_dlp", lambda: {"ok": True, "detail": "1.0"})
+    monkeypatch.setattr(preflight, "get_api_key", lambda: "sk-test")
+    monkeypatch.setattr(preflight.shutil, "which", lambda name: "/usr/bin/node")
+
+
+def test_run_preflight_checks_whisper_model_cache_for_local_backends(monkeypatch):
+    _stub_common_checks(monkeypatch)
+    monkeypatch.setattr(preflight, "check_whisper_model", lambda model: {"ok": True, "detail": "cached"})
+
+    result = preflight.run_preflight("eng", "medium", whisper_backend="faster-whisper")
+
+    assert "whisper_model" in result["checks"]
+    assert "cloud_transcription_key" not in result["checks"]
+
+
+def test_run_preflight_checks_cloud_key_instead_of_whisper_cache_for_cloud_backends(monkeypatch):
+    _stub_common_checks(monkeypatch)
+    monkeypatch.setattr(
+        preflight, "check_whisper_model", lambda model: {"ok": False, "detail": "should not run"}
+    )
+    monkeypatch.setattr(
+        preflight, "check_cloud_transcription_key", lambda backend: {"ok": True, "detail": "set"}
+    )
+
+    result = preflight.run_preflight("eng", "medium", whisper_backend="groq")
+
+    assert "cloud_transcription_key" in result["checks"]
+    assert "whisper_model" not in result["checks"]
+
+
+def test_run_preflight_missing_cloud_key_is_a_warning_not_a_blocker(monkeypatch):
+    # same philosophy as the existing api_key/soffice/whisper_model checks:
+    # "you haven't configured X yet" warns, it doesn't fail preflight outright
+    _stub_common_checks(monkeypatch)
+    monkeypatch.setattr(
+        preflight, "check_cloud_transcription_key", lambda backend: {"ok": False, "detail": "not set"}
+    )
+
+    result = preflight.run_preflight("eng", "medium", whisper_backend="openai")
+
+    assert result["ok"] is True
+    assert result["checks"]["cloud_transcription_key"]["ok"] is False
+
+
+def test_run_preflight_defaults_to_local_backend_when_unspecified(monkeypatch):
+    # backward-compat: existing callers that don't pass whisper_backend at
+    # all (there weren't any before Feature C) still get the local check.
+    _stub_common_checks(monkeypatch)
+    monkeypatch.setattr(preflight, "check_whisper_model", lambda model: {"ok": True, "detail": "cached"})
+
+    result = preflight.run_preflight("eng", "medium")
+
+    assert "whisper_model" in result["checks"]

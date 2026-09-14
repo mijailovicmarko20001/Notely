@@ -58,7 +58,7 @@ def _render_math_protected_markdown(md_text: str) -> str:
         return f"\x00MATH{len(stash) - 1}\x00"
 
     guarded = re.sub(r"\$\$.*?\$\$|\$[^$\n]+\$", protect, md_text, flags=re.DOTALL)
-    html = markdown.markdown(guarded, extensions=["tables", "sane_lists"])
+    html = markdown.markdown(guarded, extensions=["tables", "sane_lists", "fenced_code"])
     return re.sub(r"\x00MATH(\d+)\x00", lambda m: stash[int(m.group(1))], html)
 
 

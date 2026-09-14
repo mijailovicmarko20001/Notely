@@ -19,6 +19,7 @@ the stage."""
 import sys
 
 from conftest import load_stage
+from fakes import FakeAudioExtractor
 from webui import config
 
 s01 = load_stage("01_transcribe.py")
@@ -57,3 +58,40 @@ def test_stage04_ocr_lang_default_matches_webui(monkeypatch):
     s04.main()
 
     assert captured["ocr_lang"] == config.DEFAULT_ENV["OCR_LANG"]
+
+
+def test_stage01_whisper_backend_default_matches_webui(monkeypatch, tmp_path):
+    # transcribe_lecture reads WHISPER_BACKEND directly from os.environ
+    # (not via a passed kwarg the way model_size/ocr_lang/threshold are),
+    # so this can't capture a kwargs dict the way the other tests above
+    # do. Instead: with WHISPER_BACKEND unset, monkeypatch
+    # LOCAL_TRANSCRIBER_BACKENDS down to a single entry keyed on
+    # webui/config.py's own default -- if the CLI's own unset-default
+    # (DEFAULT_WHISPER_BACKEND) ever drifted from that key, dispatch would
+    # find no match and this would fail with "unknown WHISPER_BACKEND",
+    # not silently pass.
+    monkeypatch.setattr(s01, "INPUT_VIDEOS_DIR", tmp_path / "videos")
+    monkeypatch.setattr(s01, "OUTPUT_TRANSCRIPTS_DIR", tmp_path / "out")
+    monkeypatch.setattr(s01, "build_vocabulary_prompt", lambda lecture_id: "")
+    (tmp_path / "videos").mkdir()
+    (tmp_path / "videos" / "lecture01.mp4").write_bytes(b"fake")
+    monkeypatch.delenv("WHISPER_BACKEND", raising=False)
+
+    calls = []
+
+    class _RecordingTranscriber:
+        def transcribe(self, *a, **kw):
+            calls.append(1)
+            return {"language": "en", "segments": []}
+
+    monkeypatch.setattr(
+        s01, "LOCAL_TRANSCRIBER_BACKENDS", {config.DEFAULT_ENV["WHISPER_BACKEND"]: _RecordingTranscriber}
+    )
+    monkeypatch.setattr(s01, "CLOUD_TRANSCRIBER_BACKENDS", {})
+
+    ok = s01.transcribe_lecture(
+        "lecture01", model_size="medium", force=True, audio_extractor=FakeAudioExtractor()
+    )
+
+    assert ok is True
+    assert calls == [1]

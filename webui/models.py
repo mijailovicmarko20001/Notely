@@ -24,6 +24,11 @@ class SettingsUpdate(BaseModel):
     WHISPER_MODEL: Optional[str] = None
     NOTES_MODEL: Optional[str] = None
     OCR_LANG: Optional[str] = None
+    WHISPER_BACKEND: Optional[str] = None
+    GROQ_API_KEY: Optional[str] = None
+    GROQ_WHISPER_MODEL: Optional[str] = None
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_TRANSCRIBE_MODEL: Optional[str] = None
 
     def to_updates(self) -> dict:
         return self.model_dump(exclude_none=True)
@@ -60,6 +65,25 @@ class JobRequest(BaseModel):
         if bad:
             raise ValueError(f"stages must be 0-{MAX_PIPELINE_STAGE}, got {bad}")
         return v
+
+
+class ExamGenerateRequest(BaseModel):
+    """POST /exams/generate body -- maps to
+    scripts/11_generate_exam.py's --count/--questions/--force flags."""
+
+    count: int = Field(default=1, ge=1, le=20)
+    questions: Optional[int] = Field(default=None, ge=1)
+    force: bool = False
+
+
+class EssentialsGenerateRequest(BaseModel):
+    """POST /essentials/generate body -- maps to scripts/09_lecture_
+    essentials.py's and scripts/10_course_essentials.py's shared --force
+    flag. Which lectures get a stage-9 task is derived server-side
+    (webui/essentials.py::lectures_ready_for_essentials) from whichever
+    already have finished notes, not taken from this body."""
+
+    force: bool = False
 
 
 class Correction(BaseModel):

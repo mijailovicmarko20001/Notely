@@ -54,6 +54,7 @@ networkx==3.6.1
 numba==0.67.0
 numpy==2.5.2
 onnxruntime==1.29.0
+openai==1.109.1
 opencv-python-headless==5.0.0.93
 packaging==26.3
 pillow==12.3.0
